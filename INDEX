@@ -1,0 +1,28 @@
+#======================================================================
+#                    I N D E X 
+#                    doc: Thu Feb  7 14:21:21 2008
+#                    dlm: Fri Feb 22 08:39:45 2008
+#                    (c) 2008 A.M. Thurnherr
+#                    uE-Info: 22 26 NIL 0 0 72 0 2 4 NIL ofnI
+#======================================================================
+
+=General Utilities=
+
+[listHdr]	list header info
+[listEns]	list ensembles
+[listBT]	list bottom-track data
+[listW]		list vertical velocities; BROKEN
+[scanBins]	list per-bin stats; BROKEN
+
+
+=Moored-ADCP Utilities=
+
+[RDI2grd]	make GMT-compatible GRD from ADCP raw file
+[listBins]	make per-bin velocity time series
+[meanProf]	time-averaged mean profile
+
+
+=Lowered ADCP Utilities=
+
+[mkProfile]	make depth-vs-time profile by integrating vertical velocities
+

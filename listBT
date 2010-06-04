@@ -1,0 +1,589 @@
+#!/usr/bin/perl
+#======================================================================
+#                    L I S T B T 
+#                    doc: Sat Jan 18 18:41:49 2003
+#                    dlm: Sun May 23 16:33:33 2010
+#                    (c) 2003 A.M. Thurnherr
+#                    uE-Info: 527 42 NIL 0 0 72 11 2 4 NIL ofnI
+#======================================================================
+
+# Extract Bottom-Track Data
+
+# NOTE: NO SOUND-SPEED CORRECTION APPLIED YET!!!
+
+# HISTORY:
+#	Jan 18, 2003: - created
+#	Jan 23, 2003: - added magnetic declination
+#	Jan 25, 2003: - continued construction
+#	Feb 11, 2003: - finally made it work
+#	Feb 12, 2003: - added default profile output
+#	Feb 13, 2003: - corrected raw output
+#	Feb 14, 2003: - added errors if instrument-BT filters are more strict
+#					than command-line values
+#	Feb 18, 2003: - removed -d dependency on -W
+#	Mar  3, 2003: - added -C)ompass correction
+#	Mar 10, 2003: - added -f)orce to allow visbeck-style post processing
+#	Mar 16, 2003: - added range comment
+#	Feb 26, 2004: - added Earth-coordinate support
+#	Feb 27, 2004: - made water-track calculation conditional (-E || -B)
+#	Mar  9, 2004: - added magnetic_declination to %PARAMs
+#	Apr  1, 2004: - added CTD u/v stats to %PARAMs
+#	Apr  2, 2004: - added CTD_msf (mean square fluctuation) stat
+#	Apr  3, 2004: - BUG: CTD vels were repeated for stats
+#				  - removed non-ANTS option
+#	Nov  8, 2005: - UNIXTIME => UNIX_TIME
+#				  - adapted to new binary read library
+#				  - output editing statistics
+#	Aug 15, 2006: - added -b
+#	Aug 25, 2006: - fiddled
+#	Sep 19, 2007: - adapted to new [RDI_BB_Read.pl] (not tested)
+#	Nov  1, 2008: - BUG: sig(u) was reported instead of sig(v)
+#	Jul 30, 2009: - NaN => nan
+
+# NOTES:
+#	- the RDI BT data contains ranges that are greater than the
+#	  WT ping ranges. I don't know if those data are valid!
+#	- there is a fair bit of heuristic used, especially in the 
+#	  reference-layer calculation
+#	- depth-correction (-m) is highly recommended because it allows
+#	  much better bad-BT detection and it is required for a valid
+#	  comparison with LADCP profiles
+#	- the criterion for bottom-interference of the water-track data
+#	  is derived from Firing's [merge.c] (adding 1.5 bin lengths to
+#	  the calculated range), modified by taking the real beam angle
+#	  into account.
+#	- from the RDI manuals it is not entirely clear whether the BT range
+#	  is given in vertical or in along-beam meters; comparison with the 
+#	  WT range (calculated from the bin with the maximum echo amplitude)
+#	  shows that vertical meters are used
+
+# NOTES on quality checks:
+#	-a	minimum BT amplitude; setting this to 50 (RDI default is 30)
+#		reduces the vertical range over which the bottom is detected but
+#		not the quality of the bottom track data; therefore, this should
+#		probably not be used.
+#	-c	minimum BT correlation; the RDI default for this parameter is 220,
+#		which seems to work fine.
+#	-e	max error velocity (BT & WT); this is primarily used for detecting
+#		good BT data, i.e. it should be set to a small value (Firing uses
+#		0.1m/s in merge); if too small a value is chosen too many good
+#		data are discarded; note that the same error-velocity criterion
+#		is used to separate good from bad data when mean profiles are
+#		constructed.
+#	-w	max difference between reference-layer w and BT w; this is a
+#		powerful criterion for determining good BT data; I like a value of
+#		0.03 m/s.
+#	-d	when the depth is corrected (-m) the...
+
+$0 =~ m{(.*)/[^/]+};
+require "$1/RDI_BB_Read.pl";
+require "$1/RDI_Coords.pl";
+require "$1/RDI_Utils.pl";
+use Getopt::Std;
+
+$USAGE = "$0 @ARGV";
+die("Usage: $0 " .
+	"[use -b)ins <1st,last>] " .
+	"[write -R)aw data] [write -B)T data] " .
+    "[write -E)nsembles <pref>] [-F)ilter ensembles <script>] " .
+    "[-C)ompass correction <amp/phase/bias>] " .
+	"[-w) <max-diff|0.03>] [-a)mp <min|30>] [-e)rr-vel <max|0.05>] " .
+	"[-c)orrelation <min|220>] " .
+	"[-W)ater <depth> [allowed -d)epth-diff <maxdiff|20>]] " .
+	"[-f)orce (no setup tests)] " .
+	"[-M)agnetic <declination>] " .
+	"<RDI file>\n")
+	unless (&getopts("BC:E:F:M:RW:a:b:c:d:e:fw:") && @ARGV == 1);
+
+print(STDERR "WARNING: magnetic declination not set!\n")
+	unless defined($opt_M);
+
+$opt_c = 220  unless defined($opt_c);				# defaults
+$opt_a = 30   unless defined($opt_a);
+$opt_e = 0.05 unless defined($opt_e);
+$opt_w = 0.03 unless defined($opt_w);
+$opt_d = 20   unless defined($opt_d);
+
+if (defined($opt_C)) {								# compass correction
+	($CC_amp,$CC_phase,$CC_bias) = split('/',$opt_C);
+	die("$0: can't decode -C$opt_C\n")
+		unless defined($CC_bias);
+}
+
+unless ($opt_f) {									# check BT setup
+	readHeader($ARGV[0],\%dta);		
+	die("$0: minimum instrument BT correlation ($dta{BT_MIN_CORRELATION}) " .
+		"too large for selected criterion (-c $opt_c) --- use -f to override\n")
+			if ($dta{BT_MIN_CORRELATION} > $opt_c);
+	die("$0: minimum instrument BT amplitude ($dta{BT_MIN_EVAL_AMPLITUDE}) " .
+		"too large for selected criterion (-a $opt_a) --- use -f to override\n")
+			if ($dta{BT_MIN_EVAL_AMPLITUDE} > $opt_a);
+	die("$0: maximum instrument BT error velocity ($dta{BT_MAX_ERROR_VELOCITY}) " .
+		"too small for selected criterion (-e $opt_e) --- use -f to override\n")
+			if ($dta{BT_MAX_ERROR_VELOCITY} < $opt_e);
+}
+
+require $opt_F if defined($opt_F);					# load filter
+
+print(STDERR "reading $ARGV[0]...");
+readData($ARGV[0],\%dta);							# read data
+print(STDERR "done\n");
+
+$dta{HEADING_BIAS} = -$opt_M;						# magnetic declination
+ensure_BT_RANGE(\%dta);								# make sure they're there
+
+$firstBin = $lastBin = '*';							# bins to use
+($firstBin,$lastBin) = split(',',$opt_b)
+	if defined($opt_b);
+$firstBin = 1 			if ($firstBin eq '*');
+$lastBin = $dta{N_BINS} if ($lastBin  eq '*');
+$firstBin--; $lastBin--;
+die("$ARGV[0]: not enough bins for ref layer\n")
+	unless ($lastBin-$firstBin >= 6);
+	
+if ($dta{BEAM_COORDINATES}) {						# coords used
+	$beamCoords = 1;
+} elsif (!$dta{EARTH_COORDINATES}) {
+	die("$ARGV[0]: only beam and earth coordinates implemented so far\n");
+}
+
+#======================================================================
+# Calculate reference-layer w
+#======================================================================
+
+sub w($)
+{
+	my($ens) = @_;
+	my($i,$n,@v,$w);
+
+	for (my($b)=$firstBin; $b<=$lastBin; $b++) {
+		if ($beamCoords) {
+			next if ($dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$b][0] < 100 ||
+					 $dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$b][1] < 100 ||
+					 $dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$b][2] < 100 ||
+					 $dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$b][3] < 100);
+			@v = velInstrumentToEarth(\%dta,$ens,
+					velBeamToInstrument(\%dta,
+	                    @{$dta{ENSEMBLE}[$ens]->{VELOCITY}[$b]}));
+	    } else {
+			next if ($dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$b][0] > 0 ||
+					 $dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$b][1] > 0 ||
+					 $dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$b][2] > 0 ||
+					 $dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$b][3] < 100);
+			@v = velApplyHdgBias(\%dta,$ens,
+					@{$dta{ENSEMBLE}[$ens]->{VELOCITY}[$b]});
+	    }
+		next unless (defined($v[3]) && abs($v[3]) <= $opt_e);
+		$w += $v[2]; $n++;
+	}
+#	printf(STDERR "$ens $n %.3f\n",$n>=1?$w/$n:-999);
+	return $n>=2 ? $w/$n : undef;
+}
+
+#======================================================================
+# Dump raw BT data from one ensemble
+#======================================================================
+
+sub dumpRaw($)
+{
+	my($e) = @_;
+
+	unless ($headerDone) {
+		print("#ANTS# [] $USAGE\n");
+		print("#ANTS#PARAMS# RDI_file{$ARGV[0]}\n");
+		print("#ANTS#FIELDS# {ens} {range1} {range2} {range3} {range4} " .
+				"{beamvel1} {beamvel2} {beamvel3} {beamvel4} {cor1} " .
+				"{cor2} {cor3} {cor4} {amp1} {amp2} {amp3} {amp4}\n");
+		$headerDone = 1;
+	}
+
+	printf("%d %f %f %f %f %f %f %f %f %d %d %d %d %d %d %d %d\n",
+			$dta{ENSEMBLE}[$e]->{NUMBER},
+			$dta{ENSEMBLE}[$e]->{BT_RANGE}[0],
+			$dta{ENSEMBLE}[$e]->{BT_RANGE}[1],
+			$dta{ENSEMBLE}[$e]->{BT_RANGE}[2],
+			$dta{ENSEMBLE}[$e]->{BT_RANGE}[3],
+			$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[0],
+			$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[1],
+			$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[2],
+			$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[3],
+			$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[0],
+			$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[1],
+			$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[2],
+			$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[3],
+			$dta{ENSEMBLE}[$e]->{BT_EVAL_AMPLITUDE}[0],
+			$dta{ENSEMBLE}[$e]->{BT_EVAL_AMPLITUDE}[1],
+			$dta{ENSEMBLE}[$e]->{BT_EVAL_AMPLITUDE}[2],
+			$dta{ENSEMBLE}[$e]->{BT_EVAL_AMPLITUDE}[3]
+	);
+}
+
+#======================================================================
+# Dump processed BT data from one ensemble 
+#======================================================================
+
+sub dumpBT($)
+{
+	my($e) = @_;
+
+	unless ($headerDone) {
+		print("#ANTS# [] $USAGE\n");
+		printf("#ANTS#PARAMS# RDI_file{$ARGV[0]} bottom_time{%.1f}\n",
+				$dta{ENSEMBLE}[$maxz_e]->{ELAPSED});
+		print("#ANTS#FIELDS# {ens} {unix_time} {time} {depth} {BT_range} " .
+				"{WT_range} {u} {v} {w} {e} {w_ref} {corr} {amp}\n");
+		$headerDone = 1;
+	}
+
+	printf("%d %.2f %.2f %.1f %.1f %.1f %.4f %.4f %.4f %.4f %.4f %.1f %.1f\n", 
+		$dta{ENSEMBLE}[$e]->{NUMBER},
+		$dta{ENSEMBLE}[$e]->{UNIX_TIME},
+		$dta{ENSEMBLE}[$e]->{ELAPSED},
+		$dta{ENSEMBLE}[$e]->{DEPTH},
+		$dta{ENSEMBLE}[$e]->{BT_MEAN_RANGE},
+		$dta{ENSEMBLE}[$e]->{WT_MEAN_RANGE},
+		@{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}},
+		$dta{ENSEMBLE}[$e]->{W_REF},
+		$dta{ENSEMBLE}[$e]->{BT_MEAN_CORRELATION},
+		$dta{ENSEMBLE}[$e]->{BT_MEAN_EVAL_AMPLITUDE}
+	);
+}
+
+#======================================================================
+# Dump a single ensemble with valid BT data to separate file
+#======================================================================
+
+sub dumpEns(@)										# write profile
+{
+	my($e) = @_;
+	my($b,$i);
+
+	open(P,">$opt_E.$e") || die("$opt_E.$e: $!\n");
+	print(P "#ANTS#PARAMS# " .
+			"depth{$dta{ENSEMBLE}[$e]->{DEPTH}} " .
+			"range{$dta{ENSEMBLE}[$e]->{BT_MEAN_RANGE}} " .
+			"wt_range{$dta{ENSEMBLE}[$e]->{WT_MEAN_RANGE}} " .
+			"w_ref{$dta{ENSEMBLE}[$e]->{W_REF}} " .
+			"BT_u{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[0]} " .
+			"BT_v{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[1]} " .
+			"BT_w{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[2]} " .
+			"BT_e{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[3]} " .
+			"BT_cor1{$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[0]} " .
+			"BT_cor2{$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[1]} " .
+			"BT_cor3{$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[2]} " .
+			"BT_cor4{$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[3]} " .
+			"BT_amp1{$dta{ENSEMBLE}[$e]->{BT_AMPLITUDE}[0]} " .
+			"BT_amp2{$dta{ENSEMBLE}[$e]->{BT_AMPLITUDE}[1]} " .
+			"BT_amp3{$dta{ENSEMBLE}[$e]->{BT_AMPLITUDE}[2]} " .
+			"BT_amp4{$dta{ENSEMBLE}[$e]->{BT_AMPLITUDE}[3]} " .
+			"BTFWT_u{$dta{ENSEMBLE}[$e]->{BTFWT_VELOCITY}[0]} " .
+			"BTFWT_v{$dta{ENSEMBLE}[$e]->{BTFWT_VELOCITY}[1]} " .
+			"BTFWT_w{$dta{ENSEMBLE}[$e]->{BTFWT_VELOCITY}[2]} " .
+			"\n"
+	);
+	print(P "#ANTS#FIELDS# " .
+			"{depth} {hab} {u} {v} {w} {e} {cor1} {cor2} {cor3} {cor4} " .
+			"{amp1} {amp2} {amp3} {amp4} {pcg1} {pcg2} {pcg3} {pcg4}\n"
+	);
+		
+	my($slc) = (1-cos(rad($dta{BEAM_ANGLE})))*$dta{ENSEMBLE}[$e]->{BT_MEAN_RANGE}
+				+ 1.5*$dta{BIN_LENGTH};		# side-lobe contamination
+	for ($b=$firstBin; $b<=$lastBin; $b++) {
+		next unless (defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0]) &&
+					 defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1]) &&
+					 defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2]) &&
+					 defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3]));
+		my($dz) = $dta{DISTANCE_TO_BIN1_CENTER} + $b*$dta{BIN_LENGTH};
+		last if ($dta{ENSEMBLE}[$e]->{BT_MEAN_RANGE}-$dz <= $slc);
+		my(@v) = $beamCoords
+			   ? velInstrumentToEarth(\%dta,$e,
+					velBeamToInstrument(\%dta,
+						@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]}))
+			   : velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
+		next unless defined($v[0]);
+		next if (abs($v[3]) > $opt_e ||
+				 abs($v[2]-$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[2]) > 0.1);
+		$v[0] -= $dta{ENSEMBLE}[$e]->{BT_VELOCITY}[0];
+		$v[1] -= $dta{ENSEMBLE}[$e]->{BT_VELOCITY}[1];
+		my(@out) = (
+			$dta{ENSEMBLE}[$e]->{DEPTH}+$dz,
+			$dta{ENSEMBLE}[$e]->{BT_MEAN_RANGE}-$dz,
+			$v[0],$v[1],$v[2],$v[3],
+			@{$dta{ENSEMBLE}[$e]->{CORRELATION}[$b]},
+			@{$dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b]},
+			@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]}
+		);
+		for ($i=0; $i<17; $i++) { $out[$i] = nan unless defined($out[$i]); }
+		print(P "@out\n");
+	}
+	close(P);
+}
+
+#======================================================================
+# Add Ensemble With Valid BT Data to Profile
+#======================================================================
+
+sub binEns($)
+{
+	my($e) = @_;
+	my($slc) = (1-cos(rad($dta{BEAM_ANGLE})))*$dta{ENSEMBLE}[$e]->{BT_MEAN_RANGE}
+					+ 1.5*$dta{BIN_LENGTH};     # side-lobe contamination
+	for (my($b)=$firstBin; $b<=$lastBin; $b++) {
+		next unless (defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0]) &&
+					 defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1]) &&
+					 defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2]) &&
+					 defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3]));
+		my($dz) = $dta{DISTANCE_TO_BIN1_CENTER} + $b*$dta{BIN_LENGTH};
+		last if ($dta{ENSEMBLE}[$e]->{BT_MEAN_RANGE}-$dz <= $slc);
+		my(@v) = $beamCoords
+			   ? velInstrumentToEarth(\%dta,$e,
+					velBeamToInstrument(\%dta,
+						@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]}))
+			   : velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
+		next unless defined($v[0]);
+		next if (abs($v[3]) > $opt_e ||
+				 abs($v[2]-$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[2]) > 0.1);
+
+		$v[0] -= $dta{ENSEMBLE}[$e]->{BT_VELOCITY}[0];
+		$v[1] -= $dta{ENSEMBLE}[$e]->{BT_VELOCITY}[1];
+		
+		my($bin) = int(($dta{ENSEMBLE}[$e]->{DEPTH}+$dz) / $dta{BIN_LENGTH});
+		$minBin = $bin unless ($bin >= $minBin);
+		$maxBin = $bin unless ($bin <= $maxBin);
+		if (defined($BTn[$bin])) {
+			my($f1) = $BTn[$bin] / ($BTn[$bin]+1);
+			my($f2) = ($BTn[$bin]-1) / $BTn[$bin];
+			$BTsigu[$bin] =
+				$f2*$BTsigu[$bin] + $f1*($v[0]-$BTu[$bin])**2/$BTn[$bin];
+			$BTsigv[$bin] =
+				$f2*$BTsigv[$bin] + $f1*($v[1]-$BTv[$bin])**2/$BTn[$bin];
+			$BTn[$bin]++;
+			$BTu[$bin] = $f1*$BTu[$bin] + $v[0]/$BTn[$bin];
+			$BTv[$bin] = $f1*$BTv[$bin] + $v[1]/$BTn[$bin];
+		} else {
+			$BTu[$bin] = $v[0];
+			$BTv[$bin] = $v[1];
+			$BTn[$bin] = 1;
+		}
+	}
+}
+
+#======================================================================
+# Output Bottom-Referenced Profile
+#======================================================================
+
+sub dumpProf($$$)
+{
+	my($db,$wd,$md) = @_;
+	my(@sum,@mean);
+
+	for (my($i)=0; $i<=$#listCTDu; $i++) {			# CTD vel mean
+		$sum[0] += $listCTDu[$i];
+		$sum[1] += $listCTDv[$i];
+	}
+	@mean = ($sum[0]/@listCTDu,$sum[1]/@listCTDv);
+	@sum = (0,0);									# stddev
+	for (my($i)=0; $i<=$#listCTDu; $i++) {
+		$sum[0] += ($listCTDu[$i]-$mean[0])**2;
+		$sum[1] += ($listCTDv[$i]-$mean[1])**2;
+	}
+	@sigma = ($sum[0]/sqrt($#listCTDu),$sum[1]/sqrt($#listCTDv));
+	@sum = (0,0);									# mean speed fluct
+	for (my($i)=1; $i<=$#listCTDu; $i++) {			# also: list for median
+		push(@cfluc,sqrt(($listCTDu[$i]-$listCTDu[$i-1])**2 +
+					 	 ($listCTDv[$i]-$listCTDv[$i-1])**2));
+		$sum[0] += $cfluc[$#cfluc];
+	}
+	
+	printf("#ANTS#PARAMS# LADCP_depth_bias{%.1f} water_depth{%.1f} magnetic_declination{%.1f}\n",
+			$db,$wd,$md);
+	printf("#ANTS#PARAMS# CTD_u{%.3f} CTD_v{%.3f} CTD_sig_u{%.3f} CTD_sig_v{%.3f} CTD_mean_cfluc{%.4f} CTD_median_cfluc{%.4f}\n",
+			@mean,@sigma,$sum[0]/$#listCTDu,(sort{$a<=>$b}@cfluc)[@cfluc/2]);
+	printf("#ANTS#PARAMS# good_ens{$good}\n");
+	print("#ANTS#FIELDS# {depth} {u} {v} {sig_u} {sig_v} {n_data}\n");
+	
+	for (my($bin)=$minBin; $bin<=$maxBin; $bin++) {
+		next unless defined($BTu[$bin]);
+		printf("%d %.3f %.3f %.3f %.3f %d\n",
+			($bin+0.5)*$dta{BIN_LENGTH},
+			$BTu[$bin],$BTv[$bin],
+			sqrt($BTsigu[$bin]),sqrt($BTsigv[$bin]),
+			$BTn[$bin]);
+	}
+}
+
+#======================================================================
+# STEP 1: Calculate Depth (integrate w)
+#======================================================================
+
+for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {
+	checkEnsemble(\%dta,$e);
+	$dta{ENSEMBLE}[$e]->{W_REF} = w($e);
+	next unless (defined($start_e) ||
+				 defined($dta{ENSEMBLE}[$e]->{W_REF}));
+	$start_e = $e unless defined($start_e);
+	$end_e = $e if defined($dta{ENSEMBLE}[$e]->{W_REF});
+	$lasttime = $curtime;
+	$curtime = $dta{ENSEMBLE}[$e]->{UNIX_TIME};
+	$dta{ENSEMBLE}[$e]->{ELAPSED} =
+		$curtime - $dta{ENSEMBLE}[$start_e]->{UNIX_TIME};
+	filterEnsemble(\%dta,$e)
+		if (defined($opt_F) &&
+			$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[0][3] > 0);
+	$z += $dta{ENSEMBLE}[$e]->{W_REF} *
+			(defined($lasttime) ? ($curtime - $lasttime) : 0);
+	$maxz_e=$e,$maxz = $z unless ($z < $maxz);
+	$dta{ENSEMBLE}[$e]->{DEPTH} = $z;
+}
+
+unless ($opt_R) {
+	($w_depth,$swd) = find_seabed(\%dta,$maxz_e,$beamCoords);
+	die("$0: can't determine water depth (sigma = $swd)\n")
+		unless (defined($w_depth) && $swd < 10);
+	
+	if (defined($opt_W)) {						# adjust depth
+		$zbias = $w_depth - $opt_W; $w_depth = $opt_W;
+		for ($e=$start_e; $e<=$end_e; $e++) {
+			$dta{ENSEMBLE}[$e]->{DEPTH} -= $zbias;
+		}
+	}
+}
+
+# print(STDERR "maxz = $maxz, w_depth = $w_depth\n");
+
+#======================================================================
+# STEP 2: Process BT Data
+#======================================================================
+
+for ($e=$start_e; $e<=$end_e; $e++) {
+	next unless ($dta{ENSEMBLE}[$e]->{BT_RANGE}[0] &&	# BT data available
+				 $dta{ENSEMBLE}[$e]->{BT_RANGE}[1] &&
+				 $dta{ENSEMBLE}[$e]->{BT_RANGE}[2] &&
+				 $dta{ENSEMBLE}[$e]->{BT_RANGE}[3]);
+#	die("$0: don't know what to do with non-zero %-good and " .
+#		"signal-strength values at ensemble " .
+#		"#$dta{ENSEMBLE}[$e]->{NUMBER}\n")
+#		if ($dta{ENSEMBLE}[$e]->{BT_PERCENT_GOOD}[0] ||
+#			$dta{ENSEMBLE}[$e]->{BT_PERCENT_GOOD}[1] ||
+#			$dta{ENSEMBLE}[$e]->{BT_PERCENT_GOOD}[2] ||
+#			$dta{ENSEMBLE}[$e]->{BT_PERCENT_GOOD}[3] ||
+#			$dta{ENSEMBLE}[$e]->{BT_SIGNAL_STRENGHT}[0] ||
+#			$dta{ENSEMBLE}[$e]->{BT_SIGNAL_STRENGHT}[1] ||
+#			$dta{ENSEMBLE}[$e]->{BT_SIGNAL_STRENGHT}[2] ||
+#			$dta{ENSEMBLE}[$e]->{BT_SIGNAL_STRENGHT}[3]);
+
+	if ($opt_R) {										# dump raw data
+		dumpRaw($e);
+		next;
+	}
+
+	$dta{ENSEMBLE}[$e]->{HEADING} -=					# compass correction
+		$CC_amp * sin(rad($dta{ENSEMBLE}[$e]->{HEADING} - $CC_phase))
+			+ $CC_bias
+				if defined($opt_C);
+
+	@{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}} = $beamCoords	# xform BT vel
+	    ? velInstrumentToEarth(\%dta,$e,
+			velBeamToInstrument(\%dta,@{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}}))
+		: velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}});
+
+ 	$dta{ENSEMBLE}[$e]->{BT_MEAN_RANGE} =				# mean vals
+		$dta{ENSEMBLE}[$e]->{BT_RANGE}[0]/4 +
+		$dta{ENSEMBLE}[$e]->{BT_RANGE}[1]/4 +
+		$dta{ENSEMBLE}[$e]->{BT_RANGE}[2]/4 +
+		$dta{ENSEMBLE}[$e]->{BT_RANGE}[3]/4;
+	$dta{ENSEMBLE}[$e]->{BT_MEAN_CORRELATION} =
+		$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[0]/4 +
+		$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[1]/4 +
+		$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[2]/4 +
+		$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[3]/4;
+	$dta{ENSEMBLE}[$e]->{BT_MEAN_EVAL_AMPLITUDE} =
+		$dta{ENSEMBLE}[$e]->{BT_EVAL_AMPLITUDE}[0]/4 +
+		$dta{ENSEMBLE}[$e]->{BT_EVAL_AMPLITUDE}[1]/4 +
+		$dta{ENSEMBLE}[$e]->{BT_EVAL_AMPLITUDE}[2]/4 +
+		$dta{ENSEMBLE}[$e]->{BT_EVAL_AMPLITUDE}[3]/4;
+
+#	next												# could add this
+#		if ($dta{ENSEMBLE}[$e]->{BT_MEAN_RANGE} < 50);
+	                                                            
+	$bad_amp++,next
+		if ($dta{ENSEMBLE}[$e]->{BT_EVAL_AMPLITUDE}[0] < $opt_a ||
+			$dta{ENSEMBLE}[$e]->{BT_EVAL_AMPLITUDE}[1] < $opt_a ||
+			$dta{ENSEMBLE}[$e]->{BT_EVAL_AMPLITUDE}[2] < $opt_a ||
+			$dta{ENSEMBLE}[$e]->{BT_EVAL_AMPLITUDE}[3] < $opt_a);
+	$bad_corr++,next
+		if ($dta{ENSEMBLE}[$e]->{BT_CORRELATION}[0] < $opt_c ||
+			$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[1] < $opt_c ||
+			$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[2] < $opt_c ||
+			$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[3] < $opt_c);
+
+	$bad_w_ref++,next									# quality checks
+		if (abs($dta{ENSEMBLE}[$e]->{BT_VELOCITY}[2] -
+				$dta{ENSEMBLE}[$e]->{W_REF}) > $opt_w);
+	$bad_e_vel++,next
+		if (abs($dta{ENSEMBLE}[$e]->{BT_VELOCITY}[3]) > $opt_e);
+	$bad_depth++,next
+		if (abs($dta{ENSEMBLE}[$e]->{BT_MEAN_RANGE} +
+				$dta{ENSEMBLE}[$e]->{DEPTH} - $w_depth) > $opt_d);
+
+	$good++;
+	push(@listCTDu,-$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[0]);
+	push(@listCTDv,-$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[1]);
+
+	if ($opt_E || $opt_B) {
+		my(@maxamp) = (0,0,0,0);						# water-track range
+		my(@btm_e) = (0,0,0,0);
+		for ($b=$firstBin; $b<=$lastBin; $b++) {
+			for ($i=0; $i<4; $i++) {
+				if ($dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b][$i] > $maxamp[$i]) {
+					$dta{ENSEMBLE}[$e]->{WT_RANGE}[$i] = $b;
+					$maxamp[$i] = $dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b][$i];
+					$btm_e[$i] = $e;
+				}
+			}
+		}
+		for ($i=0; $i<4; $i++) {
+			$dta{ENSEMBLE}[$e]->{WT_RANGE}[$i] *= $dta{BIN_LENGTH};
+			$dta{ENSEMBLE}[$e]->{WT_RANGE}[$i] += $dta{DISTANCE_TO_BIN1_CENTER};
+		}
+		$dta{ENSEMBLE}[$e]->{WT_MEAN_RANGE} =
+			$dta{ENSEMBLE}[$e]->{WT_RANGE}[0]/4 +
+			$dta{ENSEMBLE}[$e]->{WT_RANGE}[1]/4 +
+			$dta{ENSEMBLE}[$e]->{WT_RANGE}[2]/4 +
+			$dta{ENSEMBLE}[$e]->{WT_RANGE}[3]/4;
+	
+		my($btm_e) = int($btm_e[0]/4+$btm_e[1]/4+$btm_e[2]/4+$btm_e[3]/4+0.5);
+		@{$dta{ENSEMBLE}[$btm_e]->{BTFWT_VELOCITY}} = $beamCoords # BT from WT
+			? velInstrumentToEarth(\%dta,$e,
+				velBeamToInstrument(\%dta,@{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}}))
+	        : velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}});
+	}
+
+	dumpEns($e) if defined($opt_E);						# output BT profiles
+	if ($opt_B) { dumpBT($e); }
+	else { binEns($e); }
+}
+
+filterEnsembleStats() if defined($opt_F);
+exit(0) if ($opt_R);
+
+printf(STDERR "%5d BT records removed due to bad w\n",$bad_w_ref)
+	if defined($bad_w_ref);
+printf(STDERR "%5d BT records removed due to bad err vel\n",$bad_e_vel)
+	if defined($bad_e_vel);
+printf(STDERR "%5d BT records removed due to bad echo amplitude\n",$bad_amp)
+	if defined($bad_amp);
+printf(STDERR "%5d BT records removed due to bad correlation\n",$bad_corr)
+	if defined($bad_corr);
+printf(STDERR "%5d BT records removed due to bad depth\n",$bad_depth)
+	if defined($bad_depth);
+
+die("$0: no good BT data\n") unless ($good);
+
+printf(STDERR "\n%5d BT records remaining\n",$good);
+
+dumpProf($zbias,$w_depth,-$dta{HEADING_BIAS})
+	unless ($opt_B);
+
+exit(0);	
+

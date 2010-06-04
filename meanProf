@@ -1,0 +1,319 @@
+#!/usr/bin/perl
+#======================================================================
+#                    M E A N P R O F 
+#                    doc: Fri Feb 22 08:40:18 2008
+#                    dlm: Fri Feb 22 18:02:40 2008
+#                    (c) 2008 A.M. Thurnherr
+#                    uE-Info: 232 0 NIL 0 0 72 74 2 4 NIL ofnI
+#======================================================================
+
+# extract time-averaged mean profile from ADCP data
+
+# HISTORY:
+#	Feb 22, 2008: - created from [listBins]
+
+# Soundspeed Correction:
+#	- applied as described in the RDI coord-trans manual
+#	- sound-speed variation over range is ignored (valid for small gradients)
+#	=> - same simple correction for all velocity components
+#	   - simple correction for cell depths
+
+require "getopts.pl";
+$0 =~ m{(.*/)[^/]+};
+require "$1RDI_BB_Read.pl";
+require "$1RDI_Coords.pl";
+require "$1RDI_Utils.pl";
+
+die("Usage: $0 [-r)ange <first_ens,last_ens>] " .
+			  "[-Q)uiet (stats only)] " .
+			  "[-S)oundspeed correction <salin|*,temp|*,depth|*> " .
+		 	  "[require -4)-beam solutions] [-d)iscard <beam#>] " .
+		 	  "[-%)good <min>] " .
+		 	  "[output -b)eam coordinates] " .
+			  "[-M)agnetic <declination>] " .
+			  "[-D)epth <depth>] " .
+			  "<RDI file>\n")
+	unless (&Getopts("4bd:D:M:p:r:QS:") && @ARGV == 1);
+
+die("$0: -4 and -d are mutually exclusive\n")
+	if ($opt_4 && defined($opt_d));
+
+die("$0: -p and -b are mutually exclusive\n")
+	if ($opt_b && defined($opt_p));
+
+$opt_p = 0 unless defined($opt_p);
+
+$RDI_Coords::minValidVels = 4 if ($opt_4);			# no 3-beam solutions
+
+print(STDERR "WARNING: magnetic declination not set!\n")
+	unless defined($opt_M) || defined($opt_b);
+
+$ifn = $ARGV[0];
+
+($first_ens,$last_ens) = split(',',$opt_r)
+	if defined($opt_r);
+
+($SS_salin,$SS_temp,$SS_depth) = split(',',$opt_S)
+	if defined($opt_S);
+die("$0: Cannot do variable soundspeed correction (implementation restriction)\n")
+	if ($SS_salin eq '*' || $SS_temp eq '*' || $SS_depth eq '*');
+
+#----------------------------------------------------------------------
+# Read & Check Data, Transform Velocities
+#----------------------------------------------------------------------
+
+$P{RDI_file} = $ifn;
+$P{mag_decl} = $opt_M if defined($opt_M);
+
+print(STDERR "reading $ifn: ");
+readData($ifn,\%dta);
+printf(STDERR "%d complete ensembles.\n",scalar(@{$dta{ENSEMBLE}}));
+$dta{HEADING_BIAS} = -$opt_M;						# magnetic declination
+
+if ($dta{BEAM_COORDINATES}) {						# coords
+	$beamCoords = 1;
+} else {
+	die("$0: -b requires input in beam coordinates\n")
+		if ($opt_b);
+	die("$ifn: only beam and earth coordinates implemented so far\n")
+		if (!$dta{EARTH_COORDINATES});
+}
+
+for (my($b)=0; $b<$dta{N_BINS}; $b++) {				# calc dz
+	$dz[$b] = $dta{DISTANCE_TO_BIN1_CENTER} + $b*$dta{BIN_LENGTH};
+}
+
+$lastGoodBin = 0;
+for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {			# check/transform velocities
+	next if (defined($first_ens) &&
+			 $dta{ENSEMBLE}[$e]->{NUMBER} < $first_ens);
+	$P{first_ens} = $dta{ENSEMBLE}[$e]->{NUMBER},$fe = $e
+		unless defined($P{first_ens});
+	last if (defined($last_ens) &&
+			 $dta{ENSEMBLE}[$e]->{NUMBER} > $last_ens);
+	$P{last_ens} = $dta{ENSEMBLE}[$e]->{NUMBER};
+	$le = $e;
+
+	die("3-beams used in ensemble #$dta{ENSEMBLE}[$e]->{NUMBER}\n")
+		if ($dta{ENSEMBLE}[$e]->{N_BEAMS_USED} < 4);
+	die("BIT error in ensemble $dta{ENSEMBLE}[$e]->{NUMBER}\n")
+		if defined($dta{ENSEMBLE}[$e]->{BUILT_IN_TEST_ERROR});
+	die("Low gain in ensemble #$dta{ENSEMBLE}[$e]->{NUMBER}\n")
+        if ($dta{ENSEMBLE}[$e]->{LOW_GAIN});
+
+	for (my($b)=0; $b<$dta{N_BINS}; $b++) {
+		if (defined($opt_d)) {
+			undef($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][$opt_d-1]);
+			undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][$opt_d-1]);
+		}
+		for (my($i)=0; $i<4; $i++) {
+			if ($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][$i] < $opt_p) {
+				undef($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][$i]);
+				undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][$i]);
+			}
+        }
+		@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]} = $beamCoords
+			? velInstrumentToEarth(\%dta,$e,
+				  velBeamToInstrument(\%dta,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]})
+			  )
+			: velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]})
+				unless ($opt_b);
+
+		$sum_corr1[$b] += $dta{ENSEMBLE}[$e]->{CORRELATION}[$b][0];
+		$sum_corr2[$b] += $dta{ENSEMBLE}[$e]->{CORRELATION}[$b][1];
+		$sum_corr3[$b] += $dta{ENSEMBLE}[$e]->{CORRELATION}[$b][2];
+		$sum_corr4[$b] += $dta{ENSEMBLE}[$e]->{CORRELATION}[$b][3];
+
+		$sum_amp1[$b] += $dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b][0];
+		$sum_amp2[$b] += $dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b][1];
+		$sum_amp3[$b] += $dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b][2];
+		$sum_amp4[$b] += $dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b][3];
+
+		unless (defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0])) {
+			undef(@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]});
+			next;
+		}
+
+		$dta{ENSEMBLE}[$e]->{THREE_BEAM}[$b] = $RDI_Coords::threeBeamFlag;
+		$three_beam[$b] += $RDI_Coords::threeBeamFlag;
+		$dta{ENSEMBLE}[$e]->{GOOD_VEL}[$b] = 1;
+		$good_vels[$b]++; 
+		$lastGoodBin = $b if ($b > $lastGoodBin);
+		$firstGoodEns = $e unless defined($firstGoodEns);
+		$lastGoodEns = $e;
+
+		$sum_u[$b] += $dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0];
+		$sum_v[$b] += $dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1];
+		$sum_w[$b] += $dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2];
+		$sum_e[$b] += $dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3]
+			unless ($RDI_Coords::threeBeamFlag);
+
+		$sum_pcg1[$b] += $dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][0];
+		$n_pcg1[$b]++ if defined($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][0]);
+		$sum_pcg2[$b] += $dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][1];
+		$n_pcg2[$b]++ if defined($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][1]);
+		$sum_pcg3[$b] += $dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][2];
+		$n_pcg3[$b]++ if defined($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][2]);
+		$sum_pcg4[$b] += $dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][3];
+		$n_pcg4[$b]++ if defined($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][3]);
+    }
+}
+
+unless (defined($opt_r)) {
+	$fe = $firstGoodEns;
+	$le = $lastGoodEns;
+}
+$nEns = $le - $fe + 1;
+die("$0: insufficient data\n") if ($nEns < 2);
+$P{N_ensembles} = $nEns;
+
+$firstBin = 0;
+$lastBin = $lastGoodBin;
+
+print( STDERR "Start      : $dta{ENSEMBLE}[$fe]->{DATE} $dta{ENSEMBLE}[$fe]->{TIME}\n");
+print( STDERR "End        : $dta{ENSEMBLE}[$le]->{DATE} $dta{ENSEMBLE}[$le]->{TIME}\n");
+printf(STDERR "Bins       : %d-%d\n",$firstBin+1,$lastBin+1);
+printf(STDERR "3-Beam     : %d %d %d %d\n",$RDI_Coords::threeBeam_1,
+										   $RDI_Coords::threeBeam_2,
+										   $RDI_Coords::threeBeam_3,
+										   $RDI_Coords::threeBeam_4)
+	unless ($opt_b);										   
+
+#----------------------------------------------------------------------
+# Calculate Stddevs
+#----------------------------------------------------------------------
+
+for ($b=0; $b<=$lastGoodBin; $b++) {
+	$mean_corr1[$b] = $sum_corr1[$b] / $nEns; $mean_corr2[$b] = $sum_corr2[$b] / $nEns;
+	$mean_corr3[$b] = $sum_corr3[$b] / $nEns; $mean_corr4[$b] = $sum_corr4[$b] / $nEns;
+	$mean_amp1[$b] = $sum_amp1[$b] / $nEns; $mean_amp2[$b] = $sum_amp2[$b] / $nEns;
+	$mean_amp3[$b] = $sum_amp3[$b] / $nEns; $mean_amp4[$b] = $sum_amp4[$b] / $nEns;
+	$mean_pcg1[$b] = $sum_pcg1[$b] / $n_pcg1[$b]; $mean_pcg2[$b] = $sum_pcg2[$b] / $n_pcg2[$b];
+	$mean_pcg3[$b] = $sum_pcg3[$b] / $n_pcg3[$b]; $mean_pcg4[$b] = $sum_pcg4[$b] / $n_pcg4[$b];
+	$mean_u[$b] = $sum_u[$b] / $good_vels[$b]; $mean_v[$b] = $sum_v[$b] / $good_vels[$b];
+	$mean_w[$b] = $sum_w[$b] / $good_vels[$b];
+	$mean_e[$b] = $sum_e[$b] / ($good_vels[$b] - $three_beam[$b]);
+}
+
+for ($e=$fe; $e<=$le; $e++) {
+	for ($b=0; $b<=$lastGoodBin; $b++) {
+		$sumsq_corr1[$b] += ($mean_corr1[$b] - $dta{ENSEMBLE}[$e]->{CORRELATION}[$b][0])**2;
+		$sumsq_corr2[$b] += ($mean_corr2[$b] - $dta{ENSEMBLE}[$e]->{CORRELATION}[$b][1])**2;
+		$sumsq_corr3[$b] += ($mean_corr3[$b] - $dta{ENSEMBLE}[$e]->{CORRELATION}[$b][2])**2;
+		$sumsq_corr4[$b] += ($mean_corr4[$b] - $dta{ENSEMBLE}[$e]->{CORRELATION}[$b][3])**2;
+
+		$sumsq_amp1[$b] += ($mean_amp1[$b] - $dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b][0])**2;
+		$sumsq_amp2[$b] += ($mean_amp2[$b] - $dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b][1])**2;
+		$sumsq_amp3[$b] += ($mean_amp3[$b] - $dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b][2])**2;
+		$sumsq_amp4[$b] += ($mean_amp4[$b] - $dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b][3])**2;
+
+		$sumsq_pcg1[$b] += ($mean_pcg1[$b] - $dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][0])**2
+			if defined($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][0]);
+		$sumsq_pcg2[$b] += ($mean_pcg2[$b] - $dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][1])**2
+			if defined($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][1]);
+		$sumsq_pcg3[$b] += ($mean_pcg3[$b] - $dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][2])**2
+			if defined($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][2]);
+		$sumsq_pcg4[$b] += ($mean_pcg4[$b] - $dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][3])**2
+			if defined($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][3]);
+
+		next unless ($dta{ENSEMBLE}[$e]->{GOOD_VEL}[$b]);
+
+		$sumsq_u[$b] += ($mean_u[$b] - $dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0])**2;
+		$sumsq_v[$b] += ($mean_v[$b] - $dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1])**2;
+		$sumsq_w[$b] += ($mean_w[$b] - $dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2])**2;
+
+		next if ($dta{ENSEMBLE}[$e]->{THREE_BEAM}[$b]);
+
+		$sumsq_e[$b] += ($mean_e[$b] - $dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3])**2;
+	}
+}
+
+for ($b=0; $b<=$lastGoodBin; $b++) {
+	$var_corr1[$b] = $sumsq_corr1[$b] / ($nEns-1); $var_corr2[$b] = $sumsq_corr2[$b] / ($nEns-1);
+	$var_corr3[$b] = $sumsq_corr3[$b] / ($nEns-1); $var_corr4[$b] = $sumsq_corr4[$b] / ($nEns-1);
+	$var_amp1[$b] = $sumsq_amp1[$b] / ($nEns-1); $var_amp2[$b] = $sumsq_amp2[$b] / ($nEns-1);
+	$var_amp3[$b] = $sumsq_amp3[$b] / ($nEns-1); $var_amp4[$b] = $sumsq_amp4[$b] / ($nEns-1);
+	$var_pcg1[$b] = $sumsq_pcg1[$b] / ($n_pcg1[$b]-1) if ($n_pcg1[$b] > 1);
+	$var_pcg2[$b] = $sumsq_pcg2[$b] / ($n_pcg2[$b]-1) if ($n_pcg2[$b] > 1);
+	$var_pcg3[$b] = $sumsq_pcg3[$b] / ($n_pcg3[$b]-1) if ($n_pcg3[$b] > 1);
+	$var_pcg4[$b] = $sumsq_pcg4[$b] / ($n_pcg4[$b]-1) if ($n_pcg4[$b] > 1);
+	next unless ($good_vels[$b] > 1);
+	$var_u[$b] = $sumsq_u[$b] / ($good_vels[$b]-1);
+	$var_v[$b] = $sumsq_v[$b] / ($good_vels[$b]-1);
+	$var_w[$b] = $sumsq_w[$b] / ($good_vels[$b]-1);
+	next unless ($good_vels[$b] - $three_beam[$b] > 1);
+	$var_e[$b] = $sumsq_e[$b] / ($good_vels[$b] - $three_beam[$b] - 1);
+}
+
+#----------------------------------------------------------------------
+# Calculate Beam Statistics
+#----------------------------------------------------------------------
+
+#----------------------------------------------------------------------
+# Produce Output
+#----------------------------------------------------------------------
+
+unless ($opt_Q) {
+	my($ssCorr) = defined($opt_S)
+				? ssCorr($dta{ENSEMBLE}[$fe],$SS_salin,$SS_temp,$SS_depth)
+				: 1;
+
+	print("#ANTS#PARAMS# ");
+	foreach my $k (keys(%P)) {
+		print("$k\{$P{$k}\} ");
+	}
+	printf("soundspeed_correction{%s}",defined($opt_S) ? $opt_S : 'NONE!');
+	print("\n");
+
+	print("#ANTS#FIELDS# " .
+		  "{bin} {dz} " .
+		  (defined($opt_D) ? "{depth} " : "") .
+		  ($opt_b ? "{v1} {v2} {v3} {v4} " : "{u} {v} {w} {err_vel} ") .
+		  ($opt_b ? "{sig_v1} {sig_v2} {sig_v3} {sig_v4} " : "{sig_u} {sig_v} {sig_w} {sig_err_vel} ") .
+		  "{corr1} {corr2} {corr3} {corr4} " .
+		  "{sig_corr1} {sig_corr2} {sig_corr3} {sig_corr4} " .
+		  "{amp1} {amp2} {amp3} {amp4} " .
+		  "{sig_amp1} {sig_amp2} {sig_amp3} {sig_amp4} " .
+		  "{pcg1} {pcg2} {pcg3} {pcg4} " .
+		  "{sig_pcg1} {sig_pcg2} {sig_pcg3} {sig_pcg4}" .
+		  "\n"
+	);
+
+	for ($b=$firstBin; $b<=$lastBin; $b++) {
+		printf("%d %.1f ",$b+1,$dz[$b]*$ssCorr);
+		printf("%.1f ",$opt_D - $dz[$b]*$ssCorr)
+			if defined($opt_D);
+
+		printf("%s ",defined($mean_u[$b]) ? $mean_u[$b] : nan);
+		printf("%s ",defined($mean_v[$b]) ? $mean_v[$b] : nan);
+		printf("%s ",defined($mean_w[$b]) ? $mean_w[$b] : nan);
+		printf("%s ",defined($mean_e[$b]) ? $mean_e[$b] : nan);
+
+		printf("%s ",defined($var_u[$b]) ? sqrt($var_u[$b]) : nan);
+		printf("%s ",defined($var_v[$b]) ? sqrt($var_v[$b]) : nan);
+		printf("%s ",defined($var_w[$b]) ? sqrt($var_w[$b]) : nan);
+		printf("%s ",defined($var_e[$b]) ? sqrt($var_e[$b]) : nan);
+
+		printf("%g %g %g %g ",$mean_corr1[$b],$mean_corr2[$b],
+						 	  $mean_corr3[$b],$mean_corr4[$b]);
+		printf("%g %g %g %g ",sqrt($var_corr1[$b]),sqrt($var_corr2[$b]),
+						 	  sqrt($var_corr3[$b]),sqrt($var_corr4[$b]));
+			
+		printf("%g %g %g %g ",$mean_amp1[$b],$mean_amp2[$b],
+						 	  $mean_amp3[$b],$mean_amp4[$b]);
+		printf("%g %g %g %g ",sqrt($var_amp1[$b]),sqrt($var_amp2[$b]),
+						 	  sqrt($var_amp3[$b]),sqrt($var_amp4[$b]));
+
+		if ($good_vels[$b] > 0) {
+			printf("%g %g %g %g ",$mean_pcg1[$b],$mean_pcg2[$b],
+								   $mean_pcg3[$b],$mean_pcg4[$b]);
+			printf("%g %g %g %g\n",sqrt($var_pcg1[$b]),sqrt($var_pcg2[$b]),
+								   sqrt($var_pcg3[$b]),sqrt($var_pcg4[$b]));
+		} else {
+			print("nan nan nan nan ");
+			print("nan nan nan nan\n");
+		}
+	}
+}
+
+exit(0);	

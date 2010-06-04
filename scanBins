@@ -1,0 +1,74 @@
+#!/usr/bin/perl
+#======================================================================
+#                    S C A N B I N S 
+#                    doc: Mon Jan 27 17:55:34 2003
+#                    dlm: Wed Sep 19 10:02:51 2007
+#                    (c) 2003 A.M. Thurnherr
+#                    uE-Info: 11 24 NIL 0 0 72 2 2 4 NIL ofnI
+#======================================================================
+
+# Collect Per-Bin Stats
+#	NB: currently broken
+
+# HISTORY:
+#	Jan 27, 2003: - created
+#	Sep 19, 2007: - adapted to new [RDI_BB_Read.pl] (not tested)
+
+$0 =~ m{(.*)/[^/]+}; 
+require "$1/WorkhorseBinRead.pl";
+require "getopts.pl";
+
+die("Usage: $0 " .
+	"" .
+	"<RDI file>\n")
+		unless (&Getopts("") && @ARGV == 1);
+
+print(STDERR "Reading $ARGV[0]...");
+readData($ARGV[0],\%dta);									# read data
+print(STDERR "done\n");
+
+for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {
+	checkEnsemble(\%dta,$e);									# sanity checks
+	$nens++;
+
+	next unless (defined($dta{ENSEMBLE}[$e]->{VELOCITY}[0][0]) &&
+				 defined($dta{ENSEMBLE}[$e]->{VELOCITY}[0][1]) &&
+				 defined($dta{ENSEMBLE}[$e]->{VELOCITY}[0][2]) &&
+				 defined($dta{ENSEMBLE}[$e]->{VELOCITY}[0][3]));
+	$ngoodens++;
+	
+	for ($b=0; $b<$dta{N_BINS}; $b++) {					# collect stats
+		my($ngood) = defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0])
+				   + defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1])
+				   + defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2])
+				   + defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3]);
+		if 	  ($ngood == 4) { $ngood4[$b]++; }
+		elsif ($ngood == 3) { $ngood3[$b]++; }
+		else				{ $nbad[$b]++; }
+
+		for ($i=0; $i<4; $i++) {
+			if (defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][$i])) {
+				$ngood[$b][$i]++;
+				$sumcor[$b][$i] += $dta{ENSEMBLE}[$e]->{CORRELATION}[$b][$i];
+				$sumamp[$b][$i] += $dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b][$i];
+			}
+		}
+	}
+}
+
+printf("$ngoodens good ensembles out of $nens\n");
+for ($b=0; $b<$dta{N_BINS}; $b++) {						# gen output
+	printf("%2d: vels: %3d%% 4-bin, %3d%% 3-bin, %3d%% bad; ",
+		$b+1,
+		100*$ngood4[$b]/$ngoodens,100*$ngood3[$b]/$ngoodens,
+		100*$nbad[$b]/$ngoodens);
+	printf("mean corr: %3d/%3d/%3d/%3d; mean amp: %3d/%3d/%3d/%3d",
+		$sumcor[$b][0]/$ngood[$b][0], $sumcor[$b][1]/$ngood[$b][1],
+		$sumcor[$b][2]/$ngood[$b][2], $sumcor[$b][3]/$ngood[$b][3],
+		$sumamp[$b][0]/$ngood[$b][0], $sumamp[$b][1]/$ngood[$b][1],
+		$sumamp[$b][2]/$ngood[$b][2], $sumamp[$b][3]/$ngood[$b][3]);
+	print("\n");
+}
+
+exit(0);
+

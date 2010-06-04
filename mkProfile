@@ -1,0 +1,808 @@
+#!/usr/bin/perl
+#======================================================================
+#                    M K P R O F I L E 
+#                    doc: Sun Jan 19 18:55:26 2003
+#                    dlm: Sun May 23 16:34:02 2010
+#                    (c) 2003 A.M. Thurnherr
+#                    uE-Info: 788 36 NIL 0 0 72 2 2 4 NIL ofnI
+#======================================================================
+
+# Make an LADCP Profile by Integrating W (similar to Firing's scan*).
+
+# HISTORY:
+#	Jan 19, 2003: - written in order to test the RDI libs
+#	Jan 20, 2003: - added ensemble number
+#	Jan 21, 2003: - added horizontal integration
+#	Jan 22, 2003: - corrected magnetic declination
+#	Jan 23, 2003: - added -F)ilter
+#	Jan 24, 2003: - added more %PARAMs; started integration from 1st bin
+#				  - added -g, -f, battery status
+#	Jan 25, 2003: - added more %PARAMs
+#	Feb  1, 2003: - BUG: bottom-track quality checking was bad
+#	Feb  8, 2003: - allowed for array-indices on -f
+#	Feb  9, 2003: - added 50% goodvelbin
+#				  - removed unknown-field err on -f to allow -f W
+#	Feb 10, 2003: - changed initialization depth to 0m
+#				  - changed %bottom_depth to %max_depth
+#	Feb 11, 2003: - changed sign of magnetic declination
+#	Feb 12, 2003: - corrected BT-range scaling
+#	Feb 14, 2003: - added %pinging_hours, %min_range
+#				  - removed magnetic declination from default
+#	Feb 26, 2004: - added earth coordinates
+#	Mar  3, 2004: - removed requirement for -M on !-Q
+#				  - corrected range-stats on earth coordinates
+#	Mar  4, 2004: - added number of ensebles to output
+#	Mar 11, 2004: - BUG: rename ACD -> ADC
+#	Mar 12, 2004: - added %bottom_xmit_{current|voltage}
+#	Mar 16, 2004: - BUG: on -M u/v/x/y were wrong
+#	Mar 17, 2004: - added error estimates on u/v/x/y
+#				  - removed battery stuff (has to be done btw casts)
+#	Mar 18, 2004: - totally re-did u/v integration
+#	Mar 19, 2004: - re-designed u/v uncertainty estimation
+#	Mar 28, 2004: - added MEAN_CORRELATION, MEAN_ECHO_AMPLITUDE
+#	Sep 15, 2005: - changed BinRead library name
+#				  - made max gap length variable
+#	Sep 16, 2005: - re-did u,v,w uncertainties
+#	Nov  8, 2005: - UNIXTIME => UNIX_TIME
+#				  - added unix_time, secno, z_BT to default output
+#	Dec  1, 2005: - moved profile-building code to [RDI_utils.pl]
+#				  - changed -f syntax to allow name=FIELD
+#				  - added %bin1_dist, %bin_length
+#	Dec  8, 2005: - remove spaces from -f argument to allow multiline
+#				    definitions in Makefiles
+#	Nov 13, 2006: - BUG: end-of-cast depth had not been reported correctly
+#				  - cosmetics
+#	Nov 30, 2007: - adapted to 3-beam solutions
+#	Dec 11, 2007: - adapted to earlier modifications (Sep 2007) of
+#					[RDI_BB_Read.pl]
+#	Dec 14, 2007: - replaced z by depth
+#	Dec 17, 2007: - BUG: downcast flag was set incorrectly
+#	Jan 24, 2008: - rotation had been output as degrees/s; to make it more
+#				    consistent with pitch/roll, I changed it to simple degrees
+#				  - added net rotations [deployment]/down/up/[recovery]
+#	Apr  9, 2008: - added profile -B)ottom depth
+#				  - BUG: depth of first bin was reported as beginning of cast
+#	Oct 24, 2008: - added RANGE and RANGE_BINS fields
+#	Mar 18, 2009: - BUG: pitch/roll calculation had typo
+#				  - calc pitch/roll separately for down-/upcasts
+#				  - removed approximations in pitch/roll calcs
+#	Jul 30, 2009: - typo '<' removed from output
+#				  - NaN => nan
+
+# NOTES:
+#	- the battery values are based on transmission voltages (different
+#	  from battery voltages) and reported without units (raw 8-bit a2d
+#	  values)
+#	- -B with the CTD max depth can be used to linearly scale the depths;
+#	  even so, the profile can have negative depths, in particular when
+#	  the CTD is sent to a shallow depth first and then returned to the surface
+#	  before beginning the cast
+#	- in one case that I looked at (Anslope ][, cast 82), there are large
+#	  depth errors, even when -B is used
+#	- this utility works only approximately for uplookers (profile is
+#	  roughly ok, but apparently contaminated by surface reflection,
+#	  but stats are not ok; e.g. NBP0402 037U.prof)
+
+$0 =~ m{(.*)/[^/]+}; 
+require "$1/RDI_BB_Read.pl";
+require "$1/RDI_Coords.pl";
+require "$1/RDI_Utils.pl";
+require "getopts.pl";
+
+$USAGE = "$0 @ARGV";
+die("Usage: $0 " .
+	"[-A)nts] [-Q)uiet] [-F)ilter <script>] " .
+	"[-s)uppress checkensemble()] " .
+	"[require -4)-beam solutions] " .
+	"[-r)ef-layer <bin|1,bin|6>] [-n) vels <min|2>] " .
+	"[-e)rr-vel <max|0.1>] [-c)orrelation <min>] " .
+	"[-m)ax <gap>] " .
+	"[-d)rift <dx,dy>] [-g)ps <start lat,lon/end lat,lon>] " .
+	"[output -f)ields <field[,...]> " .
+	"[-M)agnetic <declination>] [profile -B)ottom <depth>] " .
+	"<RDI file>\n")
+		unless (&Getopts("4AB:F:M:Qd:r:n:e:c:g:f:m:s") && @ARGV == 1);
+
+die("$0: -Q and -A are mutually exclusive\n")
+	if ($opt_Q && $opt_A);
+
+$RDI_Coords::minValidVels = 4 if ($opt_4);			# no 3-beam solutions
+
+require $opt_F if defined($opt_F);					# load filter
+
+$opt_r = "1,6" 	unless defined($opt_r);				# defaults
+$opt_n = 2	   	unless defined($opt_n);
+$opt_e = 0.1   	unless defined($opt_e);
+$opt_c = 70	   	unless defined($opt_c);
+$opt_m = 120	unless defined($opt_m);
+
+($minb,$maxb) = split(',',$opt_r);					# reference layer
+die("$0: can't decode -r $opt_r\n") unless defined($maxb);
+                                        
+if ($opt_g) {										# GPS info
+	($s_lat,$s_lon,$e_lat,$e_lon) = gps_to_deg($opt_g);
+	$lat = $s_lat/2 + $e_lat/2;
+	$lon = $s_lon/2 + $e_lon/2;
+	$ddx = dist($lat,$s_lon,$lat,$e_lon);
+	$ddy = dist($s_lat,$lon,$e_lat,$lon);
+}
+
+if ($opt_d) {										# ship drift
+	($ddx,$ddy) = split(',',$opt_d);
+	die("$0: can't decode -d $opt_d\n") unless defined($ddy);
+}
+
+print(STDERR "Reading $ARGV[0]...");				# read data
+readData($ARGV[0],\%dta);
+print(STDERR "done\n");
+
+die("$ARGV[0]: not enough bins for choice of -r\n")	# enough bins?
+	unless ($dta{N_BINS} >= $maxb);
+if ($dta{BEAM_COORDINATES}) {						# coords used
+	$beamCoords = 1;
+} elsif (!$dta{EARTH_COORDINATES}) {
+	die("$ARGV[0]: only beam and earth coordinates implemented so far\n");
+}
+if (defined($opt_M)) {								# magnetic declination
+	$dta{HEADING_BIAS} = -1*$opt_M;
+} else {
+	$dta{HEADING_BIAS} = 0;
+}
+
+ensure_BT_RANGE(\%dta);								# calc if missing
+
+if ($opt_f) {										# additional fields
+	@f = split(',',$opt_f);
+	foreach $f (@f) {
+		$f =~ s/\s//g;								# remove spaces
+		@def = split('=',$f);
+		if (@def == 2) {							# name=field
+			$addFields .= " {$def[0]}";
+			$f = $def[1];
+		} else {									# field
+			$addFields .= " {$f}";
+		}
+	}
+#	print(STDERR "addFields = $addFields\n");
+#	print(STDERR "\@f = @f\n");
+}
+
+#======================================================================
+# Misc funs used to decode options
+#======================================================================
+
+sub dist($$$$)										# distance
+{
+	my($lat1,$lon1,$lat2,$lon2) = @_;
+	my($a) = 6378139; 								# Earth's radius
+
+	$lat1 = rad($lat1); $lon1 = rad($lon1);
+	$lat2 = rad($lat2); $lon2 = rad($lon2);
+	$ct1 = cos($lat1); $st1 = sin($lat1); $cp1 = cos($lon1);
+	$sp1 = sin($lon1); $ct2 = cos($lat2); $st2 = sin($lat2);
+	$cp2 = cos($lon2); $sp2 = sin($lon2);
+	$cos = $ct1*$cp1*$ct2*$cp2 + $ct1*$sp1*$ct2*$sp2 + $st1*$st2;
+	$cos =  1 if ($cos >  1);
+	$cos = -1 if ($cos < -1);
+	return $a * acos($cos);
+}
+
+sub deg_to_dec($)									# parse degrees
+{
+	my($deg,$min) = split(':',$_[0]);
+	return $deg + $min/60;
+}
+
+sub gps_to_deg($)									# decode lat/lon
+{
+	my($start,$end) = split('/',$_[0]);
+	my($sa,$so,$ea,$eo);
+
+	my($lat,$lon) = split(',',$start);
+	if ($lat =~ m{N$}) 		{ $sa =  deg_to_dec($`); }
+	elsif ($lat =~ m{S$}) 	{ $sa = -deg_to_dec($`); }
+	else 					{ $sa = $lat; }
+	if ($lon =~ m{E$}) 		{ $so =  deg_to_dec($`); }
+	elsif ($lon =~ m{W$}) 	{ $so = -deg_to_dec($`); }
+	else 					{ $so = $lon; }
+
+	my($lat,$lon) = split(',',$end);
+	if ($lat =~ m{N$}) 		{ $ea =  deg_to_dec($`); }
+	elsif ($lat =~ m{S$}) 	{ $ea = -deg_to_dec($`); }
+	else 					{ $ea = $lat; }
+	if ($lon =~ m{E$}) 		{ $eo =  deg_to_dec($`); }
+	elsif ($lon =~ m{W$}) 	{ $eo = -deg_to_dec($`); }
+	else 					{ $eo = $lon; }
+
+	return ($sa,$so,$ea,$eo);
+}
+
+#======================================================================
+# Step 1: Integrate w & determine water depth 
+#======================================================================
+
+($firstgood,$lastgood,$atbottom,$w_gap_time,$zErr,$maxz) =
+	mk_prof(\%dta,!$opt_s,$opt_F,$minb,$maxb,$opt_c,$opt_e,$opt_m);
+
+die("$ARGV[0]: no good ensembles found\n")
+	unless defined($firstgood);
+
+if (defined($opt_B)) {										# scale Z
+	my($zscale) = $opt_B / ($dta{ENSEMBLE}[$atbottom]->{DEPTH} -# downcast
+				     	    $dta{ENSEMBLE}[$firstgood]->{DEPTH});
+#	printf(STDERR "scaling downcast depths by %.2f\n",$zscale);
+	for (my($e)=$firstgood; $e<$atbottom; $e++) {
+		next unless defined($dta{ENSEMBLE}[$e]->{DEPTH});
+		$dta{ENSEMBLE}[$e]->{DEPTH} =
+			$dta{ENSEMBLE}[$firstgood]->{DEPTH} + $zscale *
+				($dta{ENSEMBLE}[$e]->{DEPTH}-$dta{ENSEMBLE}[$firstgood]->{DEPTH});
+	}
+
+	$zscale = $opt_B / ($dta{ENSEMBLE}[$atbottom]->{DEPTH} -	# upcast
+				 		$dta{ENSEMBLE}[$lastgood]->{DEPTH});
+#	printf(STDERR "scaling upcast depths by %.2f\n",$zscale);
+	for (my($e)=$atbottom; $e<=$lastgood; $e++) {
+		next unless defined($dta{ENSEMBLE}[$e]->{DEPTH});
+		$dta{ENSEMBLE}[$e]->{DEPTH} =
+			$dta{ENSEMBLE}[$firstgood]->{DEPTH} + $zscale *
+				($dta{ENSEMBLE}[$e]->{DEPTH}-$dta{ENSEMBLE}[$lastgood]->{DEPTH});
+	}
+}
+
+($water_depth,$sig_wd) =									# sea bed
+	find_seabed(\%dta,$atbottom,$beamCoords);
+
+#======================================================================
+# Step 1a: determine alternate Z by using mean/sigma of w in gaps
+#======================================================================
+
+# This does not make much sense for w, because w is always very close
+# to zero. It might make sense for u and v, though, and it would
+# be more consistent with the way the displacement uncertainties are
+# calculated. However, the way the profiles are calculated at the
+# moment (using the last valid velocity across the gap) is probably
+# closer to the truth in most cases.
+
+#$dta{ENSEMBLE}[$firstgood]->{ALT_Z} = 0;
+#$dta{ENSEMBLE}[$firstgood]->{ALT_Z_ERR} = 0;
+#my($sumVar);
+#for ($e=$firstgood+1; $e<=$lastgood; $e++) {
+#	my($dt) = $dta{ENSEMBLE}[$e]->{UNIX_TIME} -
+#			  $dta{ENSEMBLE}[$e-1]->{UNIX_TIME};
+#	$dta{ENSEMBLE}[$e]->{ALT_Z} =
+#		$dta{ENSEMBLE}[$e-1]->{ALT_Z} +
+#		$dt * (defined($dta{ENSEMBLE}[$e-1]->{W}) ?
+#				$dta{ENSEMBLE}[$e-1]->{W} : $meanW);
+#	$sumVar += defined($dta{ENSEMBLE}[$e-1]->{W}) ?
+#				($dta{ENSEMBLE}[$e-1]->{W_ERR} * $dt)**2 : ($dt**2)*$varW;
+#	$dta{ENSEMBLE}[$e]->{ALT_Z_ERR} = sqrt($sumVar);
+#}
+
+#======================================================================
+# Step 2: Integrate u & v
+#======================================================================
+
+sub ref_lr_uv($$$)									# calc ref-level u/v
+{
+	my($ens,$z,$water_depth) = @_;
+	my($i,$n,@v,@goodU,@goodV);
+
+	$water_depth = 99999 unless defined($water_depth);
+
+	for ($i=$minb; $i<=$maxb; $i++) {
+		next if ($dta{ENSEMBLE}[$ens]->{CORRELATION}[$i][0] < $opt_c ||
+				 $dta{ENSEMBLE}[$ens]->{CORRELATION}[$i][1] < $opt_c ||
+				 $dta{ENSEMBLE}[$ens]->{CORRELATION}[$i][2] < $opt_c ||
+				 $dta{ENSEMBLE}[$ens]->{CORRELATION}[$i][3] < $opt_c);
+		if ($beamCoords) {
+			next if ($dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][0] < 100 ||
+					 $dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][1] < 100 ||
+					 $dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][2] < 100 ||
+					 $dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][3] < 100);
+			@v = velInstrumentToEarth(\%dta,$ens,
+					velBeamToInstrument(\%dta,
+						@{$dta{ENSEMBLE}[$ens]->{VELOCITY}[$i]}));
+		} else {
+			next if ($dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][0] > 0 ||
+					 $dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][1] > 0 ||
+					 $dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][2] > 0 ||
+					 $dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][3] < 100);
+			@v = velApplyHdgBias(\%dta,$ens,
+					@{$dta{ENSEMBLE}[$ens]->{VELOCITY}[$i]});
+		}
+		next if (!defined($v[3]) || abs($v[3]) > $opt_e);
+
+#		Martin's BT routines show strong shear just above sea bed
+#		=> skip lowest 20m.
+		if (defined($v[0])) {							# valid u,v
+			if ($dta{ENSEMBLE}[$ens]->{XDUCER_FACING_UP}) {
+				if ($z - $dta{DISTANCE_TO_BIN1_CENTER}
+					   - $i*$dta{BIN_LENGTH} > 0) {
+					push(@goodU,$v[0]); push(@goodV,$v[1]);
+					$dta{ENSEMBLE}[$ens]->{U} += $v[0];
+					$dta{ENSEMBLE}[$ens]->{V} += $v[1];
+					$n++;
+			   }
+			} else {
+				if ($z + $dta{DISTANCE_TO_BIN1_CENTER}
+					   + $i*$dta{BIN_LENGTH} < $water_depth-20) {
+					push(@goodU,$v[0]); push(@goodV,$v[1]);
+					$dta{ENSEMBLE}[$ens]->{U} += $v[0];
+					$dta{ENSEMBLE}[$ens]->{V} += $v[1];
+					$n++;
+			   }
+			}
+		}
+	}
+
+	if ($n >= 2) {
+		my(@sumsq) = (0,0);
+		$dta{ENSEMBLE}[$ens]->{U} /= $n;
+		$dta{ENSEMBLE}[$ens]->{V} /= $n;
+		for ($i=0; $i<$n; $i++) {
+			$sumsq[0] += ($dta{ENSEMBLE}[$ens]->{U}-$goodU[$i])**2;
+			$sumsq[1] += ($dta{ENSEMBLE}[$ens]->{V}-$goodV[$i])**2;
+		}
+		$dta{ENSEMBLE}[$ens]->{U_ERR} = sqrt($sumsq[0])/($n-1);
+		$dta{ENSEMBLE}[$ens]->{V_ERR} = sqrt($sumsq[1])/($n-1);
+    } else {
+		$dta{ENSEMBLE}[$ens]->{U} = undef;
+		$dta{ENSEMBLE}[$ens]->{V} = undef;
+    }    	
+}
+
+#----------------------------------------------------------------------
+
+($x,$y) = (0,0);											# init
+
+$dta{ENSEMBLE}[$firstgood]->{X} = $dta{ENSEMBLE}[$firstgood]->{X_ERR} = 0;
+$dta{ENSEMBLE}[$firstgood]->{Y} = $dta{ENSEMBLE}[$firstgood]->{Y_ERR} = 0;
+$prevgood = $firstgood;
+
+for ($e=$firstgood+1; defined($opt_M)&&$e<=$lastgood; $e++) {
+
+	#--------------------------------------------------
+	# within profile: both $firstgood and $prevgood set
+	#--------------------------------------------------
+
+	ref_lr_uv($e,$dta{ENSEMBLE}[$e]->{DEPTH},$water_depth)	# instrument vel
+		if (defined($dta{ENSEMBLE}[$e]->{W}));
+
+	if (!defined($dta{ENSEMBLE}[$e]->{U})) {				# gap
+		$uv_gap_time += $dta{ENSEMBLE}[$e]->{UNIX_TIME} -
+				   		$dta{ENSEMBLE}[$e-1]->{UNIX_TIME};
+		next;
+	}
+
+	my($dt) = $dta{ENSEMBLE}[$e]->{UNIX_TIME} -			# time step since
+			  $dta{ENSEMBLE}[$prevgood]->{UNIX_TIME};		# ...last good ens
+
+	#-----------------------------------
+	# The current ensemble has valid u/v
+	#-----------------------------------
+
+	$x -= $dta{ENSEMBLE}[$prevgood]->{U} * $dt;			# integrate
+	$xErr += ($dta{ENSEMBLE}[$prevgood]->{U_ERR} * $dt)**2;
+	$dta{ENSEMBLE}[$e]->{X} = $x;
+	$dta{ENSEMBLE}[$e]->{X_ERR} = sqrt($xErr);
+
+	$y -= $dta{ENSEMBLE}[$prevgood]->{V} * $dt;
+	$yErr += ($dta{ENSEMBLE}[$prevgood]->{V_ERR} * $dt)**2;
+	$dta{ENSEMBLE}[$e]->{Y} = $y;
+	$dta{ENSEMBLE}[$e]->{Y_ERR} = sqrt($yErr);
+
+	$prevgood = $e;
+}
+
+unless (defined($dta{ENSEMBLE}[$lastgood]->{X})) {		# last is bad in u/v
+	my($dt) = $dta{ENSEMBLE}[$lastgood]->{UNIX_TIME} -		# time step since
+			  $dta{ENSEMBLE}[$prevgood]->{UNIX_TIME};		# ...last good ens
+
+	$x -= $dta{ENSEMBLE}[$prevgood]->{U} * $dt;			# integrate
+	$xErr += ($dta{ENSEMBLE}[$prevgood]->{U_ERR} * $dt)**2;
+	$dta{ENSEMBLE}[$lastgood]->{X} = $x;
+	$dta{ENSEMBLE}[$lastgood]->{X_ERR} = sqrt($xErr);
+
+	$y -= $dta{ENSEMBLE}[$prevgood]->{V} * $dt;
+	$yErr += ($dta{ENSEMBLE}[$prevgood]->{V_ERR} * $dt)**2;
+	$dta{ENSEMBLE}[$lastgood]->{Y} = $y;
+	$dta{ENSEMBLE}[$lastgood]->{Y_ERR} = sqrt($yErr);
+}
+
+$firstgood++ if ($firstgood == 0);							# centered diff
+$lastgood-- if ($lastgood == $#{$dta{ENSEMBLE}});			# in step 6
+
+#======================================================================
+# Step 3: Calculate Uncertainties
+#======================================================================
+
+# Time series of W_ERR indicate that errors are very large near the
+# surface and near the sea bed, perhaps because of reflections.
+# A reasonable estimate for typical uncertainty is therefore the mode
+# of the std errors.
+
+my(@histUErr,@histVErr,@histWErr);
+my($histRez) = 1e-4;
+
+for ($e=$firstgood; $e<=$lastgood; $e++) {
+	$histWErr[int($dta{ENSEMBLE}[$e]->{W_ERR}/$histRez+0.5)]++
+		if defined($dta{ENSEMBLE}[$e]->{W_ERR});
+	$histUErr[int($dta{ENSEMBLE}[$e]->{U_ERR}/$histRez+0.5)]++
+		if defined($dta{ENSEMBLE}[$e]->{U_ERR});
+	$histVErr[int($dta{ENSEMBLE}[$e]->{V_ERR}/$histRez+0.5)]++
+		if defined($dta{ENSEMBLE}[$e]->{V_ERR});
+}	
+
+my($max) = 0; my($mode);
+for (my($i)=0; $i<=$#histWErr; $i++) {
+	next if ($histWErr[$i] < $max);
+	$max = $histWErr[$i]; $mode = $i;
+}
+$wErr = $mode * $histRez if defined($mode);
+
+$max = 0; $mode = undef;
+for (my($i)=0; $i<=$#histUErr; $i++) {
+	next if ($histUErr[$i] < $max);
+	$max = $histUErr[$i]; $mode = $i;
+}
+$uErr = $mode * $histRez if defined($mode);
+
+$max = 0; $mode = undef;
+for (my($i)=0; $i<=$#histVErr; $i++) {
+	next if ($histVErr[$i] < $max);
+	$max = $histVErr[$i]; $mode = $i;
+}
+$vErr = $mode * $histRez if defined($mode);
+
+#print(STDERR "u: mu = $meanU / sigma = $uErr\n");
+#print(STDERR "v: mu = $meanV / sigma = $vErr\n");
+#print(STDERR "w: mu = $meanW / sigma = $wErr\n");
+
+if (defined($opt_M)) {									# displacement errors
+	$x_err = $uErr * $uv_gap_time + $dta{ENSEMBLE}[$lastgood]->{X_ERR};
+	$y_err = $vErr * $uv_gap_time + $dta{ENSEMBLE}[$lastgood]->{Y_ERR};
+}
+$z_err = $wErr * $w_gap_time + $dta{ENSEMBLE}[$lastgood]->{DEPTH_ERR};
+
+#printf(STDERR "x_err = $dta{ENSEMBLE}[$lastgood]->{X_ERR} + %g\n",
+#				$uErr * $uv_gap_time);
+#printf(STDERR "y_err = $dta{ENSEMBLE}[$lastgood]->{Y_ERR} + %g\n",
+#				$vErr * $uv_gap_time);
+#printf(STDERR "z_err = $dta{ENSEMBLE}[$lastgood]->{DEPTH_ERR} + %g\n",
+#				$wErr * $w_gap_time);
+
+#======================================================================
+# Step 4: Calculate Beam Range Stats
+#======================================================================
+
+my($min_good_bins) = 999;
+my($worst_beam);
+
+sub count_good_vels($)								# count good vels
+{
+	my($ens) = @_;
+	my($good) = -1; my($this_worst_beam);
+
+	if ($beamCoords) {
+		for (my($i)=0; $i<$dta{N_BINS}; $i++) {
+			for (my($b)=0; $b<4; $b++) {
+				$good=$i,$this_worst_beam=$b,$nVels[$i][$b]++
+					if defined($dta{ENSEMBLE}[$ens]->{VELOCITY}[$i][$b]);
+			}
+	    }
+	} else {
+		for (my($i)=0; $i<$dta{N_BINS}; $i++) {
+			for (my($b)=0; $b<4; $b++) {
+				$good=$i,$this_worst_beam=$b,$nVels[$i][$b]++
+					if ($dta{ENSEMBLE}[$ens]->{CORRELATION}[$i][$b] >=
+						$dta{MIN_CORRELATION});
+			}
+	    }
+	}
+	$min_good_ens=$ens, $min_good_bins=$good, $worst_beam=$this_worst_beam
+		if ((!defined($water_depth) || 
+			  $dta{ENSEMBLE}[$ens]->{DEPTH} < $water_depth-200)
+			&& $good >= 0 && $good < $min_good_bins);
+}
+
+#----------------------------------------------------------------------
+
+for ($e=$firstgood; $e<=$lastgood; $e++) {					# range
+	my($i);
+	for ($i=0; $i<$dta{N_BINS}; $i++) {
+		last if (defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$i][0]) +
+				 defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$i][1]) +
+				 defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$i][2]) +
+				 defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$i][3]) < 3);
+	}
+	$dta{ENSEMBLE}[$e]->{RANGE_BINS} = $i;
+	$dta{ENSEMBLE}[$e]->{RANGE} =
+		$dta{DISTANCE_TO_BIN1_CENTER} + $i * $dta{BIN_LENGTH};
+}
+
+for ($e=$firstgood; $e<=$lastgood; $e++) {					# mean corr/amp
+	$sumcor = $sumamp = $ndata = 0;
+	for (my($i)=0; $i<$dta{N_BINS}; $i++) {
+		for (my($b)=0; $b<4; $b++) {
+			next unless ($dta{ENSEMBLE}[$e]->{CORRELATION}[$i][$b]);
+			$sumcor += $dta{ENSEMBLE}[$e]->{CORRELATION}[$i][$b];
+			$sumamp += $dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$i][$b];
+			$ndata++;
+		}
+	}
+	$dta{ENSEMBLE}[$e]->{MEAN_CORRELATION} = $sumcor/$ndata;
+	$dta{ENSEMBLE}[$e]->{MEAN_ECHO_AMPLITUDE} = $sumamp/$ndata;
+}
+
+for ($e=$firstgood+50; $e<=$lastgood-50; $e++) {			# range stats
+	count_good_vels($e);
+}
+for ($i=0; $i<$dta{N_BINS}; $i++) {
+	for ($b=0; $b<4; $b++) {
+		$maxVels = $nVels[$i][$b] unless ($maxVels > $nVels[$i][$b]);
+	}
+}
+for ($i=0; $i<$dta{N_BINS}; $i++) {
+	for ($b=0; $b<4; $b++) {
+		$gb[$b] = $i if ($nVels[$i][$b] >= 0.8*$maxVels);
+    }
+}
+$gb = ($gb[0]+$gb[1]+$gb[2]+$gb[3]) / 4;
+
+#======================================================================
+# Step 5: Remove Ship Drift (probably not useful)
+#======================================================================
+
+if (defined($opt_M) && defined($ddx)) {						# remove barotropic
+	$du = $ddx / $dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME};# mean drift vel
+	$dv = $ddy / $dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME};
+	$iu = $dta{ENSEMBLE}[$lastgood]->{X} /				# mean obs vel
+			$dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME};
+	$iv = $dta{ENSEMBLE}[$lastgood]->{Y} /
+			$dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME};
+	
+	for ($e=$firstgood; $e<=$lastgood; $e++) {
+		next unless (defined($dta{ENSEMBLE}[$e]->{X}) &&
+					 defined($dta{ENSEMBLE}[$e]->{Y}));
+		$dta{ENSEMBLE}[$e]->{U} -= $du;
+		$dta{ENSEMBLE}[$e]->{V} -= $dv;
+		$dta{ENSEMBLE}[$e]->{X} += $dta{ENSEMBLE}[$e]->{ELAPSED_TIME} * ($du-$iu);
+		$dta{ENSEMBLE}[$e]->{Y} += $dta{ENSEMBLE}[$e]->{ELAPSED_TIME} * ($dv-$iv);
+	}
+}
+
+#======================================================================
+# Step 6: Pitch, Roll, Rotation
+#======================================================================
+
+my($prrms,$dnprrms,$upprrms) = (0,0,0);
+my($rotrms,$prerot,$dnrot,$uprot,$postrot) = (0,0,0,0,0);
+
+sub rot($)
+{
+	my($e) = @_;
+	my($rot) = $dta{ENSEMBLE}[$e]->{HEADING} -
+			   $dta{ENSEMBLE}[$e-1]->{HEADING};
+	$rot -= 360 if ($rot >  180);
+	$rot += 360 if ($rot < -180);
+	return $rot;
+}
+
+for ($e=1; $e<$firstgood; $e++) {				# pre-deployment
+	$prerot += rot($e);
+}
+
+for (; $e<= $atbottom; $e++) {					# downcast
+	$dta{ENSEMBLE}[$e]->{PITCHROLL} =
+		&angle_from_vertical($dta{ENSEMBLE}[$e]->{PITCH},
+						  	 $dta{ENSEMBLE}[$e]->{ROLL});
+	$prrms += $dta{ENSEMBLE}[$e]->{PITCHROLL}**2;
+				 
+	$dta{ENSEMBLE}[$e]->{ROTATION} = rot($e);
+	$dnrot += $dta{ENSEMBLE}[$e]->{ROTATION};
+	$rotrms += $dta{ENSEMBLE}[$e]->{ROTATION}**2;
+}
+$dnprrms = $prrms;
+
+for (; $e<=$lastgood; $e++) {					# upcast
+	$dta{ENSEMBLE}[$e]->{PITCHROLL} =
+		&angle_from_vertical($dta{ENSEMBLE}[$e]->{PITCH},
+						  	 $dta{ENSEMBLE}[$e]->{ROLL});
+	$prrms += $dta{ENSEMBLE}[$e]->{PITCHROLL}**2;
+				 
+	$dta{ENSEMBLE}[$e]->{ROTATION} = rot($e);
+	$uprot += $dta{ENSEMBLE}[$e]->{ROTATION};
+	$rotrms += $dta{ENSEMBLE}[$e]->{ROTATION}**2;
+}
+$upprrms = $prrms - $dnprrms;
+
+for (; $e<=$#{$dta->{ENSEMBLE}}; $e++) {		# post-recovery
+	$postrot += rot($e);
+}
+
+$prerot  /= 360;								# rotations, not degrees
+$dnrot   /= 360;
+$uprot   /= 360;
+$postrot /= 360;
+
+$prrms 	 = sqrt($prrms/($lastgood-$firstgood));
+$dnprrms = sqrt($dnprrms/($atbottom-$firstgood));
+$upprrms = sqrt($upprrms/($lastgood-$atbottom));
+
+$rotrms = sqrt($rotrms/($lastgood-$firstgood));
+
+#======================================================================
+# PRODUCE OUTPUT
+#======================================================================
+
+printf(STDERR "# of ensembles   : %d\n",scalar(@{$dta{ENSEMBLE}}));
+printf(STDERR "Start of cast    : %s (#%5d) at %6.1fm\n",
+					$dta{ENSEMBLE}[$firstgood]->{TIME},
+					$dta{ENSEMBLE}[$firstgood]->{NUMBER},
+					$dta{ENSEMBLE}[$firstgood]->{DEPTH});
+printf(STDERR "Bottom of cast   : %s (#%5d) at %6.1fm\n",
+					$dta{ENSEMBLE}[$atbottom]->{TIME},
+					$dta{ENSEMBLE}[$atbottom]->{NUMBER},
+					$dta{ENSEMBLE}[$atbottom]->{DEPTH});
+if (defined($water_depth)) {
+	printf(STDERR "Seabed           :                      at %6.1fm (+-%dm)\n",$water_depth,$sig_wd);
+} else {
+	print(STDERR "Seabed           : not found\n");
+}
+printf(STDERR "End of cast      : %s (#%5d) at %6.1fm\n",
+					$dta{ENSEMBLE}[$lastgood]->{TIME},
+					$dta{ENSEMBLE}[$lastgood]->{NUMBER},
+					$dta{ENSEMBLE}[$lastgood]->{DEPTH});
+
+printf(STDERR "Rel. Displacement: x = %d(%d)m / y = %d(%d)m\n",
+					$dta{ENSEMBLE}[$lastgood]->{X}, $x_err, 
+					$dta{ENSEMBLE}[$lastgood]->{Y}, $y_err, 
+				) if defined($opt_M);
+
+printf(STDERR "Cast Duration    : %.1f hours (pinging for %.1f hours)\n",
+					$dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME} / 3600,
+					($dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{UNIX_TIME} -
+						$dta{ENSEMBLE}[0]->{UNIX_TIME}) / 3600);
+
+printf(STDERR "Minimum range    : %dm at ensemble %d, beam %d\n",
+				$dta{DISTANCE_TO_BIN1_CENTER} +
+					$min_good_bins*$dta{BIN_LENGTH},
+				$dta{ENSEMBLE}[$min_good_ens]->{NUMBER},
+				$worst_beam);
+printf(STDERR "80%%-valid bins   : %.1f\n",$gb+1);
+printf(STDERR "80%%-valid range  : %dm\n",
+				$dta{DISTANCE_TO_BIN1_CENTER} + $gb*$dta{BIN_LENGTH});
+printf(STDERR "3-beam solutions : $RDI_Coords::threeBeam_1 " .
+								 "$RDI_Coords::threeBeam_2 " .
+								 "$RDI_Coords::threeBeam_3 " .
+                                 "$RDI_Coords::threeBeam_4\n")
+	unless ($opt_4);
+printf(STDERR "net rotations    : [%d]/%d/%d/[%d]\n",$prerot,$dnrot,$uprot,$postrot);
+printf(STDERR "rms pitch/roll   : %.1f/%.1f\n",$dnprrms,$upprrms);
+
+if ($opt_A) {												# ANTS format
+	print("#ANTS# [] $USAGE\n");
+	$uFields = "{u} {u_err} {v} {v_err} {x} {x_err} {y} {y_err}"
+		if defined($opt_M);
+	print("#ANTS#FIELDS# {ens} {time} {elapsed} {secno} {downcast} " .
+						"{w} {w_err} {depth} {depth_err} {depth_BT} " .
+						"{pitchroll} {rotation} " .
+		  				"$uFields $addFields\n");
+
+   	printf("#ANTS#PARAMS# date{$dta{ENSEMBLE}[$firstgood]->{DATE}} " .
+				   "start_time{$dta{ENSEMBLE}[$firstgood]->{TIME}} " .
+				  "bottom_time{$dta{ENSEMBLE}[$atbottom]->{TIME}} " .
+				     "end_time{$dta{ENSEMBLE}[$lastgood]->{TIME}} " .
+		  "bottom_xmit_voltage{$dta{ENSEMBLE}[$atbottom]->{ADC_XMIT_VOLTAGE}} " .
+		  "bottom_xmit_current{$dta{ENSEMBLE}[$atbottom]->{ADC_XMIT_CURRENT}} " .
+			 "pinging_duration{%.1f} " .
+			    "cast_duration{%.1f} " .
+	    	   "0.8_valid_bins{%.1f} " .
+	     	  "0.8_valid_range{%.1f} " .
+				    "max_depth{%.1f} " .
+				  "depth_error{%.1f} " .
+				    "min_range{%d} " .
+				  "n_ensembles{%d} " .
+				   "w_gap_time{%d} " .
+				     "stderr_w{%.4f} " .
+				"rms_pitchroll{%.1f} " .
+  	   "downcast_rms_pitchroll{%.1f} " .
+		 "upcast_rms_pitchroll{%.1f} " .
+				 "rms_rotation{%.2f} " .
+		 "deployment_rotations{%d} " .
+		   "downcast_rotations{%d} " .
+		     "upcast_rotations{%d} " .
+		   "recovery_rotations{%d} " .
+				    "bin1_dist{%.1f} " .
+				   "bin_length{%.1f} " .
+		  				 "\n",
+				($dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{UNIX_TIME} -
+						$dta{ENSEMBLE}[0]->{UNIX_TIME}),
+				$dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME},
+				$gb+1,
+				$dta{DISTANCE_TO_BIN1_CENTER} + $gb*$dta{BIN_LENGTH},
+				$dta{ENSEMBLE}[$atbottom]->{DEPTH},
+				$dta{ENSEMBLE}[$lastgood]->{DEPTH} -
+					$dta{ENSEMBLE}[$firstgood]->{DEPTH},
+				$dta{DISTANCE_TO_BIN1_CENTER} +
+					$min_good_bins*$dta{BIN_LENGTH},
+				scalar(@{$dta{ENSEMBLE}}),
+				$w_gap_time,$wErr,$prrms,$dnprrms,$upprrms,$rotrms,
+				$prerot,$dnrot,$uprot,$postrot,
+				$dta{DISTANCE_TO_BIN1_CENTER},
+				$dta{BIN_LENGTH},
+		  );
+	printf("#ANTS#PARAMS# magnetic_declination{$opt_M} " .
+							   	  "uv_gap_time{%d} " .
+						    	       "mean_u{%.4f} " .
+							         "stderr_u{%.4f} " .
+							               "dx{%d} " .
+							           "dx_err{%d} " .
+							           "mean_v{%.4f} " .
+							         "stderr_v{%.4f} " .
+							               "dy{%d} " .
+							           "dy_err{%d}\n",
+		$uv_gap_time,
+		$dta{ENSEMBLE}[$lastgood]->{X} /
+			$dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME},
+		$uErr, $dta{ENSEMBLE}[$lastgood]->{X}, $x_err,
+		$dta{ENSEMBLE}[$lastgood]->{Y} /
+			$dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME},
+		$vErr, $dta{ENSEMBLE}[$lastgood]->{Y}, $y_err,
+	) if defined ($opt_M);
+	print("#ANTS#PARAMS# start_lat{$s_lat} start_lon{$s_lon} " .
+						  "end_lat{$e_lat} end_lon{$e_lon} " .
+						      "lat{$lat} lon{$lon}\n")
+		if defined($lat);
+	if ($dta{TIME_BETWEEN_PINGS} == 0) {
+		 print("#ANTS#PARAMS# pinging_rate{staggered}\n");
+	} else {
+		 printf("#ANTS#PARAMS# pinging_rate{%.2f}\n",
+			1/$dta{TIME_BETWEEN_PINGS});
+    }		
+    printf("#ANTS#PARAMS# drift_x{%d} drift_y{%d} " .
+						 "drift_u{%.3f} drift_v{%.3f} " .
+		   "\n",$ddx,$ddy,$du,$dv) if defined($ddx);
+	if (defined($water_depth)) {
+		printf("#ANTS#PARAMS# water_depth{%d} sig-water_depth{%d}\n",
+					$water_depth,$sig_wd);
+	} else {
+		print("#ANTS#PARAMS# water_depth{nan} sig-water_depth{nan}\n");
+	}
+}
+
+sub p($) { print(defined($_[0])?"$_[0] ":"nan "); }
+sub pb($) { print($_[0]?"1 ":"0 "); }
+
+unless ($opt_Q) {										# write profile
+	for ($e=$firstgood; $e<=$lastgood; $e++) {
+		p($dta{ENSEMBLE}[$e]->{NUMBER});
+		p($dta{ENSEMBLE}[$e]->{UNIX_TIME});
+		p($dta{ENSEMBLE}[$e]->{ELAPSED_TIME});
+		p($dta{ENSEMBLE}[$e]->{SECNO});
+		pb($dta{ENSEMBLE}[$e]->{UNIX_TIME} < $dta{ENSEMBLE}[$atbottom]->{UNIX_TIME});
+		p($dta{ENSEMBLE}[$e]->{W});
+		p($dta{ENSEMBLE}[$e]->{W_ERR});
+		p($dta{ENSEMBLE}[$e]->{DEPTH});
+		p($dta{ENSEMBLE}[$e]->{DEPTH_ERR});
+		p($dta{ENSEMBLE}[$e]->{DEPTH_BT});
+		p($dta{ENSEMBLE}[$e]->{PITCHROLL});
+		p($dta{ENSEMBLE}[$e]->{ROTATION});
+		if (defined($opt_M)) {
+			p($dta{ENSEMBLE}[$e]->{U}); p($dta{ENSEMBLE}[$e]->{U_ERR});
+			p($dta{ENSEMBLE}[$e]->{V}); p($dta{ENSEMBLE}[$e]->{V_ERR});
+			p($dta{ENSEMBLE}[$e]->{X}); p($dta{ENSEMBLE}[$e]->{X_ERR});
+			p($dta{ENSEMBLE}[$e]->{Y}); p($dta{ENSEMBLE}[$e]->{Y_ERR});
+	    }
+		if (defined(@f)) {
+			foreach $f (@f) {
+				my($fn,$fi) = ($f =~ m{([^[]*)(\[.*)});
+				$fn = $f unless defined($fn);
+				p(eval("\$dta{ENSEMBLE}[$e]->{$fn}$fi"));
+			}
+		}
+		print("\n");
+	}
+}
+
+exit(0);

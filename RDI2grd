@@ -1,0 +1,235 @@
+#!/usr/local/bin/perl
+#======================================================================
+#                    R D I 2 G R D 
+#                    doc: Wed Aug 30 11:51:22 2006
+#                    dlm: Thu Jun 18 07:06:34 2009
+#                    (c) 2006 A.M. Thurnherr
+#                    uE-Info: 18 54 NIL 0 0 72 2 2 4 NIL ofnI
+#======================================================================
+
+# make GMT grd files from RDI file
+
+# HISTORY:
+#	Aug 30, 2006: - created at end of GRAVILUCK cruise
+#	Aug 31, 2006: - BUG: ensembles/bins were numbered from 0
+#				  - added -d)imensional coords
+#	Sep  1, 2006: - fiddled with registration
+#	Sep 19, 2007: - adapted to new [RDI_BB_Read.pl]
+#	Jun 18, 2009: - BUG: xysize had been called xyside
+
+# NOTES:
+#	- regular grids only => no dimensional time axis for data collected
+#	  in multi-ensemble burst mode!
+
+# TODO:
+#	- implement soundspeed corretion
+#	- add temporal pre-averaging
+
+require "getopts.pl";
+$0 =~ m{(.*/)[^/]+};
+require "$1RDI_BB_Read.pl";
+require "$1RDI_Coords.pl";
+
+use NetCDF;
+
+sub dumpVar($$$$$)
+{
+	my($var,$units,$long_name,$fname,$dimnum) = @_;
+
+	my($ncId) = NetCDF::create("$opt_b$var.grd",NetCDF::CLOBBER);
+	NetCDF::setfill($ncId,NetCDF::NOFILL);				# NetCDF library bug
+	
+	my($sid) = NetCDF::dimdef($ncId,'side',2);
+	my($aid) = NetCDF::dimdef($ncId,'xysize',($le-$fe+1)*($lastBin-$firstBin+1));
+	    
+	my($xrid) = NetCDF::vardef($ncId,'x_range',NetCDF::DOUBLE,[$sid]);
+	my($yrid) = NetCDF::vardef($ncId,'y_range',NetCDF::DOUBLE,[$sid]);
+	my($zrid) = NetCDF::vardef($ncId,'z_range',NetCDF::DOUBLE,[$sid]);
+	my($spid) = NetCDF::vardef($ncId,'spacing',NetCDF::DOUBLE,[$sid]);
+	my($dmid) = NetCDF::vardef($ncId,'dimension',NetCDF::LONG,[$sid]);
+	
+	my($zvid) = NetCDF::vardef($ncId,'z',NetCDF::FLOAT,[$aid]);
+	
+	NetCDF::attput($ncId,NetCDF::GLOBAL,'title',NetCDF::CHAR,$ARGV[0]);
+	NetCDF::attput($ncId,NetCDF::GLOBAL,'source',NetCDF::CHAR,$usage);
+	
+	NetCDF::attput($ncId,$xrid,'units',NetCDF::CHAR,
+		$opt_d ? 'day number' : 'ensemble number');
+	NetCDF::attput($ncId,$yrid,'units',NetCDF::CHAR,
+		$opt_d ? 'm' : 'bin number');
+	NetCDF::attput($ncId,$zrid,'units',NetCDF::CHAR,$units);
+	
+	NetCDF::attput($ncId,$zvid,'long_name',NetCDF::CHAR,$long_name);
+	NetCDF::attput($ncId,$zvid,'scale_factor',NetCDF::DOUBLE,1);
+	NetCDF::attput($ncId,$zvid,'add_offset',NetCDF::DOUBLE,0);
+	NetCDF::attput($ncId,$zvid,'node_offset',NetCDF::LONG,0);
+	
+	NetCDF::endef($ncId);
+	
+	if ($opt_d) {											# dimensional grid
+		my($ft) = $dta{ENSEMBLE}[$fe]->{DAYNO};				# x_range(side)
+		my($lt) = $dta{ENSEMBLE}[$le]->{DAYNO};
+		NetCDF::varput1($ncId,$xrid,0,$ft);
+		NetCDF::varput1($ncId,$xrid,1,$lt);
+
+		NetCDF::varput1($ncId,$yrid,0,				 		# y_range(side)
+			$dta{DISTANCE_TO_BIN1_CENTER} + $firstBin*$dta{BIN_LENGTH});
+		NetCDF::varput1($ncId,$yrid,1,
+			$dta{DISTANCE_TO_BIN1_CENTER} + $lastBin*$dta{BIN_LENGTH});
+
+		NetCDF::varput1($ncId,$spid,0,($lt-$ft)/($le-$fe));	# spacing(side)
+	    NetCDF::varput1($ncId,$spid,1,$dta{BIN_LENGTH});
+	} else {												# non-dim grid
+		NetCDF::varput1($ncId,$xrid,0,$fe+1);				# x_range(side)
+		NetCDF::varput1($ncId,$xrid,1,$le+1);
+		NetCDF::varput1($ncId,$yrid,0,$firstBin+1); 		# y_range(side)
+		NetCDF::varput1($ncId,$yrid,1,$lastBin+1);
+		NetCDF::varput1($ncId,$spid,0,1);					# spacing(side)
+	    NetCDF::varput1($ncId,$spid,1,1);
+	}
+	
+	NetCDF::varput1($ncId,$dmid,0,$le-$fe+1);				# dimension(side)
+	NetCDF::varput1($ncId,$dmid,1,$lastBin-$firstBin+1);
+	
+	my($min) =	9e99;										# z(xyside)
+	my($max) = -9e99;
+	my(@data);
+	for (my($b)=$lastBin; $b>=$firstBin; $b--) {
+		for (my($e)=$fe; $e<=$le; $e++) {
+			my($v) = $dta{ENSEMBLE}[$e]->{$fname}[$b][$dimnum];
+			$v = nan unless defined($v);
+			$min = $v if ($v < $min);
+			$max = $v if ($v > $max);
+			push(@data,$v);
+		}
+	}
+	
+	my(@start) = (0);
+	my(@count) = (scalar(@data));
+	
+	NetCDF::varput($ncId,$zvid,\@start,\@count,\@data);
+	
+	NetCDF::varput1($ncId,$zrid,0,$min);					# z_range(side)
+	NetCDF::varput1($ncId,$zrid,1,$max);
+	
+	NetCDF::close($ncId);
+}
+
+#------
+# Usage
+#------
+
+$usage = "$0 @ARGV";
+die("Usage: $0 [-M)agnetic <declination>] [-r)ange <first_ens,last_ens>] " .
+			  "[output -b)ase <name>] [-d)imensional coordinates] " .
+			  "<RDI file>\n")
+	unless (&Getopts("b:dM:r:") && @ARGV == 1);
+
+print(STDERR "WARNING: magnetic declination not set!\n")
+	unless defined($opt_M);
+
+unless (defined($opt_b)) {
+	$opt_b = "$ARGV[0]_";
+	$opt_b =~ m{(.*)\.\d\d\d};
+}
+
+($first_ens,$last_ens) = split(',',$opt_r)
+	if defined($opt_r);
+
+#----------
+# Read Data
+#----------
+
+print(STDERR "Reading $ARGV[0]...");
+readData($ARGV[0],\%dta);
+printf(STDERR "%d complete ensembles\n",scalar(@{$dta{ENSEMBLE}}));
+
+#--------------------------------------------------
+# Find Good Ensemble Range & Make Earth Coordinates
+#--------------------------------------------------
+
+print(STDERR "Checking/transforming data...");
+$dta{HEADING_BIAS} = -$opt_M;						# magnetic declination
+
+if ($dta{BEAM_COORDINATES}) {						# coords used
+	$beamCoords = 1;
+} elsif (!$dta{EARTH_COORDINATES}) {
+	die("$ARGV[0]: only beam and earth coordinates implemented so far\n");
+}
+
+$lastGoodBin = 0;
+for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {			# check/transform velocities
+	next if (defined($first_ens) &&
+			 $dta{ENSEMBLE}[$e]->{NUMBER} < $first_ens);
+	$P{first_ens} = $dta{ENSEMBLE}[$e]->{NUMBER},$fe = $e
+		unless defined($P{first_ens});
+	last if (defined($last_ens) &&
+			 $dta{ENSEMBLE}[$e]->{NUMBER} > $last_ens);
+	$P{last_ens} = $dta{ENSEMBLE}[$e]->{NUMBER};
+	$le = $e;
+
+	die("3-beams used in ensemble #$dta{ENSEMBLE}[$e]->{NUMBER}\n")
+		if ($dta{ENSEMBLE}[$e]->{N_BEAMS_USED} < 4);
+	die("BIT error in ensemble $dta{ENSEMBLE}[$e]->{NUMBER}\n")
+		if defined($dta{ENSEMBLE}[$e]->{BUILT_IN_TEST_ERROR});
+	die("Low gain in ensemble #$dta{ENSEMBLE}[$e]->{NUMBER}\n")
+        if ($dta{ENSEMBLE}[$e]->{LOW_GAIN});
+
+	for (my($b)=0; $b<$dta{N_BINS}; $b++) {
+		next unless (defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0]) &&
+					 defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1]) &&
+					 defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2]) &&
+					 defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3]));
+		@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]} = $beamCoords
+			? velInstrumentToEarth(\%dta,$e,
+				  velBeamToInstrument(\%dta,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]})
+			  )
+			: velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
+		$dta{ENSEMBLE}[$e]->{GOOD_VEL}[$b] = 1;
+		$good_vels[$b]++;
+		$lastGoodBin = $b if ($b > $lastGoodBin);
+		$firstGoodEns = $e unless defined($firstGoodEns);
+		$lastGoodEns = $e;
+    }
+}
+
+unless (defined($opt_r)) {
+	$fe = $firstGoodEns;
+	$le = $lastGoodEns;
+}
+
+$firstBin = 0;
+$lastBin = $lastGoodBin;
+
+print(STDERR "\n");
+print(STDERR "Start: $dta{ENSEMBLE}[$fe]->{DATE} $dta{ENSEMBLE}[$fe]->{TIME}\n");
+print(STDERR "End  : $dta{ENSEMBLE}[$le]->{DATE} $dta{ENSEMBLE}[$le]->{TIME}\n");
+printf(STDERR "Bins : %d-%d\n",$firstBin+1,$lastBin+1);
+
+#-----------
+# Write Data
+#-----------
+
+print(STDERR "Writing NetCDF files");
+&dumpVar('u','[m/s]','eastward velocity' ,'VELOCITY',0); print(STDERR '.');
+&dumpVar('v','[m/s]','northward velocity','VELOCITY',1); print(STDERR '.');
+&dumpVar('w','[m/s]','vertical velocity' ,'VELOCITY',2); print(STDERR '.');
+&dumpVar('e','[m/s]','error velocity'    ,'VELOCITY',3); print(STDERR '.');
+
+&dumpVar('ea1','[count]','beam-1 echo amplitude','ECHO_AMPLITUDE',0); print(STDERR '.');
+&dumpVar('ea2','[count]','beam-2 echo amplitude','ECHO_AMPLITUDE',1); print(STDERR '.');
+&dumpVar('ea3','[count]','beam-3 echo amplitude','ECHO_AMPLITUDE',2); print(STDERR '.');
+&dumpVar('ea4','[count]','beam-4 echo amplitude','ECHO_AMPLITUDE',3); print(STDERR '.');
+
+&dumpVar('corr1','[count]','beam-1 correlation','CORRELATION',0); print(STDERR '.');
+&dumpVar('corr2','[count]','beam-2 correlation','CORRELATION',1); print(STDERR '.');
+&dumpVar('corr3','[count]','beam-3 correlation','CORRELATION',2); print(STDERR '.');
+&dumpVar('corr4','[count]','beam-4 correlation','CORRELATION',3); print(STDERR '.');
+
+&dumpVar('pcg1','[count]','beam-1 %-good','PERCENT_GOOD',0); print(STDERR '.');
+&dumpVar('pcg2','[count]','beam-2 %-good','PERCENT_GOOD',1); print(STDERR '.');
+&dumpVar('pcg3','[count]','beam-3 %-good','PERCENT_GOOD',2); print(STDERR '.');
+&dumpVar('pcg4','[count]','beam-4 %-good','PERCENT_GOOD',3); print(STDERR '.');
+print(STDERR "\n");
+
+exit(0);	
