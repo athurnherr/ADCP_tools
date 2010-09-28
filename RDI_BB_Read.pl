@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ B B _ R E A D . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Wed Jun  4 09:43:15 2008
+#                    dlm: Sun Aug 15 16:35:54 2010
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 44 25 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 47 72 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Read RDI BroadBand Binary Data Files (*.[0-9][0-9][0-9])
@@ -42,6 +42,9 @@
 #	Sep 18, 2007: - modified readHeader() readDta() WBRhdr() WBRens() to
 #					conserve memory (no large arrays as retvals)
 #	Jun  4, 2008: - BUG: BB150 code was not considered on Sep 18, 2007
+#	Aug 15, 2010: - downgraded "unexpected number of data types" from error to warning
+#				  - BUG: WBRcfn had not been set correctly
+#				  - modified to allow processing files without time info
 
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -294,8 +297,8 @@ sub WBRhdr($)
 		= unpack('CCvCC',$buf);
 	$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header",$hid,0));
 	$did == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Data Source",$did,0));
-	die(sprintf("\n$WBRcfn: WARNING: unexpected number of data types (%d)\n",
-		$dta->{NUMBER_OF_DATA_TYPES}))
+	printf(STDERR "\n$WBRcfn: WARNING: unexpected number of data types (%d)\n",
+		$dta->{NUMBER_OF_DATA_TYPES})
 			unless ($dta->{NUMBER_OF_DATA_TYPES} == 6 ||
 					$dta->{NUMBER_OF_DATA_TYPES} == 7);
 	$dta->{BT_PRESENT} = ($dta->{NUMBER_OF_DATA_TYPES} == 7);
@@ -600,19 +603,27 @@ sub WBRens($$$$$)
 			= &dayNo(${$E}[$ens]->{YEAR},${$E}[$ens]->{MONTH},${$E}[$ens]->{DAY},
 					 ${$E}[$ens]->{HOUR},${$E}[$ens]->{MINUTE},${$E}[$ens]->{SECONDS});
 
-		${$E}[$ens]->{UNIX_TIME}
-			= timegm(0,${$E}[$ens]->{MINUTE},
-				 	   ${$E}[$ens]->{HOUR},
-					   ${$E}[$ens]->{DAY},
-					   ${$E}[$ens]->{MONTH}-1,		# NB!!!
-					   ${$E}[$ens]->{YEAR})
-			  + ${$E}[$ens]->{SECONDS};
-
-		$dayStart = timegm(0,0,0,${$E}[$ens]->{DAY},
-	  		                     ${$E}[$ens]->{MONTH}-1,     # NB!!!
-		                         ${$E}[$ens]->{YEAR})
-			unless defined($dayStart);
-		${$E}[$ens]->{SECNO} = ${$E}[$ens]->{UNIX_TIME} - $dayStart;
+		# when analyzing an STA file from an OS75 SADCP (Poseidion),
+		# I noticed that there is no time information. This causes
+		# timegm to bomb. 
+		if (${$E}[$ens]->{MONTH} == 0) {					# no time info
+			${$E}[$ens]->{UNIX_TIME} = 0;
+			${$E}[$ens]->{SECNO} = 0;
+        } else {
+			${$E}[$ens]->{UNIX_TIME}
+				= timegm(0,${$E}[$ens]->{MINUTE},
+						   ${$E}[$ens]->{HOUR},
+						   ${$E}[$ens]->{DAY},
+						   ${$E}[$ens]->{MONTH}-1,			# timegm jan==0!!!
+						   ${$E}[$ens]->{YEAR})
+				  + ${$E}[$ens]->{SECONDS};
+	
+			$dayStart = timegm(0,0,0,${$E}[$ens]->{DAY},
+									 ${$E}[$ens]->{MONTH}-1,
+									 ${$E}[$ens]->{YEAR})
+				unless defined($dayStart);
+	        ${$E}[$ens]->{SECNO} = ${$E}[$ens]->{UNIX_TIME} - $dayStart;
+        }
 
 		seek(WBRF,$start_ens+$WBRofs[0]+4,0)		# System Config / Fixed Leader
 			|| die("$WBRcfn: $!");
@@ -774,14 +785,16 @@ sub WBRens($$$$$)
 
 sub readHeader(@)
 {
-	my($WBRcfn,$dta) = @_;
+	my($fn,$dta) = @_;
+	$WBRcfn = $fn;
     open(WBRF,$WBRcfn) || die("$WBRcfn: $!\n");
     WBRhdr($dta);    
 }
 
 sub readData(@)
 {
-	my($WBRcfn,$dta) = @_;
+	my($fn,$dta) = @_;
+	$WBRcfn = $fn;
     open(WBRF,$WBRcfn) || die("$WBRcfn: $!\n");
     WBRhdr($dta);
 	WBRens($dta->{N_BINS},$dta->{ENSEMBLE_BYTES},

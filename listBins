@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B I N S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Sat May 23 16:34:30 2009
+#                    dlm: Sun Aug 22 22:40:32 2010
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 269 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 45 28 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -42,6 +42,7 @@
 #				  - -P)itchRoll <bias/bias>
 #	May 22, 2009: - added -B) <bias/bias/bias/bias>
 #	May 23, 2009: - adapted to changed beampair-velocity fun name
+#	Aug 22, 2010: - added -R
 
 # General Notes:
 #	- everything (e.g. beams) is numbered from 1
@@ -68,7 +69,7 @@ require "$1RDI_BB_Read.pl";
 require "$1RDI_Coords.pl";
 require "$1RDI_Utils.pl";
 
-die("Usage: $0 [-r)ange <first_ens,last_ens>] " .
+die("Usage: $0 [-r)ange <first_ens,last_ens>] [-R)enumber ensembles] " .
 			  "[output -f)ile <pat[bin%d.raw]>] " .
 			  "[-a)ll ens (not just those with good vels)] " .
 			  "[-M)agnetic <declination>] " .
@@ -78,7 +79,7 @@ die("Usage: $0 [-r)ange <first_ens,last_ens>] " .
 		 	  "[-%)good <min>] " .
 		 	  "[output -b)eam coordinates] [output two separate -w) estimates] " .
 			  "<RDI file>\n")
-	unless (&Getopts("4abB:d:f:M:p:r:P:S:w") && @ARGV == 1);
+	unless (&Getopts("4abB:d:f:M:p:r:P:RS:w") && @ARGV == 1);
 
 ($P{pitch_bias},$P{roll_bias}) = split('[,/]',$opt_P);
 ($P{velbias_b1},$P{velbias_b2},$P{velbias_b3},$P{velbias_b4}) = split('[,/]',$opt_B);
@@ -238,7 +239,8 @@ for (my($b)=0; $b<$dta{N_BINS}; $b++) {				# calc dz
 }
 
 $lastGoodBin = 0;
-for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {			# check/transform velocities
+for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {				# check/transform velocities
+	$dta{ENSEMBLE}[$e]->{NUMBER} = $e+1 if ($opt_R);	# renumber ensembles
 	next if (defined($first_ens) &&
 			 $dta{ENSEMBLE}[$e]->{NUMBER} < $first_ens);
 

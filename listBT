@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B T 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Sun May 23 16:33:33 2010
+#                    dlm: Sat Aug 21 23:24:42 2010
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 527 42 NIL 0 0 72 11 2 4 NIL ofnI
+#                    uE-Info: 123 56 NIL 0 0 72 11 2 4 NIL ofnI
 #======================================================================
 
 # Extract Bottom-Track Data
@@ -120,7 +120,7 @@ unless ($opt_f) {									# check BT setup
 			if ($dta{BT_MIN_EVAL_AMPLITUDE} > $opt_a);
 	die("$0: maximum instrument BT error velocity ($dta{BT_MAX_ERROR_VELOCITY}) " .
 		"too small for selected criterion (-e $opt_e) --- use -f to override\n")
-			if ($dta{BT_MAX_ERROR_VELOCITY} < $opt_e);
+			if (defined($dta{BT_MAX_ERROR_VELOCITY}) && $dta{BT_MAX_ERROR_VELOCITY} < $opt_e);
 }
 
 require $opt_F if defined($opt_F);					# load filter
