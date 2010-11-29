@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Sun May 23 16:35:21 2010
+#                    dlm: Wed Oct 20 14:41:17 2010
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 156 42 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 35 84 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -28,6 +28,11 @@
 #				  - BUG: seabed < max depth was possible
 #	Jan     2010: - fiddled with seabed detection params (no conclusion)
 #	May 23, 2010: - renamed Z to DEPTH
+#	Sep 27, 2010: - made sure coord flags are changed correctly when data
+#					are transferred to earth coords in mk_prof
+#	Sep 29, 2010: - BUG: previous change was wrong, as ref_lr_w does
+#						 not overwrite velocities
+#	Oct 20, 2010: - BUG: w is now not integrated any more across gaps longer than 5s 
 
 use strict;
 
@@ -329,13 +334,18 @@ sub mk_prof($$$$$$$$)										# make profile
 			$w_gap_time = 0;
 			next;
 		}
-	
+
 		#-----------------------------------
 		# The current ensemble has a valid w
 		#-----------------------------------
 	
-		$z += $dta->{ENSEMBLE}[$lastgood]->{W} * $dt;			# integrate
-		$zErr += ($dta->{ENSEMBLE}[$lastgood]->{W_ERR} * $dt)**2;
+		if ($dt < 5) {
+			$z += $dta->{ENSEMBLE}[$lastgood]->{W} * $dt;			# integrate
+			$zErr += ($dta->{ENSEMBLE}[$lastgood]->{W_ERR} * $dt)**2;
+		} else {
+	       	print(STDERR "WARNING: gap (dt=$dt) --- w discarded\n");
+		}
+	
 		$dta->{ENSEMBLE}[$e]->{DEPTH} = $z;
 		$dta->{ENSEMBLE}[$e]->{DEPTH_ERR} = sqrt($zErr);
 	
@@ -358,3 +368,4 @@ sub numberp(@)
 
 
 1;
+
