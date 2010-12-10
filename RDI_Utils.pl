@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Wed Oct 20 14:41:17 2010
+#                    dlm: Fri Dec 10 14:39:58 2010
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 35 84 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 37 42 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -32,7 +32,9 @@
 #					are transferred to earth coords in mk_prof
 #	Sep 29, 2010: - BUG: previous change was wrong, as ref_lr_w does
 #						 not overwrite velocities
-#	Oct 20, 2010: - BUG: w is now not integrated any more across gaps longer than 5s 
+#	Oct 20, 2010: - BUG: w is now not integrated any more across gaps longer than 5s
+#	Dec  8, 2010: - changed missing w warning to happen only if gap is longer than 15s
+#	Dec 10, 2010: - beautified gap warning
 
 use strict;
 
@@ -342,8 +344,8 @@ sub mk_prof($$$$$$$$)										# make profile
 		if ($dt < 5) {
 			$z += $dta->{ENSEMBLE}[$lastgood]->{W} * $dt;			# integrate
 			$zErr += ($dta->{ENSEMBLE}[$lastgood]->{W_ERR} * $dt)**2;
-		} else {
-	       	print(STDERR "WARNING: gap (dt=$dt) --- w discarded\n");
+		} elsif ($dt > 15) {
+	       	printf(STDERR "WARNING: long-ish w gap (dt=%ds)\n",$dt);
 		}
 	
 		$dta->{ENSEMBLE}[$e]->{DEPTH} = $z;

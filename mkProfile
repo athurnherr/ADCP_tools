@@ -2,9 +2,9 @@
 #======================================================================
 #                    M K P R O F I L E 
 #                    doc: Sun Jan 19 18:55:26 2003
-#                    dlm: Sun May 23 16:34:02 2010
+#                    dlm: Fri Dec 10 14:42:49 2010
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 788 36 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 229 28 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Make an LADCP Profile by Integrating W (similar to Firing's scan*).
@@ -68,6 +68,8 @@
 #				  - removed approximations in pitch/roll calcs
 #	Jul 30, 2009: - typo '<' removed from output
 #				  - NaN => nan
+#	Dec  8, 2010: - added zmax/zend labels to output
+#	Dec 10, 2010: - made mkProfile exit with status 0 if no good ens found but -Q is set
 
 # NOTES:
 #	- the battery values are based on transmission voltages (different
@@ -224,8 +226,14 @@ sub gps_to_deg($)									# decode lat/lon
 ($firstgood,$lastgood,$atbottom,$w_gap_time,$zErr,$maxz) =
 	mk_prof(\%dta,!$opt_s,$opt_F,$minb,$maxb,$opt_c,$opt_e,$opt_m);
 
-die("$ARGV[0]: no good ensembles found\n")
-	unless defined($firstgood);
+unless (defined($firstgood)) {
+	if ($opt_Q) {
+		print(STDERR "$ARGV[0]: no good ensembles found\n");
+		exit(0);
+    } else {
+		die("$ARGV[0]: no good ensembles found\n");
+	}
+}
 
 if (defined($opt_B)) {										# scale Z
 	my($zscale) = $opt_B / ($dta{ENSEMBLE}[$atbottom]->{DEPTH} -# downcast
@@ -635,50 +643,50 @@ $rotrms = sqrt($rotrms/($lastgood-$firstgood));
 # PRODUCE OUTPUT
 #======================================================================
 
-printf(STDERR "# of ensembles   : %d\n",scalar(@{$dta{ENSEMBLE}}));
-printf(STDERR "Start of cast    : %s (#%5d) at %6.1fm\n",
+printf(STDERR "# of ensembles       : %d\n",scalar(@{$dta{ENSEMBLE}}));
+printf(STDERR "Start of cast        : %s (#%5d) at %6.1fm\n",
 					$dta{ENSEMBLE}[$firstgood]->{TIME},
 					$dta{ENSEMBLE}[$firstgood]->{NUMBER},
 					$dta{ENSEMBLE}[$firstgood]->{DEPTH});
-printf(STDERR "Bottom of cast   : %s (#%5d) at %6.1fm\n",
+printf(STDERR "Bottom of cast (zmax): %s (#%5d) at %6.1fm\n",
 					$dta{ENSEMBLE}[$atbottom]->{TIME},
 					$dta{ENSEMBLE}[$atbottom]->{NUMBER},
 					$dta{ENSEMBLE}[$atbottom]->{DEPTH});
 if (defined($water_depth)) {
-	printf(STDERR "Seabed           :                      at %6.1fm (+-%dm)\n",$water_depth,$sig_wd);
+	printf(STDERR "Seabed               :                      at %6.1fm (+-%dm)\n",$water_depth,$sig_wd);
 } else {
-	print(STDERR "Seabed           : not found\n");
+	print(STDERR "Seabed               : not found\n");
 }
-printf(STDERR "End of cast      : %s (#%5d) at %6.1fm\n",
+printf(STDERR "End of cast (zend)   : %s (#%5d) at %6.1fm\n",
 					$dta{ENSEMBLE}[$lastgood]->{TIME},
 					$dta{ENSEMBLE}[$lastgood]->{NUMBER},
 					$dta{ENSEMBLE}[$lastgood]->{DEPTH});
 
-printf(STDERR "Rel. Displacement: x = %d(%d)m / y = %d(%d)m\n",
+printf(STDERR "Rel. Displacement    : x = %d(%d)m / y = %d(%d)m\n",
 					$dta{ENSEMBLE}[$lastgood]->{X}, $x_err, 
 					$dta{ENSEMBLE}[$lastgood]->{Y}, $y_err, 
 				) if defined($opt_M);
 
-printf(STDERR "Cast Duration    : %.1f hours (pinging for %.1f hours)\n",
+printf(STDERR "Cast Duration        : %.1f hours (pinging for %.1f hours)\n",
 					$dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME} / 3600,
 					($dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{UNIX_TIME} -
 						$dta{ENSEMBLE}[0]->{UNIX_TIME}) / 3600);
 
-printf(STDERR "Minimum range    : %dm at ensemble %d, beam %d\n",
+printf(STDERR "Minimum range        : %dm at ensemble %d, beam %d\n",
 				$dta{DISTANCE_TO_BIN1_CENTER} +
 					$min_good_bins*$dta{BIN_LENGTH},
 				$dta{ENSEMBLE}[$min_good_ens]->{NUMBER},
 				$worst_beam);
-printf(STDERR "80%%-valid bins   : %.1f\n",$gb+1);
-printf(STDERR "80%%-valid range  : %dm\n",
+printf(STDERR "80%%-valid bins       : %.1f\n",$gb+1);
+printf(STDERR "80%%-valid range      : %dm\n",
 				$dta{DISTANCE_TO_BIN1_CENTER} + $gb*$dta{BIN_LENGTH});
-printf(STDERR "3-beam solutions : $RDI_Coords::threeBeam_1 " .
-								 "$RDI_Coords::threeBeam_2 " .
-								 "$RDI_Coords::threeBeam_3 " .
-                                 "$RDI_Coords::threeBeam_4\n")
+printf(STDERR "3-beam solutions     : $RDI_Coords::threeBeam_1 " .
+								 	 "$RDI_Coords::threeBeam_2 " .
+								 	 "$RDI_Coords::threeBeam_3 " .
+                                 	 "$RDI_Coords::threeBeam_4\n")
 	unless ($opt_4);
-printf(STDERR "net rotations    : [%d]/%d/%d/[%d]\n",$prerot,$dnrot,$uprot,$postrot);
-printf(STDERR "rms pitch/roll   : %.1f/%.1f\n",$dnprrms,$upprrms);
+printf(STDERR "net rotations        : [%d]/%d/%d/[%d]\n",$prerot,$dnrot,$uprot,$postrot);
+printf(STDERR "rms pitch/roll       : %.1f/%.1f\n",$dnprrms,$upprrms);
 
 if ($opt_A) {												# ANTS format
 	print("#ANTS# [] $USAGE\n");
