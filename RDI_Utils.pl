@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Fri Dec 10 14:51:41 2010
+#                    dlm: Thu Dec 16 05:36:27 2010
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 349 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 333 65 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -35,6 +35,7 @@
 #	Oct 20, 2010: - BUG: w is now not integrated any more across gaps longer than 5s
 #	Dec  8, 2010: - changed missing w warning to happen only if gap is longer than 15s
 #	Dec 10, 2010: - beautified gap warning
+#	Dec 16, 2010: - BUG: gaps at end caused mk_prof to throw away profile
 
 use strict;
 
@@ -328,7 +329,12 @@ sub mk_prof($$$$$$$$)										# make profile
 				  $dta->{ENSEMBLE}[$lastgood]->{UNIX_TIME}; # ... last good ens
 	
 		if ($dt > $max_gap) {
-			printf(STDERR "WARNING: %d-s gap too long, profile restarted at ensemble $e\n",$dt);
+			if ($dta->{ENSEMBLE}[$lastgood]->{UNIX_TIME} -
+			    $dta->{ENSEMBLE}[$firstgood]->{UNIX_TIME} > 15*60) {
+					printf(STDERR "WARNING: %.1f-s gap too long, profile ended at ensemble $lastgood\n",$dt);
+					last;
+			}
+			printf(STDERR "WARNING: %.1f-s gap too long, profile restarted at ensemble $e\n",$dt);
 			$firstgood = $lastgood = $e;
 			$dta->{ENSEMBLE}[$e]->{ELAPSED_TIME} = 0;
 			$z = $zErr = $maxz = 0;
@@ -345,7 +351,7 @@ sub mk_prof($$$$$$$$)										# make profile
 			$z += $dta->{ENSEMBLE}[$lastgood]->{W} * $dt;			# integrate
 			$zErr += ($dta->{ENSEMBLE}[$lastgood]->{W_ERR} * $dt)**2;
 		} elsif ($dt > 15) {
-	       	printf(STDERR "WARNING: long-ish w gap (dt=%ds)\n",$dt);
+	       	printf(STDERR "WARNING: long-ish w gap (dt=%.1fs)\n",$dt);
 		}
 	
 		$dta->{ENSEMBLE}[$e]->{DEPTH} = $z;

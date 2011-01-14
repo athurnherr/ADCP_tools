@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T E N S 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Sun Aug 15 10:29:12 2010
+#                    dlm: Wed Jan  5 06:09:49 2011
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 34 35 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 191 73 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the ensemble list or dump ensembles to
@@ -32,9 +32,11 @@
 #	Mar  2, 2009: - added # of valid bin-1 vels to non-ANTS output
 #	Jul 30, 2009: - NaN => nan
 #	Aug 15, 2010: - BUG: usage typo
+#	Dec 10, 2010: - changed ANTS output to time/date instead of UNIX time
+#	Jan  5, 2011: - added -b
 
 # Notes:
-#	- -E outputs data in earth coordinates
+#	- -E outputs data in earth coordinates, unless -b is set also
 #	- -E output is always in ANTS format, ignoring -A
 #	- no soundspeed correction
 
@@ -45,16 +47,16 @@ require "$1RDI_Coords.pl";
 
 die("Usage: $0 [-A)nts] [-Q)uiet (errcheck only)] " .
 			  "[-f)ields <[name=]FIELD[,...]>] " .
-			  "[write -E)nsemples <pref> [-M)agnetic <declination>] [min -p)ercent-good <#>]] " .
+			  "[write -E)nsemples <pref> [-M)agnetic <declination>] [min -p)ercent-good <#>] [keep -b)eam coords]] " .
 			  "[-r)ange <first_ens,last_ens>] [in-w)ater ensembles only] " .
 			  "<RDI file...>\n")
-	unless (&Getopts("AE:f:M:p:Qr:w") && $#ARGV >= 0);
+	unless (&Getopts("AbE:f:M:p:Qr:w") && $#ARGV >= 0);
 
 print(STDERR "WARNING: magnetic declination not set!\n")
 	if defined($opt_E) && !defined($opt_M);
 
 die("$0: illegal option combination\n")
-	if ($opt_Q && $opt_A) || ((defined($opt_M) || defined($opt_p)) && !defined($opt_E));
+	if ($opt_Q && $opt_A) || ((defined($opt_M) || defined($opt_p) || defined($opt_b)) && !defined($opt_E));
 
 ($first_ens,$last_ens) = split(',',$opt_r)
 	if defined($opt_r);
@@ -100,6 +102,9 @@ while (-f $ARGV[0]) {
 	} elsif (!$dta{EARTH_COORDINATES}) {
 		die("$ARGV[0]: only beam and earth coordinates implemented so far\n");
 	}
+
+	die("$ARGV[0]: -b only makes sense for beam-coordinate data\n")
+		if ($opt_b && !$beamCoords);
 
 	if ($opt_A) {										# select output fmt: ANTS
 		unless ($opt_Q) {
@@ -183,9 +188,10 @@ while (-f $ARGV[0]) {
 						if ($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][2] < $opt_p);
 					undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3])
 						if ($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][3] < $opt_p);
-					@v = velInstrumentToEarth(\%dta,$e,
-							velBeamToInstrument(\%dta,
-								@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]}));
+					@v = $opt_b ? @{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]} :
+							velInstrumentToEarth(\%dta,$e,
+								velBeamToInstrument(\%dta,
+									@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]}));
 				} else {
 					@v = velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
 				}

@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ C O O R D S . P L 
 #                    doc: Sun Jan 19 17:57:53 2003
-#                    dlm: Sun May 23 22:47:32 2010
+#                    dlm: Thu Dec 23 15:00:02 2010
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 28 74 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 30 48 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # RDI Workhorse Coordinate Transformations
@@ -26,6 +26,8 @@
 #	May 19, 2009: - added &velBeamToVertical()
 #	May 23, 2009: - debugged & renamed to &velBeamToBPEarth
 #	May 23, 2010: - changed prototypes of rad() & deg() to conform to ANTS
+#	Dec 20, 2010: - cosmetics
+#	Dec 23, 3020: - added &velBeamToBPInstrument
 
 use strict;
 use POSIX;
@@ -140,7 +142,7 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 } # STATIC SCOPE
 
 #======================================================================
-# velBeamToBPEarth3(@) calculates the vertical- and horizontal vels
+# velBeamToBPEarth(@) calculates the vertical- and horizontal vels
 # from the two beam pairs separately. Note that (w1+w2)/2 is 
 # identical to the w estimated according to RDI without 3-beam 
 # solutions.
@@ -195,6 +197,48 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 	}
 }
 
+#===================================================================
+# velBeamToBPInstrument(@) calculates the instrument-coordinate vels
+# from the two beam pairs separately.
+#===================================================================
+
+{ # STATIC SCOPE
+	my($TwoCosBAngle,$TwoSinBAngle);
+
+	sub velBeamToBPInstrument(@)
+	{
+		my($dta,$ens,$b1,$b2,$b3,$b4) = @_;
+		my($v12,$w12,$v34,$w34);
+
+		unless (defined($TwoCosBAngle)) {
+			$TwoCosBAngle = 2 * cos(rad($dta->{BEAM_ANGLE}));
+			$TwoSinBAngle = 2 * sin(rad($dta->{BEAM_ANGLE}));
+		}
+		my($roll)  = rad($dta->{ENSEMBLE}[$ens]->{ROLL});							
+		my($sr) = sin($roll); my($cr) = cos($roll);
+		my($pitch) = atan(tan(rad($dta->{ENSEMBLE}[$ens]->{PITCH})) * $cr);	# gimbal pitch
+		my($sp) = sin($pitch); my($cp) = cos($pitch);
+
+		# Sign convention:
+		#	- refer to Coord manual Fig. 3
+		#	- v12 is horizontal velocity from beam1 to beam2
+		#	- w is +ve upward, regardless of instrument orientation
+
+		if (defined($b1) && defined($b2)) {
+			$v12 = ($b1-$b2)/$TwoSinBAngle;
+			$w12 = ($b1+$b2)/$TwoCosBAngle;
+			$w12 *= -1 if ($dta->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP});
+		}
+		if (defined($b3) && defined($b4)) {
+			$v34 = ($b3-$b4)/$TwoSinBAngle;
+			$w34 = ($b3+$b4)/$TwoCosBAngle;
+			$w34 *= -1 if ($dta->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP});
+		}
+
+		return ($v12,$w12,$v34,$w34);
+	}
+}
+
 #======================================================================
 # velApplyHdgBias() applies the heading bias, which is used to correct
 # for magnetic declination for data recorded in Earth-coordinates ONLY.
@@ -230,8 +274,8 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 
 sub gimbal_pitch($$)	# RDI coord trans manual
 {
-	my($tilt1,$tilt2) = @_;
-	return deg(atan(tan(rad($tilt1)) * cos(rad($tilt2))));
+	my($RDI_pitch,$RDI_roll) = @_;
+	return deg(atan(tan(rad($RDI_pitch)) * cos(rad($RDI_roll))));
 }
 
 # - angle from vertical is home grown and should be treated with caution
@@ -247,9 +291,9 @@ sub gimbal_pitch($$)	# RDI coord trans manual
 
 sub angle_from_vertical($$)
 {
-	my($tilt1,$tilt2) = @_;
-	my($rad_pitch) = atan(tan(rad($tilt1)) * cos(rad($tilt2)));
-	return deg(acos(cos($rad_pitch) * cos(rad($tilt2))));
+	my($RDI_pitch,$RDI_roll) = @_;
+	my($rad_pitch) = atan(tan(rad($RDI_pitch)) * cos(rad($RDI_roll)));
+	return deg(acos(cos($rad_pitch) * cos(rad($RDI_roll))));
 }
 
 1;

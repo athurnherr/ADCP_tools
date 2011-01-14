@@ -2,9 +2,9 @@
 #======================================================================
 #                    M K P R O F I L E 
 #                    doc: Sun Jan 19 18:55:26 2003
-#                    dlm: Fri Dec 10 14:52:16 2010
+#                    dlm: Wed Jan  5 01:05:50 2011
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 231 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 233 47 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Make an LADCP Profile by Integrating W (similar to Firing's scan*).
@@ -70,6 +70,8 @@
 #				  - NaN => nan
 #	Dec  8, 2010: - added zmax/zend labels to output
 #	Dec 10, 2010: - made mkProfile exit with status 0 if no good ens found but -Q is set
+#	Dec 19, 2010: - finally made -A default and activated output file
+#	Jan  5, 2011: - made no-good-ensembles found test much more robust
 
 # NOTES:
 #	- the battery values are based on transmission voltages (different
@@ -93,7 +95,7 @@ require "getopts.pl";
 
 $USAGE = "$0 @ARGV";
 die("Usage: $0 " .
-	"[-A)nts] [-Q)uiet] [-F)ilter <script>] " .
+	"[-Q)uiet] [-F)ilter <script>] " .
 	"[-s)uppress checkensemble()] " .
 	"[require -4)-beam solutions] " .
 	"[-r)ef-layer <bin|1,bin|6>] [-n) vels <min|2>] " .
@@ -104,9 +106,6 @@ die("Usage: $0 " .
 	"[-M)agnetic <declination>] [profile -B)ottom <depth>] " .
 	"<RDI file>\n")
 		unless (&Getopts("4AB:F:M:Qd:r:n:e:c:g:f:m:s") && @ARGV == 1);
-
-die("$0: -Q and -A are mutually exclusive\n")
-	if ($opt_Q && $opt_A);
 
 $RDI_Coords::minValidVels = 4 if ($opt_4);			# no 3-beam solutions
 
@@ -226,12 +225,12 @@ sub gps_to_deg($)									# decode lat/lon
 ($firstgood,$lastgood,$atbottom,$w_gap_time,$zErr,$maxz) =
 	mk_prof(\%dta,!$opt_s,$opt_F,$minb,$maxb,$opt_c,$opt_e,$opt_m);
 
-unless (defined($firstgood)) {
+unless (($atbottom > $firstgood) && ($lastgood > $atbottom)) {
 	if ($opt_Q) {
-		print(STDERR "$ARGV[0]: no good ensembles found\n");
+		print(STDERR "$ARGV[0]: no valid cast data found\n");
 		exit(0);
     } else {
-		die("$ARGV[0]: no good ensembles found\n");
+		die("$ARGV[0]: no valid cast data found\n");
 	}
 }
 
@@ -688,129 +687,134 @@ printf(STDERR "3-beam solutions     : $RDI_Coords::threeBeam_1 " .
 printf(STDERR "net rotations        : [%d]/%d/%d/[%d]\n",$prerot,$dnrot,$uprot,$postrot);
 printf(STDERR "rms pitch/roll       : %.1f/%.1f\n",$dnprrms,$upprrms);
 
-if ($opt_A) {												# ANTS format
-	print("#ANTS# [] $USAGE\n");
-	$uFields = "{u} {u_err} {v} {v_err} {x} {x_err} {y} {y_err}"
-		if defined($opt_M);
-	print("#ANTS#FIELDS# {ens} {time} {elapsed} {secno} {downcast} " .
-						"{w} {w_err} {depth} {depth_err} {depth_BT} " .
-						"{pitchroll} {rotation} " .
-		  				"$uFields $addFields\n");
+exit(0) if ($opt_Q);
 
-   	printf("#ANTS#PARAMS# date{$dta{ENSEMBLE}[$firstgood]->{DATE}} " .
-				   "start_time{$dta{ENSEMBLE}[$firstgood]->{TIME}} " .
-				  "bottom_time{$dta{ENSEMBLE}[$atbottom]->{TIME}} " .
-				     "end_time{$dta{ENSEMBLE}[$lastgood]->{TIME}} " .
-		  "bottom_xmit_voltage{$dta{ENSEMBLE}[$atbottom]->{ADC_XMIT_VOLTAGE}} " .
-		  "bottom_xmit_current{$dta{ENSEMBLE}[$atbottom]->{ADC_XMIT_CURRENT}} " .
-			 "pinging_duration{%.1f} " .
-			    "cast_duration{%.1f} " .
-	    	   "0.8_valid_bins{%.1f} " .
-	     	  "0.8_valid_range{%.1f} " .
-				    "max_depth{%.1f} " .
-				  "depth_error{%.1f} " .
-				    "min_range{%d} " .
-				  "n_ensembles{%d} " .
-				   "w_gap_time{%d} " .
-				     "stderr_w{%.4f} " .
-				"rms_pitchroll{%.1f} " .
-  	   "downcast_rms_pitchroll{%.1f} " .
-		 "upcast_rms_pitchroll{%.1f} " .
-				 "rms_rotation{%.2f} " .
-		 "deployment_rotations{%d} " .
-		   "downcast_rotations{%d} " .
-		     "upcast_rotations{%d} " .
-		   "recovery_rotations{%d} " .
-				    "bin1_dist{%.1f} " .
-				   "bin_length{%.1f} " .
-		  				 "\n",
-				($dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{UNIX_TIME} -
-						$dta{ENSEMBLE}[0]->{UNIX_TIME}),
-				$dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME},
-				$gb+1,
-				$dta{DISTANCE_TO_BIN1_CENTER} + $gb*$dta{BIN_LENGTH},
-				$dta{ENSEMBLE}[$atbottom]->{DEPTH},
-				$dta{ENSEMBLE}[$lastgood]->{DEPTH} -
-					$dta{ENSEMBLE}[$firstgood]->{DEPTH},
-				$dta{DISTANCE_TO_BIN1_CENTER} +
-					$min_good_bins*$dta{BIN_LENGTH},
-				scalar(@{$dta{ENSEMBLE}}),
-				$w_gap_time,$wErr,$prrms,$dnprrms,$upprrms,$rotrms,
-				$prerot,$dnrot,$uprot,$postrot,
-				$dta{DISTANCE_TO_BIN1_CENTER},
-				$dta{BIN_LENGTH},
-		  );
-	printf("#ANTS#PARAMS# magnetic_declination{$opt_M} " .
-							   	  "uv_gap_time{%d} " .
-						    	       "mean_u{%.4f} " .
-							         "stderr_u{%.4f} " .
-							               "dx{%d} " .
-							           "dx_err{%d} " .
-							           "mean_v{%.4f} " .
-							         "stderr_v{%.4f} " .
-							               "dy{%d} " .
-							           "dy_err{%d}\n",
-		$uv_gap_time,
-		$dta{ENSEMBLE}[$lastgood]->{X} /
+#----------------------------------------------------------------------
+# output profile in active ANTS format
+#----------------------------------------------------------------------
+
+print("#!/usr/bin/perl -S list\n");		
+chmod(0777&~umask,*STDOUT);
+
+print("#ANTS# [] $USAGE\n");
+$uFields = "{u} {u_err} {v} {v_err} {x} {x_err} {y} {y_err}"
+	if defined($opt_M);
+print("#ANTS#FIELDS# {ens} {time} {elapsed} {secno} {downcast} " .
+					"{w} {w_err} {depth} {depth_err} {depth_BT} " .
+					"{pitchroll} {rotation} " .
+					"$uFields $addFields\n");
+
+printf("#ANTS#PARAMS# date{$dta{ENSEMBLE}[$firstgood]->{DATE}} " .
+			   "start_time{$dta{ENSEMBLE}[$firstgood]->{TIME}} " .
+			  "bottom_time{$dta{ENSEMBLE}[$atbottom]->{TIME}} " .
+				 "end_time{$dta{ENSEMBLE}[$lastgood]->{TIME}} " .
+	  "bottom_xmit_voltage{$dta{ENSEMBLE}[$atbottom]->{ADC_XMIT_VOLTAGE}} " .
+	  "bottom_xmit_current{$dta{ENSEMBLE}[$atbottom]->{ADC_XMIT_CURRENT}} " .
+		 "pinging_duration{%.1f} " .
+			"cast_duration{%.1f} " .
+		   "0.8_valid_bins{%.1f} " .
+		  "0.8_valid_range{%.1f} " .
+				"max_depth{%.1f} " .
+			  "depth_error{%.1f} " .
+				"min_range{%d} " .
+			  "n_ensembles{%d} " .
+			   "w_gap_time{%d} " .
+				 "stderr_w{%.4f} " .
+			"rms_pitchroll{%.1f} " .
+   "downcast_rms_pitchroll{%.1f} " .
+	 "upcast_rms_pitchroll{%.1f} " .
+			 "rms_rotation{%.2f} " .
+	 "deployment_rotations{%d} " .
+	   "downcast_rotations{%d} " .
+		 "upcast_rotations{%d} " .
+	   "recovery_rotations{%d} " .
+				"bin1_dist{%.1f} " .
+			   "bin_length{%.1f} " .
+					 "\n",
+			($dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{UNIX_TIME} -
+					$dta{ENSEMBLE}[0]->{UNIX_TIME}),
 			$dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME},
-		$uErr, $dta{ENSEMBLE}[$lastgood]->{X}, $x_err,
-		$dta{ENSEMBLE}[$lastgood]->{Y} /
-			$dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME},
-		$vErr, $dta{ENSEMBLE}[$lastgood]->{Y}, $y_err,
-	) if defined ($opt_M);
-	print("#ANTS#PARAMS# start_lat{$s_lat} start_lon{$s_lon} " .
-						  "end_lat{$e_lat} end_lon{$e_lon} " .
-						      "lat{$lat} lon{$lon}\n")
-		if defined($lat);
-	if ($dta{TIME_BETWEEN_PINGS} == 0) {
-		 print("#ANTS#PARAMS# pinging_rate{staggered}\n");
-	} else {
-		 printf("#ANTS#PARAMS# pinging_rate{%.2f}\n",
-			1/$dta{TIME_BETWEEN_PINGS});
-    }		
-    printf("#ANTS#PARAMS# drift_x{%d} drift_y{%d} " .
-						 "drift_u{%.3f} drift_v{%.3f} " .
-		   "\n",$ddx,$ddy,$du,$dv) if defined($ddx);
-	if (defined($water_depth)) {
-		printf("#ANTS#PARAMS# water_depth{%d} sig-water_depth{%d}\n",
-					$water_depth,$sig_wd);
-	} else {
-		print("#ANTS#PARAMS# water_depth{nan} sig-water_depth{nan}\n");
-	}
+			$gb+1,
+			$dta{DISTANCE_TO_BIN1_CENTER} + $gb*$dta{BIN_LENGTH},
+			$dta{ENSEMBLE}[$atbottom]->{DEPTH},
+			$dta{ENSEMBLE}[$lastgood]->{DEPTH} -
+				$dta{ENSEMBLE}[$firstgood]->{DEPTH},
+			$dta{DISTANCE_TO_BIN1_CENTER} +
+				$min_good_bins*$dta{BIN_LENGTH},
+			scalar(@{$dta{ENSEMBLE}}),
+			$w_gap_time,$wErr,$prrms,$dnprrms,$upprrms,$rotrms,
+			$prerot,$dnrot,$uprot,$postrot,
+			$dta{DISTANCE_TO_BIN1_CENTER},
+			$dta{BIN_LENGTH},
+	  );
+printf("#ANTS#PARAMS# magnetic_declination{$opt_M} " .
+							  "uv_gap_time{%d} " .
+								   "mean_u{%.4f} " .
+								 "stderr_u{%.4f} " .
+									   "dx{%d} " .
+								   "dx_err{%d} " .
+								   "mean_v{%.4f} " .
+								 "stderr_v{%.4f} " .
+									   "dy{%d} " .
+								   "dy_err{%d}\n",
+	$uv_gap_time,
+	$dta{ENSEMBLE}[$lastgood]->{X} /
+		$dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME},
+	$uErr, $dta{ENSEMBLE}[$lastgood]->{X}, $x_err,
+	$dta{ENSEMBLE}[$lastgood]->{Y} /
+		$dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME},
+	$vErr, $dta{ENSEMBLE}[$lastgood]->{Y}, $y_err,
+) if defined ($opt_M);
+print("#ANTS#PARAMS# start_lat{$s_lat} start_lon{$s_lon} " .
+					  "end_lat{$e_lat} end_lon{$e_lon} " .
+						  "lat{$lat} lon{$lon}\n")
+	if defined($lat);
+if ($dta{TIME_BETWEEN_PINGS} == 0) {
+	 print("#ANTS#PARAMS# pinging_rate{staggered}\n");
+} else {
+	 printf("#ANTS#PARAMS# pinging_rate{%.2f}\n",
+		1/$dta{TIME_BETWEEN_PINGS});
+}	    
+printf("#ANTS#PARAMS# drift_x{%d} drift_y{%d} " .
+					 "drift_u{%.3f} drift_v{%.3f} " .
+	   "\n",$ddx,$ddy,$du,$dv) if defined($ddx);
+if (defined($water_depth)) {
+	printf("#ANTS#PARAMS# water_depth{%d} sig-water_depth{%d}\n",
+				$water_depth,$sig_wd);
+} else {
+	print("#ANTS#PARAMS# water_depth{nan} sig-water_depth{nan}\n");
 }
 
 sub p($) { print(defined($_[0])?"$_[0] ":"nan "); }
 sub pb($) { print($_[0]?"1 ":"0 "); }
 
-unless ($opt_Q) {										# write profile
-	for ($e=$firstgood; $e<=$lastgood; $e++) {
-		p($dta{ENSEMBLE}[$e]->{NUMBER});
-		p($dta{ENSEMBLE}[$e]->{UNIX_TIME});
-		p($dta{ENSEMBLE}[$e]->{ELAPSED_TIME});
-		p($dta{ENSEMBLE}[$e]->{SECNO});
-		pb($dta{ENSEMBLE}[$e]->{UNIX_TIME} < $dta{ENSEMBLE}[$atbottom]->{UNIX_TIME});
-		p($dta{ENSEMBLE}[$e]->{W});
-		p($dta{ENSEMBLE}[$e]->{W_ERR});
-		p($dta{ENSEMBLE}[$e]->{DEPTH});
-		p($dta{ENSEMBLE}[$e]->{DEPTH_ERR});
-		p($dta{ENSEMBLE}[$e]->{DEPTH_BT});
-		p($dta{ENSEMBLE}[$e]->{PITCHROLL});
-		p($dta{ENSEMBLE}[$e]->{ROTATION});
-		if (defined($opt_M)) {
-			p($dta{ENSEMBLE}[$e]->{U}); p($dta{ENSEMBLE}[$e]->{U_ERR});
-			p($dta{ENSEMBLE}[$e]->{V}); p($dta{ENSEMBLE}[$e]->{V_ERR});
-			p($dta{ENSEMBLE}[$e]->{X}); p($dta{ENSEMBLE}[$e]->{X_ERR});
-			p($dta{ENSEMBLE}[$e]->{Y}); p($dta{ENSEMBLE}[$e]->{Y_ERR});
-	    }
-		if (defined(@f)) {
-			foreach $f (@f) {
-				my($fn,$fi) = ($f =~ m{([^[]*)(\[.*)});
-				$fn = $f unless defined($fn);
-				p(eval("\$dta{ENSEMBLE}[$e]->{$fn}$fi"));
-			}
-		}
-		print("\n");
+for ($e=$firstgood; $e<=$lastgood; $e++) {
+	p($dta{ENSEMBLE}[$e]->{NUMBER});
+	p($dta{ENSEMBLE}[$e]->{UNIX_TIME});
+	p($dta{ENSEMBLE}[$e]->{ELAPSED_TIME});
+	p($dta{ENSEMBLE}[$e]->{SECNO});
+	pb($dta{ENSEMBLE}[$e]->{UNIX_TIME} < $dta{ENSEMBLE}[$atbottom]->{UNIX_TIME});
+	p($dta{ENSEMBLE}[$e]->{W});
+	p($dta{ENSEMBLE}[$e]->{W_ERR});
+	p($dta{ENSEMBLE}[$e]->{DEPTH});
+	p($dta{ENSEMBLE}[$e]->{DEPTH_ERR});
+	p($dta{ENSEMBLE}[$e]->{DEPTH_BT});
+	p($dta{ENSEMBLE}[$e]->{PITCHROLL});
+	p($dta{ENSEMBLE}[$e]->{ROTATION});
+	if (defined($opt_M)) {
+		p($dta{ENSEMBLE}[$e]->{U}); p($dta{ENSEMBLE}[$e]->{U_ERR});
+		p($dta{ENSEMBLE}[$e]->{V}); p($dta{ENSEMBLE}[$e]->{V_ERR});
+		p($dta{ENSEMBLE}[$e]->{X}); p($dta{ENSEMBLE}[$e]->{X_ERR});
+		p($dta{ENSEMBLE}[$e]->{Y}); p($dta{ENSEMBLE}[$e]->{Y_ERR});
 	}
+	if (defined(@f)) {
+		foreach $f (@f) {
+			my($fn,$fi) = ($f =~ m{([^[]*)(\[.*)});
+			$fn = $f unless defined($fn);
+			p(eval("\$dta{ENSEMBLE}[$e]->{$fn}$fi"));
+		}
+	}
+	print("\n");
 }
 
 exit(0);
