@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ C O O R D S . P L 
 #                    doc: Sun Jan 19 17:57:53 2003
-#                    dlm: Thu Dec 23 15:00:02 2010
+#                    dlm: Sat Jan 22 22:35:17 2011
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 30 48 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 262 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # RDI Workhorse Coordinate Transformations
@@ -27,7 +27,9 @@
 #	May 23, 2009: - debugged & renamed to &velBeamToBPEarth
 #	May 23, 2010: - changed prototypes of rad() & deg() to conform to ANTS
 #	Dec 20, 2010: - cosmetics
-#	Dec 23, 3020: - added &velBeamToBPInstrument
+#	Dec 23, 2010: - added &velBeamToBPInstrument
+#	Jan 22, 2011: - made velApplyHdgBias calculate sin/cos every time to allow
+#				    per-ensemble corrections
 
 use strict;
 use POSIX;
@@ -245,28 +247,19 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 # Bias correction for beam-coordinate data is done in velInstrumentToEarth()
 #======================================================================
 
-{ # STATIC SCOPE
-	my($sh,$ch);
+sub velApplyHdgBias(@)
+{
+	my($dta,$ens,$v1,$v2,$v3,$v4) = @_;
+	return undef unless (defined($v1) && defined($v2));
 
-	sub velApplyHdgBias(@)
-	{
-		my($dta,$ens,$v1,$v2,$v3,$v4) = @_;
-		return undef unless (defined($v1) && defined($v2));
-	
-		unless (defined($sh)) {
-			printf(STDERR "$0: warning HEADING_ALIGNMENT == %g ignored\n",
-						  $dta->{HEADING_ALIGNMENT})
-				if ($dta->{HEADING_ALIGNMENT});
-			$sh = sin(rad(-$dta->{HEADING_BIAS}));
-			$ch = cos(rad(-$dta->{HEADING_BIAS}));
-		}
+	my($sh) = sin(rad(-$dta->{HEADING_BIAS}));
+	my($ch) = cos(rad(-$dta->{HEADING_BIAS}));
 
-		return ( $v1*$ch + $v2*$sh,
-				-$v1*$sh + $v2*$ch,
-				 $v3              ,
-				 $v4              );
-	}
-} # STATIC SCOPE
+	return ( $v1*$ch + $v2*$sh,
+			-$v1*$sh + $v2*$ch,
+			 $v3			  ,
+			 $v4			  );
+}
 
 #----------------------------------------------------------------------
 # Pitch/Roll Functions

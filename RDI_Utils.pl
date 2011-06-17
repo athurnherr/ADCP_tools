@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Thu Dec 16 05:36:27 2010
+#                    dlm: Thu May 12 11:02:26 2011
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 333 65 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 304 3 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -36,6 +36,8 @@
 #	Dec  8, 2010: - changed missing w warning to happen only if gap is longer than 15s
 #	Dec 10, 2010: - beautified gap warning
 #	Dec 16, 2010: - BUG: gaps at end caused mk_prof to throw away profile
+#	May 12, 2011: - added code to skip ensembles with built-in-test errors in mk_prof()
+#				  - immediately disabled this code becasue it does appear to make matters worse
 
 use strict;
 
@@ -296,6 +298,10 @@ sub mk_prof($$$$$$$$)										# make profile
 	
 	for (my($z)=0,my($e)=0; $e<=$#{$dta->{ENSEMBLE}}; $e++) {
 		checkEnsemble($dta,$e) if ($check);
+###		The following line of code, which can only have an effect if check is disabled,
+###		seems reasonable but has been found to make matters worse with one particular
+###		data file from a BB150. 
+###		next if ($dta->{ENSEMBLE}[$e]->{BUILT_IN_TEST_ERROR});
 	
 		filterEnsemble($dta,$e)
 			if (defined($filter) &&

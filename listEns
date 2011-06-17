@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T E N S 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Wed Jan  5 06:09:49 2011
+#                    dlm: Thu May 12 10:46:46 2011
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 191 73 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 37 99 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the ensemble list or dump ensembles to
@@ -34,6 +34,7 @@
 #	Aug 15, 2010: - BUG: usage typo
 #	Dec 10, 2010: - changed ANTS output to time/date instead of UNIX time
 #	Jan  5, 2011: - added -b
+#	May 12, 2011: - disabled error exit on built-in-test errors when ensembles are dumped to stdout
 
 # Notes:
 #	- -E outputs data in earth coordinates, unless -b is set also
@@ -253,6 +254,8 @@ while (-f $ARGV[0]) {
 				my($v) = eval("\$dta{ENSEMBLE}[$e]->{$fn}$fi");
 				print(defined($v) ? " $v" : " nan");
 			}
+			print(" BUILT-IN-TEST ERROR")
+				if defined($dta{ENSEMBLE}[$e]->{BUILT_IN_TEST_ERROR});
 			print("\n");
 		}
 		
@@ -273,7 +276,7 @@ while (-f $ARGV[0]) {
 		die("3-beams used in ensemble #$dta{ENSEMBLE}[$e]->{NUMBER}\n")
 			if ($dta{ENSEMBLE}[$e]->{N_BEAMS_USED} < 4);
 		die("BIT error in ensemble $dta{ENSEMBLE}[$e]->{NUMBER}\n")
-			if defined($dta{ENSEMBLE}[$e]->{BUILT_IN_TEST_ERROR});
+			if ($opt_Q || $opt_A || $opt_E) && defined($dta{ENSEMBLE}[$e]->{BUILT_IN_TEST_ERROR});
 		die("Low gain in ensemble #$dta{ENSEMBLE}[$e]->{NUMBER}\n")
 			if ($dta{ENSEMBLE}[$e]->{LOW_GAIN});
 

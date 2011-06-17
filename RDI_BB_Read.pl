@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ B B _ R E A D . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Sun Aug 15 16:35:54 2010
+#                    dlm: Thu May 12 10:50:34 2011
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 47 72 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 48 61 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Read RDI BroadBand Binary Data Files (*.[0-9][0-9][0-9])
@@ -45,6 +45,7 @@
 #	Aug 15, 2010: - downgraded "unexpected number of data types" from error to warning
 #				  - BUG: WBRcfn had not been set correctly
 #				  - modified to allow processing files without time info
+#	May 12, 2011: - added code to report built-in-test errors
 
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -279,6 +280,7 @@ sub monthLength($$)										# of days in month
 
 my($WBRcfn);							# current file name
 my(@WBRofs);							# data type offsets
+my($BIT_errors) = 0;					# built-in-test errors
 
 my($FmtErr) = "%s: illegal %s Id 0x%04x at ensemble %d";
 
@@ -565,6 +567,8 @@ sub WBRens($$$$$)
 
 		${$E}[$ens]->{BUILT_IN_TEST_ERROR} = undef
 			unless (${$E}[$ens]->{BUILT_IN_TEST_ERROR});
+		$BIT_errors++ if (${$E}[$ens]->{BUILT_IN_TEST_ERROR});
+
 		${$E}[$ens]->{XDUCER_DEPTH} /= 10;
 		${$E}[$ens]->{HEADING} /= 100;
 		${$E}[$ens]->{PITCH} = unpack('s',pack('S',${$E}[$ens]->{PITCH})) / 100;
@@ -800,6 +804,8 @@ sub readData(@)
 	WBRens($dta->{N_BINS},$dta->{ENSEMBLE_BYTES},
 		   $dta->{BT_PRESENT},$dta->{DATA_FORMAT},
 		   \@{$dta->{ENSEMBLE}});
+	print(STDERR "$WBRcfn: $BIT_errors built-in-test errors\n")
+		if ($BIT_errors);
 }
 
 sub checkEnsemble($$)
