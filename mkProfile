@@ -2,9 +2,9 @@
 #======================================================================
 #                    M K P R O F I L E 
 #                    doc: Sun Jan 19 18:55:26 2003
-#                    dlm: Wed Jan  5 01:05:50 2011
+#                    dlm: Wed Jun 22 05:39:48 2011
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 233 47 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 245 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Make an LADCP Profile by Integrating W (similar to Firing's scan*).
@@ -72,6 +72,9 @@
 #	Dec 10, 2010: - made mkProfile exit with status 0 if no good ens found but -Q is set
 #	Dec 19, 2010: - finally made -A default and activated output file
 #	Jan  5, 2011: - made no-good-ensembles found test much more robust
+#	Jun 22, 2011: - added bandwith/power warnings
+#				  - added ping-interval calculation
+#				  - BUG: post-recovery rotations were always zero
 
 # NOTES:
 #	- the battery values are based on transmission voltages (different
@@ -144,6 +147,7 @@ if ($dta{BEAM_COORDINATES}) {						# coords used
 } elsif (!$dta{EARTH_COORDINATES}) {
 	die("$ARGV[0]: only beam and earth coordinates implemented so far\n");
 }
+
 if (defined($opt_M)) {								# magnetic declination
 	$dta{HEADING_BIAS} = -1*$opt_M;
 } else {
@@ -217,6 +221,36 @@ sub gps_to_deg($)									# decode lat/lon
 
 	return ($sa,$so,$ea,$eo);
 }
+
+#======================================================================
+# Step 0: Check data & Calculate Ping Rates
+#======================================================================
+
+unless ($dta{NARROW_BANDWIDTH}) {
+	print(STDERR "WARNING: $0 WIDE BANDWIDTH!\n");
+}
+
+unless ($dta{TRANSMIT_POWER_HIGH}) {
+	print(STDERR "WARNING: $0 LOW TRANSMIT POWER!\n");
+}
+
+printf(STDERR "# of ensembles       : %d\n",scalar(@{$dta{ENSEMBLE}}));
+
+my($sdt1,$sdt2,$ndt);
+my($mindt1) = my($mindt2) = 9e99;
+my($maxdt1) = my($maxdt2) = 0;
+for (my($e)=2; $e<=$#{$dta{ENSEMBLE}}; $e+=2,$ndt++) {
+	my($dt1) = $dta{ENSEMBLE}[$e-1]->{UNIX_TIME} - $dta{ENSEMBLE}[$e-2]->{UNIX_TIME};
+	my($dt2) = $dta{ENSEMBLE}[$e-0]->{UNIX_TIME} - $dta{ENSEMBLE}[$e-1]->{UNIX_TIME};
+	$mindt1 = $dt1 if ($dt1 < $mindt1);
+	$mindt2 = $dt2 if ($dt2 < $mindt2);
+	$maxdt1 = $dt1 if ($dt1 > $maxdt1);
+	$maxdt2 = $dt2 if ($dt2 > $maxdt2);
+	$sdt1 += $dt1; $sdt2 += $dt2;
+}
+
+printf(STDERR "Ping intervals       : %.1fs/%.1fs (%.1fs-%.1fs/%.1fs-%.1fs)\n",
+			$sdt1/$ndt,$sdt2/$ndt,$mindt1,$maxdt1,$mindt2,$maxdt2);
 
 #======================================================================
 # Step 1: Integrate w & determine water depth 
@@ -623,7 +657,7 @@ for (; $e<=$lastgood; $e++) {					# upcast
 }
 $upprrms = $prrms - $dnprrms;
 
-for (; $e<=$#{$dta->{ENSEMBLE}}; $e++) {		# post-recovery
+for (; $e<=$#{$dta{ENSEMBLE}}; $e++) {			# post-recovery
 	$postrot += rot($e);
 }
 
@@ -642,7 +676,6 @@ $rotrms = sqrt($rotrms/($lastgood-$firstgood));
 # PRODUCE OUTPUT
 #======================================================================
 
-printf(STDERR "# of ensembles       : %d\n",scalar(@{$dta{ENSEMBLE}}));
 printf(STDERR "Start of cast        : %s (#%5d) at %6.1fm\n",
 					$dta{ENSEMBLE}[$firstgood]->{TIME},
 					$dta{ENSEMBLE}[$firstgood]->{NUMBER},

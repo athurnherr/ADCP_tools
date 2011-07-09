@@ -2,15 +2,16 @@
 #======================================================================
 #                    S P L I T R D I 
 #                    doc: Sat Aug 21 22:20:27 2010
-#                    dlm: Sat Aug 21 23:18:41 2010
+#                    dlm: Fri Jun 24 11:30:06 2011
 #                    (c) 2010 A.M. Thurnherr
-#                    uE-Info: 51 44 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 27 68 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # split RDI files based on list of ensemble numbers (e.g. from yoyo -t)
 
 # HISTORY:
 #	Aug 21, 2010: - created
+#	Jun 24, 2011: - replaced -b, -n by -o
 
 # NOTES:
 #	- it is assumed that the input file begins with ensemble #1
@@ -18,21 +19,27 @@
 #	- turning-point ensembles are written to preceding profile,
 #	  for compatibility with [yoyo]
 
+# FILE NAME CONVENTION:
+#	- in order to assign individual yoyo casts numerical station numbers,
+#	  by default, the yoyo cast number is inserted after the station number
+
+# EXAMPLE:
+#	splitRDI 017DL000.000 `mkProfile 017DL000.000 | yoyo -QFens -ut`
+
 $0 =~ m{(.*/)[^/]+};
 require "$1RDI_BB_Read.pl";
 use Getopt::Std;
 
 die("Usage: $0 " .
-	"[out-file -b)asename <bn>] " .
-	"[out-file -n) <digits>] " .
+	"[-o)ut-file <fmt[e.g. 017%02dDL000.000]>] " .
 	"<RDI file> <ens> <ens[...]>\n")
-		unless (&getopts('b:n:') && @ARGV>=3);
+		unless (&getopts('o:') && @ARGV>=3);
 
-chomp($opt_b = `basename $ARGV[0] .000`)		# basename
-	unless defined($opt_b);
-$opt_n = 2										# number of digits in profile #
-	unless defined($opt_n);
-		
+$opt_o = substr($ARGV[0],0,3)					# default output filename format
+		 . '%02d'
+		 . substr($ARGV[0],-9)
+			unless defined($opt_o);
+	
 readHeader($ARGV[0],\%hdr); shift;				# get length of ensembles
 $ens_len = $hdr{ENSEMBLE_BYTES} + 2;
 
@@ -48,7 +55,7 @@ do {											# split data
 	sysread(WBRF,$buf,$nBytes) == $nBytes ||
 		die("$WBRcfn: file truncated");
 
-	$fn = $opt_b . sprintf("_%0${opt_n}d.000",$cnr++);
+	$fn = sprintf($opt_o,$cnr++);
 	open(F,">$fn") || die("$fn: $!\n");
 	syswrite(F,$buf,$nBytes) == $nBytes ||
 		die("$fn: $!\n");
