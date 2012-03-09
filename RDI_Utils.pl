@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Thu May 12 11:02:26 2011
+#                    dlm: Wed Sep 21 18:48:23 2011
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 304 3 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 378 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -38,6 +38,7 @@
 #	Dec 16, 2010: - BUG: gaps at end caused mk_prof to throw away profile
 #	May 12, 2011: - added code to skip ensembles with built-in-test errors in mk_prof()
 #				  - immediately disabled this code becasue it does appear to make matters worse
+#	Sep 21, 2011: - added calculation of RMS heave acceleration
 
 use strict;
 
@@ -295,6 +296,7 @@ sub mk_prof($$$$$$$$)										# make profile
 {
 	my($dta,$check,$filter,$lr_b0,$lr_b1,$min_corr,$max_e,$max_gap) = @_;
 	my($firstgood,$lastgood,$atbottom,$w_gap_time,$zErr,$maxz);
+	my($rms_heave_accel_ssq,$rms_heave_accel_nsamp);
 	
 	for (my($z)=0,my($e)=0; $e<=$#{$dta->{ENSEMBLE}}; $e++) {
 		checkEnsemble($dta,$e) if ($check);
@@ -346,16 +348,19 @@ sub mk_prof($$$$$$$$)										# make profile
 			$z = $zErr = $maxz = 0;
 			$dta->{ENSEMBLE}[$e]->{DEPTH} = $dta->{ENSEMBLE}[$e]->{DEPTH_ERR} = 0;
 			$w_gap_time = 0;
+			$rms_heave_accel_ssq = $rms_heave_accel_nsamp = 0;
 			next;
 		}
 
 		#-----------------------------------
 		# The current ensemble has a valid w
 		#-----------------------------------
-	
-		if ($dt < 5) {
-			$z += $dta->{ENSEMBLE}[$lastgood]->{W} * $dt;			# integrate
+
+		if ($dt < 5) {												# no or short gap
+			$z += $dta->{ENSEMBLE}[$lastgood]->{W} * $dt;			# integrate w to get depth
 			$zErr += ($dta->{ENSEMBLE}[$lastgood]->{W_ERR} * $dt)**2;
+			$rms_heave_accel_ssq += (($dta->{ENSEMBLE}[$e]->{W}-$dta->{ENSEMBLE}[$lastgood]->{W})/$dt)**2;
+			$rms_heave_accel_nsamp++;
 		} elsif ($dt > 15) {
 	       	printf(STDERR "WARNING: long-ish w gap (dt=%.1fs)\n",$dt);
 		}
@@ -370,7 +375,7 @@ sub mk_prof($$$$$$$$)										# make profile
 	
 	filterEnsembleStats() if defined($filter);
 
-	return ($firstgood,$lastgood,$atbottom,$w_gap_time,$zErr,$maxz);
+	return ($firstgood,$lastgood,$atbottom,$w_gap_time,$zErr,$maxz,sqrt($rms_heave_accel_ssq/$rms_heave_accel_nsamp));
 }
 
 #----------------------------------------------------------------------

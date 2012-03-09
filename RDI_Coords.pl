@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ C O O R D S . P L 
 #                    doc: Sun Jan 19 17:57:53 2003
-#                    dlm: Sat Jan 22 22:35:17 2011
+#                    dlm: Sun Jan 15 20:04:13 2012
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 262 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 33 74 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # RDI Workhorse Coordinate Transformations
@@ -30,6 +30,7 @@
 #	Dec 23, 2010: - added &velBeamToBPInstrument
 #	Jan 22, 2011: - made velApplyHdgBias calculate sin/cos every time to allow
 #				    per-ensemble corrections
+#	Jan 15, 2012: - replaced defined(@...) by (@...) to get rid of warning
 
 use strict;
 use POSIX;
@@ -59,7 +60,7 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 					   		 defined($v3) + defined($v4)
 								>= $RDI_Coords::minValidVels);
 
-		unless (defined(@B2I)) {
+		unless (@B2I) {
 #			print(STDERR "RDI_Coords::minValidVels = $RDI_Coords::minValidVels\n");
 			my($a) = 1 / (2 * sin(rad($dta->{BEAM_ANGLE})));
 			my($b) = 1 / (4 * cos(rad($dta->{BEAM_ANGLE})));

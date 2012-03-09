@@ -2,9 +2,9 @@
 #======================================================================
 #                    M K P R O F I L E 
 #                    doc: Sun Jan 19 18:55:26 2003
-#                    dlm: Wed Jun 22 05:39:48 2011
+#                    dlm: Wed Sep 21 12:03:14 2011
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 245 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 747 30 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Make an LADCP Profile by Integrating W (similar to Firing's scan*).
@@ -75,6 +75,9 @@
 #	Jun 22, 2011: - added bandwith/power warnings
 #				  - added ping-interval calculation
 #				  - BUG: post-recovery rotations were always zero
+#	Sep  9, 2011: - BUG: range calculation for Earth coordinate data included bins without
+#						 valid velocities
+#	Sep 21, 2010: - added %rms_heave_acceleration
 
 # NOTES:
 #	- the battery values are based on transmission voltages (different
@@ -234,7 +237,7 @@ unless ($dta{TRANSMIT_POWER_HIGH}) {
 	print(STDERR "WARNING: $0 LOW TRANSMIT POWER!\n");
 }
 
-printf(STDERR "# of ensembles       : %d\n",scalar(@{$dta{ENSEMBLE}}));
+printf(STDERR "# of ensembles        : %d\n",scalar(@{$dta{ENSEMBLE}}));
 
 my($sdt1,$sdt2,$ndt);
 my($mindt1) = my($mindt2) = 9e99;
@@ -249,14 +252,18 @@ for (my($e)=2; $e<=$#{$dta{ENSEMBLE}}; $e+=2,$ndt++) {
 	$sdt1 += $dt1; $sdt2 += $dt2;
 }
 
-printf(STDERR "Ping intervals       : %.1fs/%.1fs (%.1fs-%.1fs/%.1fs-%.1fs)\n",
-			$sdt1/$ndt,$sdt2/$ndt,$mindt1,$maxdt1,$mindt2,$maxdt2);
+printf(STDERR "Ping intervals        : %.1fs/%.1fs",$sdt1/$ndt,$sdt2/$ndt);
+if ($maxdt1-$mindt1>=0.1 || $maxdt2-$mindt2>=0.1) {
+	printf(STDERR " (%.1fs-%.1fs/%.1fs-%.1fs)\n",$mindt1,$maxdt1,$mindt2,$maxdt2);
+} else {
+	print(STDERR "\n");
+}
 
 #======================================================================
 # Step 1: Integrate w & determine water depth 
 #======================================================================
 
-($firstgood,$lastgood,$atbottom,$w_gap_time,$zErr,$maxz) =
+($firstgood,$lastgood,$atbottom,$w_gap_time,$zErr,$maxz,$rms_heave_accel) =
 	mk_prof(\%dta,!$opt_s,$opt_F,$minb,$maxb,$opt_c,$opt_e,$opt_m);
 
 unless (($atbottom > $firstgood) && ($lastgood > $atbottom)) {
@@ -292,32 +299,6 @@ if (defined($opt_B)) {										# scale Z
 
 ($water_depth,$sig_wd) =									# sea bed
 	find_seabed(\%dta,$atbottom,$beamCoords);
-
-#======================================================================
-# Step 1a: determine alternate Z by using mean/sigma of w in gaps
-#======================================================================
-
-# This does not make much sense for w, because w is always very close
-# to zero. It might make sense for u and v, though, and it would
-# be more consistent with the way the displacement uncertainties are
-# calculated. However, the way the profiles are calculated at the
-# moment (using the last valid velocity across the gap) is probably
-# closer to the truth in most cases.
-
-#$dta{ENSEMBLE}[$firstgood]->{ALT_Z} = 0;
-#$dta{ENSEMBLE}[$firstgood]->{ALT_Z_ERR} = 0;
-#my($sumVar);
-#for ($e=$firstgood+1; $e<=$lastgood; $e++) {
-#	my($dt) = $dta{ENSEMBLE}[$e]->{UNIX_TIME} -
-#			  $dta{ENSEMBLE}[$e-1]->{UNIX_TIME};
-#	$dta{ENSEMBLE}[$e]->{ALT_Z} =
-#		$dta{ENSEMBLE}[$e-1]->{ALT_Z} +
-#		$dt * (defined($dta{ENSEMBLE}[$e-1]->{W}) ?
-#				$dta{ENSEMBLE}[$e-1]->{W} : $meanW);
-#	$sumVar += defined($dta{ENSEMBLE}[$e-1]->{W}) ?
-#				($dta{ENSEMBLE}[$e-1]->{W_ERR} * $dt)**2 : ($dt**2)*$varW;
-#	$dta{ENSEMBLE}[$e]->{ALT_Z_ERR} = sqrt($sumVar);
-#}
 
 #======================================================================
 # Step 2: Integrate u & v
@@ -533,6 +514,7 @@ sub count_good_vels($)								# count good vels
 	    }
 	} else {
 		for (my($i)=0; $i<$dta{N_BINS}; $i++) {
+			next unless defined($dta{ENSEMBLE}[$ens]->{VELOCITY}[$i][0]);
 			for (my($b)=0; $b<4; $b++) {
 				$good=$i,$this_worst_beam=$b,$nVels[$i][$b]++
 					if ($dta{ENSEMBLE}[$ens]->{CORRELATION}[$i][$b] >=
@@ -676,49 +658,50 @@ $rotrms = sqrt($rotrms/($lastgood-$firstgood));
 # PRODUCE OUTPUT
 #======================================================================
 
-printf(STDERR "Start of cast        : %s (#%5d) at %6.1fm\n",
+printf(STDERR "Start of cast         : %s (#%5d) at %6.1fm\n",
 					$dta{ENSEMBLE}[$firstgood]->{TIME},
 					$dta{ENSEMBLE}[$firstgood]->{NUMBER},
 					$dta{ENSEMBLE}[$firstgood]->{DEPTH});
-printf(STDERR "Bottom of cast (zmax): %s (#%5d) at %6.1fm\n",
+printf(STDERR "Bottom of cast (zmax) : %s (#%5d) at %6.1fm\n",
 					$dta{ENSEMBLE}[$atbottom]->{TIME},
 					$dta{ENSEMBLE}[$atbottom]->{NUMBER},
 					$dta{ENSEMBLE}[$atbottom]->{DEPTH});
 if (defined($water_depth)) {
-	printf(STDERR "Seabed               :                      at %6.1fm (+-%dm)\n",$water_depth,$sig_wd);
+	printf(STDERR "Seabed                :                      at %6.1fm (+-%dm)\n",$water_depth,$sig_wd);
 } else {
-	print(STDERR "Seabed               : not found\n");
+	print(STDERR "Seabed                : not found\n");
 }
-printf(STDERR "End of cast (zend)   : %s (#%5d) at %6.1fm\n",
+printf(STDERR "End of cast (zend)    : %s (#%5d) at %6.1fm\n",
 					$dta{ENSEMBLE}[$lastgood]->{TIME},
 					$dta{ENSEMBLE}[$lastgood]->{NUMBER},
 					$dta{ENSEMBLE}[$lastgood]->{DEPTH});
 
-printf(STDERR "Rel. Displacement    : x = %d(%d)m / y = %d(%d)m\n",
+printf(STDERR "Rel. Displacement     : x = %d(%d)m / y = %d(%d)m\n",
 					$dta{ENSEMBLE}[$lastgood]->{X}, $x_err, 
 					$dta{ENSEMBLE}[$lastgood]->{Y}, $y_err, 
 				) if defined($opt_M);
 
-printf(STDERR "Cast Duration        : %.1f hours (pinging for %.1f hours)\n",
+printf(STDERR "Cast Duration         : %.1f hours (pinging for %.1f hours)\n",
 					$dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME} / 3600,
 					($dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{UNIX_TIME} -
 						$dta{ENSEMBLE}[0]->{UNIX_TIME}) / 3600);
 
-printf(STDERR "Minimum range        : %dm at ensemble %d, beam %d\n",
+printf(STDERR "Minimum range         : %dm at ensemble %d, beam %d\n",
 				$dta{DISTANCE_TO_BIN1_CENTER} +
 					$min_good_bins*$dta{BIN_LENGTH},
 				$dta{ENSEMBLE}[$min_good_ens]->{NUMBER},
 				$worst_beam);
-printf(STDERR "80%%-valid bins       : %.1f\n",$gb+1);
-printf(STDERR "80%%-valid range      : %dm\n",
+printf(STDERR "80%%-valid bins        : %.1f\n",$gb+1);
+printf(STDERR "80%%-valid range       : %dm\n",
 				$dta{DISTANCE_TO_BIN1_CENTER} + $gb*$dta{BIN_LENGTH});
-printf(STDERR "3-beam solutions     : $RDI_Coords::threeBeam_1 " .
+printf(STDERR "3-beam solutions      : $RDI_Coords::threeBeam_1 " .
 								 	 "$RDI_Coords::threeBeam_2 " .
 								 	 "$RDI_Coords::threeBeam_3 " .
                                  	 "$RDI_Coords::threeBeam_4\n")
 	unless ($opt_4);
-printf(STDERR "net rotations        : [%d]/%d/%d/[%d]\n",$prerot,$dnrot,$uprot,$postrot);
-printf(STDERR "rms pitch/roll       : %.1f/%.1f\n",$dnprrms,$upprrms);
+printf(STDERR "net rotations         : [%d]/%d/%d/[%d]\n",$prerot,$dnrot,$uprot,$postrot);
+printf(STDERR "rms pitch/roll        : %.1fdeg/%.1fdeg\n",$dnprrms,$upprrms);
+printf(STDERR "rms heave acceleration: %.2fm/s^2\n",$rms_heave_accel);
 
 exit(0) if ($opt_Q);
 
@@ -761,6 +744,7 @@ printf("#ANTS#PARAMS# date{$dta{ENSEMBLE}[$firstgood]->{DATE}} " .
 	   "downcast_rotations{%d} " .
 		 "upcast_rotations{%d} " .
 	   "recovery_rotations{%d} " .
+   "rms_heave_acceleration{%.2f} " .
 				"bin1_dist{%.1f} " .
 			   "bin_length{%.1f} " .
 					 "\n",
@@ -776,7 +760,7 @@ printf("#ANTS#PARAMS# date{$dta{ENSEMBLE}[$firstgood]->{DATE}} " .
 				$min_good_bins*$dta{BIN_LENGTH},
 			scalar(@{$dta{ENSEMBLE}}),
 			$w_gap_time,$wErr,$prrms,$dnprrms,$upprrms,$rotrms,
-			$prerot,$dnrot,$uprot,$postrot,
+			$prerot,$dnrot,$uprot,$postrot,$rms_heave_accel,
 			$dta{DISTANCE_TO_BIN1_CENTER},
 			$dta{BIN_LENGTH},
 	  );
