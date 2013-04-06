@@ -1,0 +1,38 @@
+#!/usr/bin/perl
+#======================================================================
+#                    C H E C K I X 
+#                    doc: Wed Dec 12 15:58:56 2012
+#                    dlm: Wed Dec 12 16:27:11 2012
+#                    (c) 2012 A.M. Thurnherr
+#                    uE-Info: 31 0 NIL 0 0 72 2 2 4 NIL ofnI
+#======================================================================
+
+# HISTORY:
+#	Dec 12, 2012: - created
+
+die("Usage: $0 <stn>\n")
+	unless (@ARGV == 1);
+
+$id = $ARGV[0];									# determine station id
+$id = sprintf('%03d',$id)
+	unless (-f "$id.lad");
+
+die("file <$id.lad> missing\n")					# ensure required output is here
+	unless (-f "$id.lad");
+die("file <$id.log> missing\n")
+	unless (-f "$id.log");
+die("file <$id.mat> missing\n")
+	unless (-f "$id.mat");
+die("file <$id.txt> missing\n")
+	unless (-f "$id.txt");
+
+if (-f "${id}_11.ps" &&							# handle warnings figure
+		length(`grep 'LADCP profile OK' ${id}_11.ps`) == 0) {
+	print("warnings produced\n");
+	system("gv ${id}_11.ps &");
+}
+
+print("no valid BT data\n")						# check validity of ancillary data
+	unless (-f "$id.bot");
+print("no valid SADCP data\n")
+	unless (length(`grep 'all SADCP values removed' $id.log`) == 0);

@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T H D R 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Wed Jul  9 13:30:35 2008
+#                    dlm: Mon Mar 25 19:20:19 2013
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 66 0 NIL 0 0 72 8 2 4 NIL ofnI
+#                    uE-Info: 79 0 NIL 0 0 72 8 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the RDI BB header
@@ -28,6 +28,8 @@
 #				  - added usage error
 #	Sep 19, 2007: - adapted to new [RDI_BB_Read.pl] (not tested)
 #	Jul  9, 2008: - added output regarding available sensors
+#	Mar 20, 2013: - removed DATA_FORMAT stuff
+#	Mar 25, 2013: - added INSTRUMENT_TYPE stuff instead
 
 $0 =~ m{(.*/)[^/]+};
 require "$1RDI_BB_Read.pl";
@@ -42,7 +44,13 @@ while (-f $ARGV[0]) {
 
 	print("    Instrument Characteristics:\n");
 
-	printf("\tCPU_SERIAL_NUMBER\t\t= %s\n",$hdr{CPU_SERIAL_NUMBER});
+	if (defined($hdr{SERIAL_NUMBER})) {
+		printf("\tINSTRUMENT\t\t\t= %s #%d\n",$hdr{INSTRUMENT_TYPE},$hdr{SERIAL_NUMBER});
+    } else {
+		printf("\tINSTRUMENT_TYPE\t\t\t= %s\n",$hdr{INSTRUMENT_TYPE});
+    }
+	printf("\tCPU_SERIAL_NUMBER\t\t= %s\n",$hdr{CPU_SERIAL_NUMBER})
+		unless ($hdr{INSTRUMENT_TYPE} eq 'Explorer');
 	printf("\tFIRMWARE\t\t\t= %d.%d\n",$hdr{CPU_FW_VER},$hdr{CPU_FW_REV});
 	printf("\tBEAM_FREQUENCY\t\t\t= %d kHz\n",$hdr{BEAM_FREQUENCY});
 	printf("\tBEAM_ANGLE\t\t\t= %d deg\n",$hdr{BEAM_ANGLE});
@@ -67,12 +75,10 @@ while (-f $ARGV[0]) {
 
 	print("    File Format:\n");
 
-	printf("\tDATA_FORMAT\t\t\t= %s (variant %d)\n",
-		$hdr{DATA_FORMAT},$hdr{DATA_FORMAT_VARIANT});
 	printf("\tNUMBER_OF_DATA_TYPES\t\t= %d\n",$hdr{NUMBER_OF_DATA_TYPES});
+	printf("\tFIXED_LEADER_BYTES\t\t= %3d bytes\n",$hdr{FIXED_LEADER_BYTES});
 	printf("\tENSEMBLE_BYTES\t\t\t= %3d bytes\n",$hdr{ENSEMBLE_BYTES});
 	printf("\tHEADER_BYTES\t\t\t= %3d bytes\n",$hdr{HEADER_BYTES});
-	printf("\tFIXED_LEADER_BYTES\t\t= %3d bytes\n",$hdr{FIXED_LEADER_BYTES});
 	printf("\tVARIABLE_LEADER_BYTES\t\t= %3d bytes\n",$hdr{VARIABLE_LEADER_BYTES});
 	printf("\tVELOCITY_DATA_BYTES\t\t= %3d bytes\n",$hdr{VELOCITY_DATA_BYTES});
 	printf("\tCORRELATION_DATA_BYTES\t\t= %3d bytes\n",$hdr{CORRELATION_DATA_BYTES});

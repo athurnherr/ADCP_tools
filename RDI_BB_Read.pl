@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ B B _ R E A D . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Thu May 12 10:50:34 2011
+#                    dlm: Mon Mar 25 21:38:37 2013
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 48 61 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 632 0 NIL 0 0 72 74 2 4 NIL ofnI
 #======================================================================
 
 # Read RDI BroadBand Binary Data Files (*.[0-9][0-9][0-9])
@@ -46,11 +46,14 @@
 #				  - BUG: WBRcfn had not been set correctly
 #				  - modified to allow processing files without time info
 #	May 12, 2011: - added code to report built-in-test errors
+#	Mar 19, 2013: - added support for WH600 data file (58 fixed leader bytes)
+#	Mar 20, 2013: - removed DATA_FORMAT stuff
+#				  - added support for BT data in subset of ensembles
 
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
 #	structures. Currently (Sep 2005) these routines have been tested
-#	with the following firmware versions (as reported by [listhdr]):
+#	with the following firmware versions (as reported by [listHdr]):
 #
 #	Firmw.	DATA_FORMAT(_VARIANT)	Owner 	Cruise	FIXED_LEADER_LENGTH
 #------------------------------------------------------------
@@ -91,12 +94,10 @@
 # &readData() returns perl obj (ref to anonymous hash) with the following
 # structure:
 #
-#	DATA_FORMAT						string		BB150, WH300
-#	DATA_FORMAT_VARIANT				scalar		?
 #	NUMBER_OF_DATA_TYPES			scalar		6 (no BT) or 7
 #	ENSEMBLE_BYTES					scalar		?, number of bytes w/o checksum
 #	HEADER_BYTES					scalar		?
-#	FIXED_LEADER_BYTES				scalar		?
+#	FIXED_LEADER_BYTES				scalar		42 for BB150; 53 for WH300, 58 for WH600, 59 for WH300(Nash)
 #	VARIABLE_LEADER_BYTES			scalar		?
 #	VELOCITY_DATA_BYTES				scalar		?
 #	CORRELATION_DATA_BYTES			scalar		?
@@ -279,7 +280,6 @@ sub monthLength($$)										# of days in month
 #----------------------------------------------------------------------
 
 my($WBRcfn);							# current file name
-my(@WBRofs);							# data type offsets
 my($BIT_errors) = 0;					# built-in-test errors
 
 my($FmtErr) = "%s: illegal %s Id 0x%04x at ensemble %d";
@@ -287,14 +287,14 @@ my($FmtErr) = "%s: illegal %s Id 0x%04x at ensemble %d";
 sub WBRhdr($)
 {
 	my($dta) = @_;
-	my($buf,$hid,$did,$Ndt,$B,$W,$i,$dummy,$id);
+	my($buf,$hid,$did,$Ndt,$B,$W,$i,$dummy,$id,@WBRofs);
 	my($B1,$B2,$B3,$B4,$B5,$B6,$B7,$W1,$W2,$W3,$W4,$W5);
 	
 	#--------------------
 	# HEADER
 	#--------------------
 
-	read(WBRF,$buf,6) == 6 || die("$WBRcfn: $!\n");
+	read(WBRF,$buf,6) == 6 || die("$WBRcfn: $!");
 	($hid,$did,$dta->{ENSEMBLE_BYTES},$dummy,$dta->{NUMBER_OF_DATA_TYPES})
 		= unpack('CCvCC',$buf);
 	$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header",$hid,0));
@@ -307,7 +307,7 @@ sub WBRhdr($)
 					  
 	read(WBRF,$buf,2*$dta->{NUMBER_OF_DATA_TYPES})
 		== 2*$dta->{NUMBER_OF_DATA_TYPES}
-			|| die("$WBRcfn: $!\n");
+			|| die("$WBRcfn: $!");
 	@WBRofs = unpack("v$dta->{NUMBER_OF_DATA_TYPES}",$buf);
 
 	$dta->{HEADER_BYTES} 					= $WBRofs[0];
@@ -323,55 +323,52 @@ sub WBRhdr($)
 		$dta->{PERCENT_GOOD_DATA_BYTES}		= $dta->{ENSEMBLE_BYTES} - 4 - $WBRofs[5];
 	}
 
+	if ($dta->{FIXED_LEADER_BYTES} == 42) {				# Eric Firing's old instrument I used in 2004
+		$dta->{INSTRUMENT_TYPE} = 'BB150';
+	} elsif ($dta->{FIXED_LEADER_BYTES} == 53) {		# old firmware: no serial numbers
+		$dta->{INSTRUMENT_TYPE} = 'Workhorse';	
+	} elsif ($dta->{FIXED_LEADER_BYTES} == 59) {		# new firmware: with serial numbers
+		$dta->{INSTRUMENT_TYPE} = 'Workhorse';
+    } elsif ($dta->{FIXED_LEADER_BYTES} == 58) {		# DVL
+		$dta->{INSTRUMENT_TYPE} = 'Explorer';
+    } 
+
 #	for ($i=0; $i<$dta->{NUMBER_OF_DATA_TYPES}; $i++) {
 #		printf(STDERR "\nWBRofs[$i] = %d",$WBRofs[$i]);
 #	}
-
-	$dta->{DATA_FORMAT_VARIANT} = 1;
-	if ($dta->{FIXED_LEADER_BYTES} == 53 || $dta->{FIXED_LEADER_BYTES} == 59) {
-		$dta->{DATA_FORMAT} = 'WH300';
-		$dta->{DATA_FORMAT_VARIANT} = 2 if ($dta->{FIXED_LEADER_BYTES} == 59);
-	} elsif ($dta->{FIXED_LEADER_BYTES} == 42) {
-		$dta->{DATA_FORMAT} = 'BB150';
-    } else {
-    	printf(STDERR "\n$WBRcfn: WARNING: unknown data format (%d FIXED_LEADER_BYTES)\n",
-			$dta->{FIXED_LEADER_BYTES}
-		);
-		$dta->{DATA_FORMAT} = 'unknown';
-    }
 
 	#----------------------------------
 	# Check Data Format of 1st Ensemble
 	#----------------------------------
 
 	seek(WBRF,$WBRofs[1],0) || die("$WBRcfn: $!");
-	read(WBRF,$buf,2) == 2 || die("$WBRcfn: $!\n");
+	read(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 	$id = unpack('v',$buf);
 	$id == 0x0080 || die(sprintf($FmtErr,$WBRcfn,"Variable Leader",$id,1));
 
 	seek(WBRF,$WBRofs[2],0) || die("$WBRcfn: $!");
-	read(WBRF,$buf,2) == 2 || die("$WBRcfn: $!\n");
+	read(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 	$id = unpack('v',$buf);
 	$id == 0x0100 || die(sprintf($FmtErr,$WBRcfn,"Velocity Data",$id,1));
 
 	seek(WBRF,$WBRofs[3],0) || die("$WBRcfn: $!");
-	read(WBRF,$buf,2) == 2 || die("$WBRcfn: $!\n");
+	read(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 	$id = unpack('v',$buf);
 	$id == 0x0200 || die(sprintf($FmtErr,$WBRcfn,"Correlation Data",$id,1));
     
 	seek(WBRF,$WBRofs[4],0) || die("$WBRcfn: $!");
-	read(WBRF,$buf,2) == 2 || die("$WBRcfn: $!\n");
+	read(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 	$id = unpack('v',$buf);
 	$id == 0x0300 || die(sprintf($FmtErr,$WBRcfn,"Echo Intensity",$id,1));
 
 	seek(WBRF,$WBRofs[5],0) || die("$WBRcfn: $!");
-	read(WBRF,$buf,2) == 2 || die("$WBRcfn: $!\n");
+	read(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 	$id = unpack('v',$buf);
 	$id == 0x0400 || die(sprintf($FmtErr,$WBRcfn,"Percent-Good Data",$id,1));
 
 	if ($dta->{BT_PRESENT}) {
 		seek(WBRF,$WBRofs[6],0) || die("$WBRcfn: $!");
-		read(WBRF,$buf,2) == 2 || die("$WBRcfn: $!\n");
+		read(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 		$id = unpack('v',$buf);
 		$id == 0x0600 || die(sprintf($FmtErr,$WBRcfn,"Bottom Track",$id,1));
     }
@@ -381,7 +378,7 @@ sub WBRhdr($)
 	#--------------------
 
 	seek(WBRF,$WBRofs[0],0) || die("$WBRcfn: $!");
-	read(WBRF,$buf,42) == 42 || die("$WBRcfn: $!\n");
+	read(WBRF,$buf,42) == 42 || die("$WBRcfn: $!");
 	($id,$dta->{CPU_FW_VER},$dta->{CPU_FW_REV},$B1,$B2,$dummy,$dummy,$dummy,
 	 $dta->{N_BINS},$dta->{PINGS_PER_ENSEMBLE},$dta->{BIN_LENGTH},
 	 $dta->{BLANKING_DISTANCE},$dummy,$dta->{MIN_CORRELATION},
@@ -454,8 +451,8 @@ sub WBRhdr($)
 		if ($dta->{FALSE_TARGET_THRESHOLD} == 255);
     $dta->{TRANSMIT_LAG_DISTANCE} /= 100;
 
-	if ($dta->{DATA_FORMAT} eq 'WH300') {
-		read(WBRF,$buf,11) == 11 || die("$WBRcfn: $!\n");
+	if ($dta->{INSTRUMENT_TYPE} eq 'Workhorse') {
+		read(WBRF,$buf,11) == 11 || die("$WBRcfn: $!");
 		($W1,$W2,$W3,$W4,$W5,$dta->{TRANSMIT_POWER}) = 
 			unpack('vvvvvC',$buf);
 
@@ -464,7 +461,21 @@ sub WBRhdr($)
 		$dta->{NARROW_BANDWIDTH} = ($W5 == 1);
 		$dta->{WIDE_BANDWIDTH}	 = ($W5 == 0);
 	    $dta->{TRANSMIT_POWER_HIGH} = ($dta->{TRANSMIT_POWER} == 255);
-	}
+
+		if ($dta->{FIXED_LEADER_BYTES} == 59) {					# new style with serial number
+			read(WBRF,$buf,6) == 6 || die("$WBRcfn: $!");
+			($dummy,$dta->{SERIAL_NUMBER},$dummy) =				# last bytes is beam angle, but that info has
+				unpack('CVC',$buf);								# already been provided above
+		}
+    }
+
+	if ($dta->{INSTRUMENT_TYPE} eq 'Explorer') {
+		read(WBRF,$buf,16) == 16 || die("$WBRcfn: $!");
+		($dummy,$dummy,$W5,$dummy,$dta->{SERIAL_NUMBER}) = 
+			unpack('VVvvV',$buf);
+		$dta->{NARROW_BANDWIDTH} = ($W5 == 1);
+		$dta->{WIDE_BANDWIDTH}	 = ($W5 == 0);
+    }
 
 	#-----------------------
 	# 1st ENSEMBLE, BT Setup
@@ -472,7 +483,7 @@ sub WBRhdr($)
 
 	if ($dta->{BT_PRESENT}) {
 		seek(WBRF,$WBRofs[6],0) || die("$WBRcfn: $!");
-		read(WBRF,$buf,12) == 12 || die("$WBRcfn: $!\n");
+		read(WBRF,$buf,12) == 12 || die("$WBRcfn: $!");
 		($id,$dta->{BT_PINGS_PER_ENSEMBLE},$dta->{BT_DELAY_BEFORE_REACQUIRE},
 		 $dta->{BT_MIN_CORRELATION},$dta->{BT_MIN_EVAL_AMPLITUDE},
 		 $dta->{BT_MIN_PERCENT_GOOD},$dta->{BT_MODE},
@@ -486,7 +497,7 @@ sub WBRhdr($)
 										  : undef;
 	
 		seek(WBRF,28,1) || die("$WBRcfn: $!");
-		read(WBRF,$buf,6) == 6 || die("$WBRcfn: $!\n");
+		read(WBRF,$buf,6) == 6 || die("$WBRcfn: $!");
 		($dta->{BT_RL_MIN_SIZE},$dta->{BT_RL_NEAR},$dta->{BT_RL_FAR})
 			= unpack('vvv',$buf);
 	
@@ -495,22 +506,40 @@ sub WBRhdr($)
 		$dta->{BT_RL_FAR} /= 10;
 	    
 		seek(WBRF,20,1) || die("$WBRcfn: $!");		# skip data
-		read(WBRF,$buf,2) == 2 || die("$WBRcfn: $!\n");
+		read(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 	    $dta->{BT_MAX_TRACKING_DEPTH} = unpack('v',$buf) / 10;
     }
     
     return $dta;
 }
 
-sub WBRens($$$$$)
+sub WBRens($$$)
 {
-	my($nbins,$ens_length,$BT_present,$data_format,$E) = @_;
-	my($start_ens,$B1,$B2,$B3,$B4,$I,$id,$bin,$beam,$buf,$dummy,@dta,$i,$cs);
-	my($ens,$ensNo,$dayStart);
+	my($nbins,$fixed_leader_bytes,$E) = @_;
+	my($start_ens,$B1,$B2,$B3,$B4,$I,$id,$bin,$beam,$buf,$dummy,@dta,$i,$cs,@WBRofs);
+	my($ens,$ensNo,$dayStart,$ens_length,$BT_present,$hid,$did,$ndt);
 
 	for ($ens=$start_ens=0; 1; $ens++,$start_ens+=$ens_length+2) {
+#		print(STDERR "ens = $ens\n");
 #		print(STDERR "start_ens = $start_ens\n");
 
+		#----------------------------------------
+		# Get ensemble length and # of data types 
+		#----------------------------------------
+
+		seek(WBRF,$start_ens,0) || die("$WBRcfn: $!");
+		read(WBRF,$buf,6) == 6 || last;
+		($hid,$did,$ens_length,$dummy,$ndt) = unpack('CCvCC',$buf);
+		$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header",$hid,0));
+		$did == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Data Source",$did,0));
+		printf(STDERR "\n$WBRcfn: WARNING: unexpected number of data types (%d)\n",$ndt)
+				unless ($ndt == 6 || $ndt == 7);
+		$BT_present = ($ndt == 7);
+		read(WBRF,$buf,2*$ndt) == 2*$ndt || die("$WBRcfn: $!");
+		@WBRofs = unpack("v$ndt",$buf);
+		$fixed_leader_bytes = $WBRofs[1] - $WBRofs[0];
+#		print(STDERR "@WBRofs\n");
+	
 		#-------------------------------
 		# Make Sure Ensemble is Complete
 		#-------------------------------
@@ -530,28 +559,28 @@ sub WBRens($$$$$)
 		#------------------------------
 	
 		seek(WBRF,$start_ens+$WBRofs[1],0) || die("$WBRcfn: $!");
-		read(WBRF,$buf,4) == 4 || die("$WBRcfn: $!\n");
+		read(WBRF,$buf,4) == 4 || die("$WBRcfn: $!");
 		($id,$ensNo) = unpack("vv",$buf);
 
 		$id == 0x0080 ||
 			die(sprintf($FmtErr,$WBRcfn,"Variable Leader",$id,$ensNo+1));
 
-		if ($data_format eq 'BB150') {						# non Y2K RTC
-			read(WBRF,$buf,7) == 7 || die("$WBRcfn: $!\n");
+		if ($fixed_leader_bytes==42 || $fixed_leader_bytes==58) {			# BB150 & Explorer DVL
+			read(WBRF,$buf,7) == 7 || die("$WBRcfn: $!");
 			(${$E}[$ens]->{YEAR},${$E}[$ens]->{MONTH},
 			 ${$E}[$ens]->{DAY},${$E}[$ens]->{HOUR},${$E}[$ens]->{MINUTE},
 			 ${$E}[$ens]->{SECONDS},$B4) = unpack('CCCCCCC',$buf);
 			${$E}[$ens]->{SECONDS} += $B4/100;
 			${$E}[$ens]->{YEAR} += (${$E}[$ens]->{YEAR} > 80) ? 1900 : 2000;
 		} else {
-			seek(WBRF,7,1) || die("$WBRcfn: $!");			# use Y2K RTC
+			seek(WBRF,7,1) || die("$WBRcfn: $!");							# use Y2K RTC instead
 		}
 
-		read(WBRF,$buf,1) == 1 || die("$WBRcfn: $!\n");
+		read(WBRF,$buf,1) == 1 || die("$WBRcfn: $!");
 		$ensNo += unpack('C',$buf) << 16;
 		${$E}[$ens]->{NUMBER} = $ensNo;
 		
-		read(WBRF,$buf,30) == 30 || die("$WBRcfn: $!\n");
+		read(WBRF,$buf,30) == 30 || die("$WBRcfn: $!");
 		(${$E}[$ens]->{BUILT_IN_TEST_ERROR},${$E}[$ens]->{SPEED_OF_SOUND},
 		 ${$E}[$ens]->{XDUCER_DEPTH},${$E}[$ens]->{HEADING},
 		 ${$E}[$ens]->{PITCH},${$E}[$ens]->{ROLL},
@@ -580,8 +609,8 @@ sub WBRens($$$$$)
 		${$E}[$ens]->{PITCH_STDDEV} /= 10;
 		${$E}[$ens]->{ROLL_STDDEV} /= 10;
 
-		if ($data_format eq 'WH300') {
-			read(WBRF,$buf,23) == 23 || die("$WBRcfn: $!\n");
+		if ($fixed_leader_bytes==53 || $fixed_leader_bytes==59) {			# Workhorse instruments
+			read(WBRF,$buf,23) == 23 || die("$WBRcfn: $!");
 			(${$E}[$ens]->{ERROR_STATUS_WORD},
 		 	 $dummy,${$E}[$ens]->{PRESSURE},${$E}[$ens]->{PRESSURE_STDDEV},
 			 $dummy,${$E}[$ens]->{YEAR},$B3,${$E}[$ens]->{MONTH},
@@ -593,6 +622,15 @@ sub WBRens($$$$$)
 			${$E}[$ens]->{PRESSURE_STDDEV} /= 1000;
 			${$E}[$ens]->{YEAR} *= 100; ${$E}[$ens]->{YEAR} += $B3;
 			${$E}[$ens]->{SECONDS} += $B4/100;
+		}
+
+		if ($fixed_leader_bytes == 58) {									# Explorer DVL
+			read(WBRF,$buf,14) == 14 || die("$WBRcfn: $!");
+			(${$E}[$ens]->{ERROR_STATUS_WORD},
+		 	 $dummy,${$E}[$ens]->{PRESSURE},${$E}[$ens]->{PRESSURE_STDDEV})
+				= unpack('VvVV',$buf);
+			${$E}[$ens]->{PRESSURE} /= 1000;
+			${$E}[$ens]->{PRESSURE_STDDEV} /= 1000;
 		}
 		
 		${$E}[$ens]->{DATE}
@@ -632,7 +670,7 @@ sub WBRens($$$$$)
 		seek(WBRF,$start_ens+$WBRofs[0]+4,0)		# System Config / Fixed Leader
 			|| die("$WBRcfn: $!");
 
-		read(WBRF,$buf,5) == 5 || die("$WBRcfn: $!\n");
+		read(WBRF,$buf,5) == 5 || die("$WBRcfn: $!");
 		($B1,$dummy,$dummy,$dummy,${$E}[$ens]->{N_BEAMS_USED})
 			= unpack('CCCCC',$buf);		
 		${$E}[$ens]->{XDUCER_FACING_UP}   = 1 if     ($B1 & 0x80);
@@ -645,7 +683,7 @@ sub WBRens($$$$$)
 		my($ndata) = $nbins * 4;
 
 		seek(WBRF,$start_ens+$WBRofs[2],0) || die("$WBRcfn: $!");
-		read(WBRF,$buf,2+$ndata*2) == 2+$ndata*2 || die("$WBRcfn: $!\n");
+		read(WBRF,$buf,2+$ndata*2) == 2+$ndata*2 || die("$WBRcfn: $!");
 		($id,@dta) = unpack("vv$ndata",$buf);
 
 		$id == 0x0100 ||
@@ -664,7 +702,7 @@ sub WBRens($$$$$)
 		#--------------------
 
 		seek(WBRF,$start_ens+$WBRofs[3],0) || die("$WBRcfn: $!");
-		read(WBRF,$buf,2+$ndata) == 2+$ndata || die("$WBRcfn: $!\n");
+		read(WBRF,$buf,2+$ndata) == 2+$ndata || die("$WBRcfn: $!");
 		($id,@dta) = unpack("vC$ndata",$buf);
 
 		$id == 0x0200 ||
@@ -682,7 +720,7 @@ sub WBRens($$$$$)
 		#--------------------
 
 		seek(WBRF,$start_ens+$WBRofs[4],0) || die("$WBRcfn: $!");
-		read(WBRF,$buf,2+$ndata) == 2+$ndata || die("$WBRcfn: $!\n");
+		read(WBRF,$buf,2+$ndata) == 2+$ndata || die("$WBRcfn: $!");
 		($id,@dta) = unpack("vC$ndata",$buf);
 
 		$id == 0x0300 ||
@@ -699,7 +737,7 @@ sub WBRens($$$$$)
 		#--------------------
 
 		seek(WBRF,$start_ens+$WBRofs[5],0) || die("$WBRcfn: $!");
-		read(WBRF,$buf,2+$ndata) == 2+$ndata || die("$WBRcfn: $!\n");
+		read(WBRF,$buf,2+$ndata) == 2+$ndata || die("$WBRcfn: $!");
 		($id,@dta) = unpack("vC$ndata",$buf);
 
 		$id == 0x0400 ||
@@ -717,7 +755,7 @@ sub WBRens($$$$$)
 
 		if ($BT_present) {
 			seek(WBRF,$start_ens+$WBRofs[6],0) || die("$WBRcfn: $!");
-			read(WBRF,$buf,2) == 2 || die("$WBRcfn: $!\n");
+			read(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 			$id = unpack('v',$buf);
 	
 			$id == 0x0600 ||
@@ -725,7 +763,7 @@ sub WBRens($$$$$)
 	
 			seek(WBRF,14,1) || die("$WBRcfn: $!");		# BT config
 	
-			read(WBRF,$buf,28) == 28 || die("$WBRcfn: $!\n");
+			read(WBRF,$buf,28) == 28 || die("$WBRcfn: $!");
 			@dta = unpack('v4v4C4C4C4',$buf);
 		    
 			for ($beam=0; $beam<4; $beam++) {
@@ -750,7 +788,7 @@ sub WBRens($$$$$)
 	
 			seek(WBRF,6,1) || die("$WBRcfn: $!");		# BT config
 	
-			read(WBRF,$buf,20) == 20 || die("$WBRcfn: $!\n");
+			read(WBRF,$buf,20) == 20 || die("$WBRcfn: $!");
 			@dta = unpack('v4C4C4C4',$buf);
 	
 			for ($beam=0; $beam<4; $beam++) {
@@ -771,7 +809,7 @@ sub WBRens($$$$$)
 	
 			seek(WBRF,2,1) || die("$WBRcfn: $!");		# BT config
 	
-			read(WBRF,$buf,9) == 9 || die("$WBRcfn: $!\n");
+			read(WBRF,$buf,9) == 9 || die("$WBRcfn: $!");
 			@dta = unpack('C4CC4',$buf);
 	
 			for ($beam=0; $beam<4; $beam++) {
@@ -791,7 +829,7 @@ sub readHeader(@)
 {
 	my($fn,$dta) = @_;
 	$WBRcfn = $fn;
-    open(WBRF,$WBRcfn) || die("$WBRcfn: $!\n");
+    open(WBRF,$WBRcfn) || die("$WBRcfn: $!");
     WBRhdr($dta);    
 }
 
@@ -799,10 +837,9 @@ sub readData(@)
 {
 	my($fn,$dta) = @_;
 	$WBRcfn = $fn;
-    open(WBRF,$WBRcfn) || die("$WBRcfn: $!\n");
+    open(WBRF,$WBRcfn) || die("$WBRcfn: $!");
     WBRhdr($dta);
-	WBRens($dta->{N_BINS},$dta->{ENSEMBLE_BYTES},
-		   $dta->{BT_PRESENT},$dta->{DATA_FORMAT},
+	WBRens($dta->{N_BINS},$dta->{FIXED_LEADER_BYTES},
 		   \@{$dta->{ENSEMBLE}});
 	print(STDERR "$WBRcfn: $BIT_errors built-in-test errors\n")
 		if ($BIT_errors);

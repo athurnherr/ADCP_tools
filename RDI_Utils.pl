@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Wed Sep 21 18:48:23 2011
+#                    dlm: Wed Mar 27 14:45:02 2013
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 378 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 43 51 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -39,6 +39,8 @@
 #	May 12, 2011: - added code to skip ensembles with built-in-test errors in mk_prof()
 #				  - immediately disabled this code becasue it does appear to make matters worse
 #	Sep 21, 2011: - added calculation of RMS heave acceleration
+#	Mar 27, 2013: - BUG: 3-beam solutions were not used in ref_lr_w
+#				  - disabled apparently unused code
 
 use strict;
 
@@ -249,7 +251,8 @@ sub ref_lr_w($$$$$$)								# calc ref-level vert vels
 			@v = @{$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i]};
 			# NB: no need to apply heading bias, as long as we only use w!
 		}
-		next if (!defined($v[3]) || abs($v[3]) > $max_e);
+###		next if (!defined($v[3]) || abs($v[3]) > $max_e);		# disallow 3-beam solutions
+		next if (defined($v[3]) && abs($v[3]) > $max_e);		# allow 3-beam solutions
 
 		if (defined($v[2])) {							# valid w
 			$vel[2] += $v[2]; $n[2]++;
@@ -257,16 +260,19 @@ sub ref_lr_w($$$$$$)								# calc ref-level vert vels
 			push(@w,$v[2]); 							# for stderr test
 		}
 		
-		if ($dta->{BEAM_COORDINATES}) {
-			$bv[0] += $dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][0], $bn[0]++
-				if defined($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][0]);
-			$bv[1] += $dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][1], $bn[1]++
-				if defined($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][1]);
-			$bv[2] += $dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][2], $bn[2]++
-				if defined($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][2]);
-			$bv[3] += $dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][3], $bn[3]++
-	            if defined($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][3]);
-	    }
+#	The following code calculates beam-averaged ref-lr velocities.
+#	I do not recall what this was implemented for. Disabled Mar 27, 2013.
+#
+#		if ($dta->{BEAM_COORDINATES}) {
+#			$bv[0] += $dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][0], $bn[0]++
+#				if defined($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][0]);
+#			$bv[1] += $dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][1], $bn[1]++
+#				if defined($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][1]);
+#			$bv[2] += $dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][2], $bn[2]++
+#				if defined($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][2]);
+#			$bv[3] += $dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][3], $bn[3]++
+#	            if defined($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][3]);
+#	    }
 	}
 
 	my($w) = $n[2] ? $vel[2]/$n[2] : undef;				# w uncertainty
@@ -283,12 +289,15 @@ sub ref_lr_w($$$$$$)								# calc ref-level vert vels
 		$dta->{ENSEMBLE}[$ens]->{W} = $w;
 		$dta->{ENSEMBLE}[$ens]->{W_ERR} = $stderr;
 	}
-	if ($dta->{BEAM_COORDINATES}) {
-		$dta->{ENSEMBLE}[$ens]->{V1} = $bn[0]>=2 ? $bv[0]/$bn[0] : undef;
-		$dta->{ENSEMBLE}[$ens]->{V2} = $bn[1]>=2 ? $bv[1]/$bn[1] : undef;
-		$dta->{ENSEMBLE}[$ens]->{V3} = $bn[2]>=2 ? $bv[2]/$bn[2] : undef;
-	    $dta->{ENSEMBLE}[$ens]->{V4} = $bn[3]>=2 ? $bv[3]/$bn[3] : undef;
-	}
+#	The following code calculates beam-averaged ref-lr velocities.
+#	I do not recall what this was implemented for. Disabled Mar 27, 2013.
+#
+#	if ($dta->{BEAM_COORDINATES}) {
+#		$dta->{ENSEMBLE}[$ens]->{V1} = $bn[0]>=2 ? $bv[0]/$bn[0] : undef;
+#		$dta->{ENSEMBLE}[$ens]->{V2} = $bn[1]>=2 ? $bv[1]/$bn[1] : undef;
+#		$dta->{ENSEMBLE}[$ens]->{V3} = $bn[2]>=2 ? $bv[2]/$bn[2] : undef;
+#	    $dta->{ENSEMBLE}[$ens]->{V4} = $bn[3]>=2 ? $bv[3]/$bn[3] : undef;
+#	}
 }
 
 

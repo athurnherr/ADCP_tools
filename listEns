@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T E N S 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Thu May 12 10:46:46 2011
+#                    dlm: Wed Mar 20 11:52:46 2013
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 37 99 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 38 45 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the ensemble list or dump ensembles to
@@ -35,6 +35,7 @@
 #	Dec 10, 2010: - changed ANTS output to time/date instead of UNIX time
 #	Jan  5, 2011: - added -b
 #	May 12, 2011: - disabled error exit on built-in-test errors when ensembles are dumped to stdout
+#	Mar 20, 2013: - removed DATA_FORMAT stuff
 
 # Notes:
 #	- -E outputs data in earth coordinates, unless -b is set also
@@ -111,7 +112,7 @@ while (-f $ARGV[0]) {
 		unless ($opt_Q) {
 			printf("#ANTS#PARAMS# N_ensembles{%d}\n",scalar(@{$dta{ENSEMBLE}}));
 			print('#ANTS#FIELDS# {ens} {time} {xducer_up} {temp} {hdg} {pitch} {roll} {XMIT_VOLTAGE} {XMIT_CURRENT}');
-			print(' {ESW}') if ($dta{DATA_FORMAT} eq 'WH300');
+			print(' {ESW}') if ($dta{FIXED_LEADER_BYTES} >= 53);
 	        print("$addLayout\n");
 	    }
 
@@ -131,7 +132,7 @@ while (-f $ARGV[0]) {
 				$dta{ENSEMBLE}[$e]->{ADC_XMIT_CURRENT},
 			);
 			printf(' %08X',$dta{ENSEMBLE}[$e]->{ERROR_STATUS_WORD})
-				if ($dta{DATA_FORMAT} eq 'WH300');
+				if ($dta{FIXED_LEADER_BYTES} >= 53);
 			foreach my $f (@addFields) {
 				my($fn,$fi) = ($f =~ m{([^[]*)(\[.*)});
 				$fn = $f unless defined($fn);
@@ -222,7 +223,7 @@ while (-f $ARGV[0]) {
 
 	} else {											# neither ANTS nor ens files
 		unless ($opt_Q) {
-			if ($dta{DATA_FORMAT} eq 'WH300') {
+			if ($dta{FIXED_LEADER_BYTES} >= 53) {
 				printf("    # Date       Time        XD  Temp Headng Pitch  Roll vels(bin1) ESW$addLayout\n");
 				printf("-----------------------------------------------------------------------\n");
 			} else {
@@ -247,7 +248,7 @@ while (-f $ARGV[0]) {
 				$dta{ENSEMBLE}[$e]->{BIN1VELS},
 			);
 			printf(' 0x%08X',$dta{ENSEMBLE}[$e]->{ERROR_STATUS_WORD})
-				if ($dta{DATA_FORMAT} eq 'WH300');
+				if ($dta{FIXED_LEADER_BYTES} >= 53);
 			foreach my $f (@addFields) {
 				my($fn,$fi) = ($f =~ m{([^[]*)(\[.*)});
 				$fn = $f unless defined($fn);
