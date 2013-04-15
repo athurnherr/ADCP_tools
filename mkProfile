@@ -2,9 +2,9 @@
 #======================================================================
 #                    M K P R O F I L E 
 #                    doc: Sun Jan 19 18:55:26 2003
-#                    dlm: Wed Sep 21 12:03:14 2011
+#                    dlm: Fri Apr 12 09:24:14 2013
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 747 30 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 269 72 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Make an LADCP Profile by Integrating W (similar to Firing's scan*).
@@ -78,6 +78,7 @@
 #	Sep  9, 2011: - BUG: range calculation for Earth coordinate data included bins without
 #						 valid velocities
 #	Sep 21, 2010: - added %rms_heave_acceleration
+#	Apr 12, 2013: - added -p
 
 # NOTES:
 #	- the battery values are based on transmission voltages (different
@@ -105,13 +106,13 @@ die("Usage: $0 " .
 	"[-s)uppress checkensemble()] " .
 	"[require -4)-beam solutions] " .
 	"[-r)ef-layer <bin|1,bin|6>] [-n) vels <min|2>] " .
-	"[-e)rr-vel <max|0.1>] [-c)orrelation <min>] " .
+	"[-e)rr-vel <max[0.1]] [-c)orrelation <min>] [-p)ct-good <min[100]>] " .
 	"[-m)ax <gap>] " .
 	"[-d)rift <dx,dy>] [-g)ps <start lat,lon/end lat,lon>] " .
 	"[output -f)ields <field[,...]> " .
 	"[-M)agnetic <declination>] [profile -B)ottom <depth>] " .
 	"<RDI file>\n")
-		unless (&Getopts("4AB:F:M:Qd:r:n:e:c:g:f:m:s") && @ARGV == 1);
+		unless (&Getopts("4AB:F:M:Qd:r:n:e:c:g:f:m:sp:") && @ARGV == 1);
 
 $RDI_Coords::minValidVels = 4 if ($opt_4);			# no 3-beam solutions
 
@@ -122,6 +123,7 @@ $opt_n = 2	   	unless defined($opt_n);
 $opt_e = 0.1   	unless defined($opt_e);
 $opt_c = 70	   	unless defined($opt_c);
 $opt_m = 120	unless defined($opt_m);
+$opt_p = 100	unless defined($opt_p);
 
 ($minb,$maxb) = split(',',$opt_r);					# reference layer
 die("$0: can't decode -r $opt_r\n") unless defined($maxb);
@@ -264,7 +266,7 @@ if ($maxdt1-$mindt1>=0.1 || $maxdt2-$mindt2>=0.1) {
 #======================================================================
 
 ($firstgood,$lastgood,$atbottom,$w_gap_time,$zErr,$maxz,$rms_heave_accel) =
-	mk_prof(\%dta,!$opt_s,$opt_F,$minb,$maxb,$opt_c,$opt_e,$opt_m);
+	mk_prof(\%dta,!$opt_s,$opt_F,$minb,$maxb,$opt_c,$opt_e,$opt_m,$opt_p);
 
 unless (($atbottom > $firstgood) && ($lastgood > $atbottom)) {
 	if ($opt_Q) {

@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T E N S 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Wed Mar 20 11:52:46 2013
+#                    dlm: Fri Apr 12 10:37:10 2013
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 38 45 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 39 49 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the ensemble list or dump ensembles to
@@ -36,6 +36,7 @@
 #	Jan  5, 2011: - added -b
 #	May 12, 2011: - disabled error exit on built-in-test errors when ensembles are dumped to stdout
 #	Mar 20, 2013: - removed DATA_FORMAT stuff
+#	Apr 12, 2013: - added bin number to -E output
 
 # Notes:
 #	- -E outputs data in earth coordinates, unless -b is set also
@@ -167,7 +168,7 @@ while (-f $ARGV[0]) {
 					"\n"
 			);
 			print(P "#ANTS#FIELDS# " .
-					"{dz} {u} {v} {w} {e} {cor1} {cor2} {cor3} {cor4} " .
+					"{bin} {dz} {u} {v} {w} {e} {cor1} {cor2} {cor3} {cor4} " .
 					"{amp1} {amp2} {amp3} {amp4} "
 			);
 			if ($beamCoords) {
@@ -203,7 +204,7 @@ while (-f $ARGV[0]) {
 				$v[2] = nan unless defined($v[2]);
 				$v[3] = nan unless defined($v[3]);
 				my(@out) = (
-					$dz,$v[0],$v[1],$v[2],$v[3],
+					$b,$dz,$v[0],$v[1],$v[2],$v[3],
 					@{$dta{ENSEMBLE}[$e]->{CORRELATION}[$b]},
 					@{$dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b]},
 					@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]}

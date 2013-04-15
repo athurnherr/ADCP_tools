@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Wed Mar 27 14:45:02 2013
+#                    dlm: Fri Apr 12 09:22:10 2013
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 43 51 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 44 68 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -41,6 +41,7 @@
 #	Sep 21, 2011: - added calculation of RMS heave acceleration
 #	Mar 27, 2013: - BUG: 3-beam solutions were not used in ref_lr_w
 #				  - disabled apparently unused code
+#	Apr 12, 2013: - added $min_pctg as optional parameter to mk_prof
 
 use strict;
 
@@ -217,9 +218,9 @@ sub soundSpeed($$$)
 #	mk_prof($dta,$check,$filter,$lr_b0,$lr_b1,$min_corr,$max_e,$max_gap);
 #======================================================================
 
-sub ref_lr_w($$$$$$)								# calc ref-level vert vels
+sub ref_lr_w($$$$$$$)								# calc ref-level vert vels
 {
-	my($dta,$ens,$rl_b0,$rl_b1,$min_corr,$max_e) = @_;
+	my($dta,$ens,$rl_b0,$rl_b1,$min_corr,$max_e,$min_pctg) = @_;
 	my($i,@n,@bn,@v,@vel,@bv,@w);
 
 	for ($i=$rl_b0; $i<=$rl_b1; $i++) {
@@ -233,13 +234,13 @@ sub ref_lr_w($$$$$$)								# calc ref-level vert vels
 			if ($dta->{ENSEMBLE}[$ens]->{CORRELATION}[$i][3] < $min_corr);
 		if ($dta->{BEAM_COORDINATES}) {
 			undef($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][0])
-				if ($dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][0] < 100);
+				if ($dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][0] < $min_pctg);
 			undef($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][1])
-				if ($dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][1] < 100);
+				if ($dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][1] < $min_pctg);
 			undef($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][2])
-				if ($dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][2] < 100);
+				if ($dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][2] < $min_pctg);
 			undef($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][3])
-	            if ($dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][3] < 100);
+	            if ($dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][3] < $min_pctg);
 			@v = velInstrumentToEarth($dta,$ens,
 					velBeamToInstrument($dta,
 						@{$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i]}));
@@ -247,7 +248,7 @@ sub ref_lr_w($$$$$$)								# calc ref-level vert vels
 			next if ($dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][0] > 0 ||
 					 $dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][1] > 0 ||
 					 $dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][2] > 0 ||
-					 $dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][3] < 100);
+					 $dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][3] < $min_pctg);
 			@v = @{$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i]};
 			# NB: no need to apply heading bias, as long as we only use w!
 		}
@@ -301,11 +302,13 @@ sub ref_lr_w($$$$$$)								# calc ref-level vert vels
 }
 
 
-sub mk_prof($$$$$$$$)										# make profile
+sub mk_prof(...)											# make profile
 {
-	my($dta,$check,$filter,$lr_b0,$lr_b1,$min_corr,$max_e,$max_gap) = @_;
+	my($dta,$check,$filter,$lr_b0,$lr_b1,$min_corr,$max_e,$max_gap,$min_pctg) = @_;
 	my($firstgood,$lastgood,$atbottom,$w_gap_time,$zErr,$maxz);
 	my($rms_heave_accel_ssq,$rms_heave_accel_nsamp);
+
+	$min_pctg = 100 unless defined($min_pctg);
 	
 	for (my($z)=0,my($e)=0; $e<=$#{$dta->{ENSEMBLE}}; $e++) {
 		checkEnsemble($dta,$e) if ($check);
@@ -317,7 +320,7 @@ sub mk_prof($$$$$$$$)										# make profile
 		filterEnsemble($dta,$e)
 			if (defined($filter) &&
 				$dta->{ENSEMBLE}[$e]->{PERCENT_GOOD}[0][0] > 0);
-		ref_lr_w($dta,$e,$lr_b0,$lr_b1,$min_corr,$max_e);	# ref. layer w
+		ref_lr_w($dta,$e,$lr_b0,$lr_b1,$min_corr,$max_e,$min_pctg);	# ref. layer w
 	
 		if (defined($firstgood)) {
 			$dta->{ENSEMBLE}[$e]->{ELAPSED_TIME} =			# time since start
