@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B I N S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Sun Aug 22 22:40:32 2010
+#                    dlm: Mon Apr 29 11:50:06 2013
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 45 28 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 108 20 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -43,6 +43,8 @@
 #	May 22, 2009: - added -B) <bias/bias/bias/bias>
 #	May 23, 2009: - adapted to changed beampair-velocity fun name
 #	Aug 22, 2010: - added -R
+#	Apr 29, 2013: - cosmetics
+#				  - added warning on missing -S
 
 # General Notes:
 #	- everything (e.g. beams) is numbered from 1
@@ -76,7 +78,7 @@ die("Usage: $0 [-r)ange <first_ens,last_ens>] [-R)enumber ensembles] " .
 			  "[-S)oundspeed correction <salin|*,temp|*,depth|*> " .
 			  "[-P)itch/Roll <bias/bias>] [-B)eamvel <bias/bias/bias/bias>] " .
 		 	  "[require -4)-beam solutions] [-d)iscard <beam#>] " .
-		 	  "[-%)good <min>] " .
+		 	  "[-p)ct-good <min>] " .
 		 	  "[output -b)eam coordinates] [output two separate -w) estimates] " .
 			  "<RDI file>\n")
 	unless (&Getopts("4abB:d:f:M:p:r:P:RS:w") && @ARGV == 1);
@@ -103,9 +105,12 @@ $ifn = $ARGV[0];
 ($first_ens,$last_ens) = split(',',$opt_r)
 	if defined($opt_r);
 
-($SS_salin,$SS_temp,$SS_depth) = split(',',$opt_S)
-	if defined($opt_S);
-$variable_ssCorr = ($SS_salin eq '*' || $SS_temp eq '*' || $SS_depth eq '*');
+if (defined($opt_S)) {
+	($SS_salin,$SS_temp,$SS_depth) = split(',',$opt_S);
+	$variable_ssCorr = ($SS_salin eq '*' || $SS_temp eq '*' || $SS_depth eq '*');
+} else {
+	print(STDERR "WARNING: no soundspeed correction applied!\n");
+}
 
 #----------------------------------------------------------------------
 

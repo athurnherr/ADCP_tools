@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Fri Apr 12 09:22:10 2013
+#                    dlm: Thu Jun 20 15:26:47 2013
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 44 68 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 125 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -42,6 +42,9 @@
 #	Mar 27, 2013: - BUG: 3-beam solutions were not used in ref_lr_w
 #				  - disabled apparently unused code
 #	Apr 12, 2013: - added $min_pctg as optional parameter to mk_prof
+#	May 14, 2013: - added incident-velocity, w12 & w34 to mkProfile
+#	Jun  5, 2013: - BUG: incident-flow warning was printed repeatedly
+#	Jun 20, 2013: - BUG: warning had used &antsInfo()
 
 use strict;
 
@@ -218,10 +221,15 @@ sub soundSpeed($$$)
 #	mk_prof($dta,$check,$filter,$lr_b0,$lr_b1,$min_corr,$max_e,$max_gap);
 #======================================================================
 
-sub ref_lr_w($$$$$$$)								# calc ref-level vert vels
+# calculate reference-layer vertical and incident velocities
+
+{ my($warned);	# static scope
+
+sub ref_lr_w($$$$$$$)
 {
 	my($dta,$ens,$rl_b0,$rl_b1,$min_corr,$max_e,$min_pctg) = @_;
-	my($i,@n,@bn,@v,@vel,@bv,@w);
+	my($i,@n,@bn,@v,@vi,@vel,@veli,@bv,@w);
+	my($w,$e,$nvi,$vi12,$vi43,@vbp,@velbp,@nbp,$w12,$w34,@w12,@w34);
 
 	for ($i=$rl_b0; $i<=$rl_b1; $i++) {
 		undef($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][0])
@@ -241,26 +249,44 @@ sub ref_lr_w($$$$$$$)								# calc ref-level vert vels
 				if ($dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][2] < $min_pctg);
 			undef($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][3])
 	            if ($dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][3] < $min_pctg);
-			@v = velInstrumentToEarth($dta,$ens,
-					velBeamToInstrument($dta,
-						@{$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i]}));
+	        @vi = velBeamToInstrument($dta,@{$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i]});
+			@v = velInstrumentToEarth($dta,$ens,@vi);
+			@vbp = velBeamToBPEarth($dta,$ens,@{$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i]});
 		} else {
 			next if ($dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][0] > 0 ||
 					 $dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][1] > 0 ||
 					 $dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][2] > 0 ||
 					 $dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][3] < $min_pctg);
 			@v = @{$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i]};
-			# NB: no need to apply heading bias, as long as we only use w!
+			unless ($warned) {
+				print(STDERR "WARNING: incident-flow & beam-pair velocities not yet implemented for earth coordinates");
+				$warned = 1;
+			}
 		}
 ###		next if (!defined($v[3]) || abs($v[3]) > $max_e);		# disallow 3-beam solutions
 		next if (defined($v[3]) && abs($v[3]) > $max_e);		# allow 3-beam solutions
 
-		if (defined($v[2])) {							# valid w
-			$vel[2] += $v[2]; $n[2]++;
-			$vel[3] += $v[3], $n[3]++ if defined($v[3]);
-			push(@w,$v[2]); 							# for stderr test
+		if (defined($v[2])) {									# valid velocity
+			$vel[2] += $v[2]; $n[2]++;							# vertical velocity
+			$vel[3] += $v[3], $n[3]++ if defined($v[3]);		# error velocity
+			push(@w,$v[2]); 									# save for stderr calculation
+		}
+
+		if (defined($vbp[1])) {									# beam-pair vertical velocities
+			$velbp[0] += $vbp[1]; $nbp[0]++;
+			push(@w12,$vbp[1]);
+		}
+		if (defined($vbp[3])) {
+			$velbp[1] += $vbp[3]; $nbp[1]++;
+			push(@w34,$vbp[1]);
 		}
 		
+		if (defined($vi[0])) { 									# incident velocity
+			$veli[0] += $vi[0];
+			$veli[1] += $vi[1];
+			$nvi++;
+		}
+
 #	The following code calculates beam-averaged ref-lr velocities.
 #	I do not recall what this was implemented for. Disabled Mar 27, 2013.
 #
@@ -274,22 +300,63 @@ sub ref_lr_w($$$$$$$)								# calc ref-level vert vels
 #			$bv[3] += $dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][3], $bn[3]++
 #	            if defined($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][3]);
 #	    }
+	} # loop over ref-lr bins
+
+	$w = ($n[2] > 0) ? $vel[2]/$n[2] : undef;					# calc means
+	$e = ($n[3] > 0) ? $vel[3]/$n[3] : undef;
+	if ($nvi > 0) {						
+		$vi12 = $veli[0] / $nvi;
+		$vi43 = $veli[1] / $nvi;
+	} else {
+		$vi12 = $vi43 = undef;
+	}
+	$w12 = ($nbp[0] > 0) ? $velbp[0]/$nbp[0] : undef;
+	$w34 = ($nbp[1] > 0) ? $velbp[1]/$nbp[1] : undef;
+
+	if (@w12) {													# w uncertainty
+		my($sumsq) = 0;
+		for ($i=0; $i<=$#w12; $i++) {
+			$sumsq += ($w12-$w12[$i])**2;
+		}
+		$dta->{ENSEMBLE}[$ens]->{W12} = $w12;
+		$dta->{ENSEMBLE}[$ens]->{W12_ERR} = sqrt($sumsq)/($nbp[0]-1)
+			if ($nbp[0]>=2);
 	}
 
-	my($w) = $n[2] ? $vel[2]/$n[2] : undef;				# w uncertainty
-	my($sumsq) = 0;
+	if (@w34) {													# w uncertainty
+		my($sumsq) = 0;
+		for ($i=0; $i<=$#w34; $i++) {
+			$sumsq += ($w34-$w34[$i])**2;
+		}
+		$dta->{ENSEMBLE}[$ens]->{W34} = $w34;
+		$dta->{ENSEMBLE}[$ens]->{W34_ERR} = sqrt($sumsq)/($nbp[1]-1)
+			if ($nbp[1]>=2);
+	}
+
+	my($sumsq) = 0;												# w uncertainty
 	for ($i=0; $i<=$#w; $i++) {
 		$sumsq += ($w-$w[$i])**2;
 	}
 	my($stderr) = $n[2]>=2 ? sqrt($sumsq)/($n[2]-1) : undef;
+
 #	The following stderr test introduces a huge gap near the bottom of
 #	the profiles. Without it, they seem more reasonable.
 #	next if ($stderr > 0.05);
 
-	if (defined($w)) {									# valid w
+	if (defined($w)) {											# valid velocity
 		$dta->{ENSEMBLE}[$ens]->{W} = $w;
 		$dta->{ENSEMBLE}[$ens]->{W_ERR} = $stderr;
 	}
+	$dta->{ENSEMBLE}[$ens]->{ERR_VEL} = $e if (defined($e));
+	
+	$dta->{ENSEMBLE}[$ens]->{W12} = $w12 if (defined($w12));
+	$dta->{ENSEMBLE}[$ens]->{W34} = $w34 if (defined($w34));
+
+	if (defined($vi12)) {
+		$dta->{ENSEMBLE}[$ens]->{INCIDENT_VEL_T12} = $vi12;
+		$dta->{ENSEMBLE}[$ens]->{INCIDENT_VEL_T43} = $vi43;
+	}
+
 #	The following code calculates beam-averaged ref-lr velocities.
 #	I do not recall what this was implemented for. Disabled Mar 27, 2013.
 #
@@ -299,7 +366,10 @@ sub ref_lr_w($$$$$$$)								# calc ref-level vert vels
 #		$dta->{ENSEMBLE}[$ens]->{V3} = $bn[2]>=2 ? $bv[2]/$bn[2] : undef;
 #	    $dta->{ENSEMBLE}[$ens]->{V4} = $bn[3]>=2 ? $bv[3]/$bn[3] : undef;
 #	}
+
 }
+
+} # static scope
 
 
 sub mk_prof(...)											# make profile

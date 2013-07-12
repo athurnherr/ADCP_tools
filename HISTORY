@@ -1,9 +1,9 @@
 ======================================================================
                     H I S T O R Y 
                     doc: Tue May 15 18:04:39 2012
-                    dlm: Tue May 15 18:31:09 2012
+                    dlm: Fri Jul 12 12:46:50 2013
                     (c) 2012 A.M. Thurnherr
-                    uE-Info: 10 18 NIL 0 0 72 3 2 8 NIL ofnI
+                    uE-Info: 17 30 NIL 0 0 72 3 2 8 NIL ofnI
 ======================================================================
 
 May 15, 2012:
@@ -11,3 +11,8 @@ May 15, 2012:
   - began history
   - uploaded current version to server for use with first version
     of re-implemented shear method
+
+Jul 11, 2013:
+  - V1.1 [.hg/hgrc]
+  - various minor improvements
+

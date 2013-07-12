@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ B B _ R E A D . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Mon Mar 25 21:38:37 2013
+#                    dlm: Mon Apr 29 12:49:40 2013
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 632 0 NIL 0 0 72 74 2 4 NIL ofnI
+#                    uE-Info: 53 46 NIL 0 0 72 74 2 4 NIL ofnI
 #======================================================================
 
 # Read RDI BroadBand Binary Data Files (*.[0-9][0-9][0-9])
@@ -49,6 +49,8 @@
 #	Mar 19, 2013: - added support for WH600 data file (58 fixed leader bytes)
 #	Mar 20, 2013: - removed DATA_FORMAT stuff
 #				  - added support for BT data in subset of ensembles
+#	Apr 29, 2013: - changed semantics to assume EOF when unexpected number of data types
+#					are present in an ensemble
 
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -532,7 +534,7 @@ sub WBRens($$$)
 		($hid,$did,$ens_length,$dummy,$ndt) = unpack('CCvCC',$buf);
 		$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header",$hid,0));
 		$did == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Data Source",$did,0));
-		printf(STDERR "\n$WBRcfn: WARNING: unexpected number of data types (%d)\n",$ndt)
+		printf(STDERR "\n$WBRcfn: WARNING: unexpected number of data types (%d, ens=$ens)\n",$ndt),last
 				unless ($ndt == 6 || $ndt == 7);
 		$BT_present = ($ndt == 7);
 		read(WBRF,$buf,2*$ndt) == 2*$ndt || die("$WBRcfn: $!");

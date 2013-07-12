@@ -2,37 +2,47 @@
 #======================================================================
 #                    C H E C K I X 
 #                    doc: Wed Dec 12 15:58:56 2012
-#                    dlm: Wed Dec 12 16:27:11 2012
+#                    dlm: Mon Apr 22 15:17:17 2013
 #                    (c) 2012 A.M. Thurnherr
-#                    uE-Info: 31 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 43 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # HISTORY:
 #	Dec 12, 2012: - created
 
-die("Usage: $0 <stn>\n")
-	unless (@ARGV == 1);
+die("Usage: $0 <count-spec[ ...]>\n")
+	unless (@ARGV > 0);
 
-$id = $ARGV[0];									# determine station id
-$id = sprintf('%03d',$id)
-	unless (-f "$id.lad");
+foreach my $id (`count @ARGV`) {
 
-die("file <$id.lad> missing\n")					# ensure required output is here
-	unless (-f "$id.lad");
-die("file <$id.log> missing\n")
-	unless (-f "$id.log");
-die("file <$id.mat> missing\n")
-	unless (-f "$id.mat");
-die("file <$id.txt> missing\n")
-	unless (-f "$id.txt");
+	$id = sprintf('%03d',$id)
+		unless (-f "$id.log");
+	
+	unless (-f "$id.log") {
+		print(STDERR "$id: missing station\n");
+		next;
+	}
 
-if (-f "${id}_11.ps" &&							# handle warnings figure
-		length(`grep 'LADCP profile OK' ${id}_11.ps`) == 0) {
-	print("warnings produced\n");
-	system("gv ${id}_11.ps &");
+	die("$id: file <$id.lad> missing\n") 				# ensure required output is here
+		unless (-f "$id.lad");
+	die("$id: file <$id.log> missing\n")
+		unless (-f "$id.log");
+	die("$id: file <$id.mat> missing\n")
+		unless (-f "$id.mat");
+	die("$id: file <$id.txt> missing\n")
+		unless (-f "$id.txt");
+	
+	if (-f "${id}_11.ps" && 						# handle warnings figure
+			length(`grep 'LADCP profile OK' ${id}_11.ps`) == 0) {
+		print("$id: warnings produced\n");
+		system("gv ${id}_11.ps &");
+	}
+	
+	print("$id: no valid BT data\n") 					# check validity of ancillary data
+		unless (-f "$id.bot");
+	print("$id: no valid SADCP data\n")
+	    unless (length(`grep 'all SADCP values removed' $id.log`) == 0);
+
 }
 
-print("no valid BT data\n")						# check validity of ancillary data
-	unless (-f "$id.bot");
-print("no valid SADCP data\n")
-	unless (length(`grep 'all SADCP values removed' $id.log`) == 0);
+exit(0);

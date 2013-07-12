@@ -2,9 +2,9 @@
 #======================================================================
 #                    M K P R O F I L E 
 #                    doc: Sun Jan 19 18:55:26 2003
-#                    dlm: Fri Apr 12 09:24:14 2013
+#                    dlm: Tue May 14 11:37:04 2013
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 269 72 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 169 15 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Make an LADCP Profile by Integrating W (similar to Firing's scan*).
@@ -79,6 +79,10 @@
 #						 valid velocities
 #	Sep 21, 2010: - added %rms_heave_acceleration
 #	Apr 12, 2013: - added -p
+#	May 10, 2013: - BUG: mkProfile bombed when ADCP file is truncated at deepest location
+#	May 14, 2013: - added heading to output
+#				  - added err_vel to output
+#				  - finally removed -d/-g
 
 # NOTES:
 #	- the battery values are based on transmission voltages (different
@@ -104,15 +108,14 @@ $USAGE = "$0 @ARGV";
 die("Usage: $0 " .
 	"[-Q)uiet] [-F)ilter <script>] " .
 	"[-s)uppress checkensemble()] " .
-	"[require -4)-beam solutions] " .
+	"[require -4)-beam solutions] [-d)iscard <beam#>] [apply beamvel-m)ask <file>] " .
 	"[-r)ef-layer <bin|1,bin|6>] [-n) vels <min|2>] " .
 	"[-e)rr-vel <max[0.1]] [-c)orrelation <min>] [-p)ct-good <min[100]>] " .
-	"[-m)ax <gap>] " .
-	"[-d)rift <dx,dy>] [-g)ps <start lat,lon/end lat,lon>] " .
+	"[max -g)ap <len>] " .
 	"[output -f)ields <field[,...]> " .
 	"[-M)agnetic <declination>] [profile -B)ottom <depth>] " .
 	"<RDI file>\n")
-		unless (&Getopts("4AB:F:M:Qd:r:n:e:c:g:f:m:sp:") && @ARGV == 1);
+		unless (&Getopts("4AB:F:M:Qd:g:r:n:e:c:f:m:sp:") && @ARGV == 1);
 
 $RDI_Coords::minValidVels = 4 if ($opt_4);			# no 3-beam solutions
 
@@ -122,25 +125,12 @@ $opt_r = "1,6" 	unless defined($opt_r);				# defaults
 $opt_n = 2	   	unless defined($opt_n);
 $opt_e = 0.1   	unless defined($opt_e);
 $opt_c = 70	   	unless defined($opt_c);
-$opt_m = 120	unless defined($opt_m);
+$opt_g = 120	unless defined($opt_g);
 $opt_p = 100	unless defined($opt_p);
 
 ($minb,$maxb) = split(',',$opt_r);					# reference layer
 die("$0: can't decode -r $opt_r\n") unless defined($maxb);
                                         
-if ($opt_g) {										# GPS info
-	($s_lat,$s_lon,$e_lat,$e_lon) = gps_to_deg($opt_g);
-	$lat = $s_lat/2 + $e_lat/2;
-	$lon = $s_lon/2 + $e_lon/2;
-	$ddx = dist($lat,$s_lon,$lat,$e_lon);
-	$ddy = dist($s_lat,$lon,$e_lat,$lon);
-}
-
-if ($opt_d) {										# ship drift
-	($ddx,$ddy) = split(',',$opt_d);
-	die("$0: can't decode -d $opt_d\n") unless defined($ddy);
-}
-
 print(STDERR "Reading $ARGV[0]...");				# read data
 readData($ARGV[0],\%dta);
 print(STDERR "done\n");
@@ -151,6 +141,45 @@ if ($dta{BEAM_COORDINATES}) {						# coords used
 	$beamCoords = 1;
 } elsif (!$dta{EARTH_COORDINATES}) {
 	die("$ARGV[0]: only beam and earth coordinates implemented so far\n");
+}
+
+if (defined($opt_m) && -r $opt_m) {
+	die("$ARGV[0]: -m only implemented for data collected in beam coordinates\n")
+		unless ($beamCoords);
+	print(STDERR "Masking beam velocities as prescribed in $opt_m...");
+
+	open(BVM,$opt_m) || die("$opt_m: $!\n");
+	while (<BVM>) {
+		s/#.*//;
+		s/^\s*$//;
+		next if ($_ eq '');
+		my($fe,$te,$db) = split;
+		die("$opt_m: cannot decode $_\n")
+			unless (numberp($fe) && numberp($te) && $te>=$fe && $db>=1 && $db<=4);
+		die("$0: assertion failed")
+			unless ($dta{ENSEMBLE}[$fe-1]->{NUMBER} == $fe &&
+					$dta{ENSEMBLE}[$te-1]->{NUMBER} == $te);
+		for (my($ens)=$fe-1; $ens<=$te-1; $ens++) {
+			$nens++;
+			for (my($bin)=0; $bin<$dta{N_BINS}; $bin++) {
+				undef($dta{ENSEMBLE}[$ens]->{VELOCITY}[$bin][$db-1]);
+			}
+	    }       
+    }
+	close(BVM);
+	print(STDERR " $nens ensembles edited\n");
+}
+
+if (defined($opt_d)) {								# discard entire beam
+	die("$ARGV[0]: -d only implemented for data collected in beam coordinates\n")
+		unless ($beamCoords);
+	print(STDERR "Discarding beam-$opt_d velocities...");
+    for (my($ens)=0; $ens<=$#{$dta{ENSEMBLE}}; $ens++) {
+        for (my($bin)=0; $bin<$dta{N_BINS}; $bin++) {
+            undef($dta{ENSEMBLE}[$ens]->{VELOCITY}[$bin][$opt_d-1]);
+        }
+    }       
+	print(STDERR "done\n");
 }
 
 if (defined($opt_M)) {								# magnetic declination
@@ -175,56 +204,6 @@ if ($opt_f) {										# additional fields
 	}
 #	print(STDERR "addFields = $addFields\n");
 #	print(STDERR "\@f = @f\n");
-}
-
-#======================================================================
-# Misc funs used to decode options
-#======================================================================
-
-sub dist($$$$)										# distance
-{
-	my($lat1,$lon1,$lat2,$lon2) = @_;
-	my($a) = 6378139; 								# Earth's radius
-
-	$lat1 = rad($lat1); $lon1 = rad($lon1);
-	$lat2 = rad($lat2); $lon2 = rad($lon2);
-	$ct1 = cos($lat1); $st1 = sin($lat1); $cp1 = cos($lon1);
-	$sp1 = sin($lon1); $ct2 = cos($lat2); $st2 = sin($lat2);
-	$cp2 = cos($lon2); $sp2 = sin($lon2);
-	$cos = $ct1*$cp1*$ct2*$cp2 + $ct1*$sp1*$ct2*$sp2 + $st1*$st2;
-	$cos =  1 if ($cos >  1);
-	$cos = -1 if ($cos < -1);
-	return $a * acos($cos);
-}
-
-sub deg_to_dec($)									# parse degrees
-{
-	my($deg,$min) = split(':',$_[0]);
-	return $deg + $min/60;
-}
-
-sub gps_to_deg($)									# decode lat/lon
-{
-	my($start,$end) = split('/',$_[0]);
-	my($sa,$so,$ea,$eo);
-
-	my($lat,$lon) = split(',',$start);
-	if ($lat =~ m{N$}) 		{ $sa =  deg_to_dec($`); }
-	elsif ($lat =~ m{S$}) 	{ $sa = -deg_to_dec($`); }
-	else 					{ $sa = $lat; }
-	if ($lon =~ m{E$}) 		{ $so =  deg_to_dec($`); }
-	elsif ($lon =~ m{W$}) 	{ $so = -deg_to_dec($`); }
-	else 					{ $so = $lon; }
-
-	my($lat,$lon) = split(',',$end);
-	if ($lat =~ m{N$}) 		{ $ea =  deg_to_dec($`); }
-	elsif ($lat =~ m{S$}) 	{ $ea = -deg_to_dec($`); }
-	else 					{ $ea = $lat; }
-	if ($lon =~ m{E$}) 		{ $eo =  deg_to_dec($`); }
-	elsif ($lon =~ m{W$}) 	{ $eo = -deg_to_dec($`); }
-	else 					{ $eo = $lon; }
-
-	return ($sa,$so,$ea,$eo);
 }
 
 #======================================================================
@@ -266,7 +245,7 @@ if ($maxdt1-$mindt1>=0.1 || $maxdt2-$mindt2>=0.1) {
 #======================================================================
 
 ($firstgood,$lastgood,$atbottom,$w_gap_time,$zErr,$maxz,$rms_heave_accel) =
-	mk_prof(\%dta,!$opt_s,$opt_F,$minb,$maxb,$opt_c,$opt_e,$opt_m,$opt_p);
+	mk_prof(\%dta,!$opt_s,$opt_F,$minb,$maxb,$opt_c,$opt_e,$opt_g,$opt_p);
 
 unless (($atbottom > $firstgood) && ($lastgood > $atbottom)) {
 	if ($opt_Q) {
@@ -575,26 +554,8 @@ for ($i=0; $i<$dta{N_BINS}; $i++) {
 $gb = ($gb[0]+$gb[1]+$gb[2]+$gb[3]) / 4;
 
 #======================================================================
-# Step 5: Remove Ship Drift (probably not useful)
+# Step 5: Remove Ship Drift (probably not useful => removed)
 #======================================================================
-
-if (defined($opt_M) && defined($ddx)) {						# remove barotropic
-	$du = $ddx / $dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME};# mean drift vel
-	$dv = $ddy / $dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME};
-	$iu = $dta{ENSEMBLE}[$lastgood]->{X} /				# mean obs vel
-			$dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME};
-	$iv = $dta{ENSEMBLE}[$lastgood]->{Y} /
-			$dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME};
-	
-	for ($e=$firstgood; $e<=$lastgood; $e++) {
-		next unless (defined($dta{ENSEMBLE}[$e]->{X}) &&
-					 defined($dta{ENSEMBLE}[$e]->{Y}));
-		$dta{ENSEMBLE}[$e]->{U} -= $du;
-		$dta{ENSEMBLE}[$e]->{V} -= $dv;
-		$dta{ENSEMBLE}[$e]->{X} += $dta{ENSEMBLE}[$e]->{ELAPSED_TIME} * ($du-$iu);
-		$dta{ENSEMBLE}[$e]->{Y} += $dta{ENSEMBLE}[$e]->{ELAPSED_TIME} * ($dv-$iv);
-	}
-}
 
 #======================================================================
 # Step 6: Pitch, Roll, Rotation
@@ -652,7 +613,13 @@ $postrot /= 360;
 
 $prrms 	 = sqrt($prrms/($lastgood-$firstgood));
 $dnprrms = sqrt($dnprrms/($atbottom-$firstgood));
-$upprrms = sqrt($upprrms/($lastgood-$atbottom));
+
+if ($lastgood == $atbottom) {
+	print(STDERR "WARNING: $0 NO UPCAST DATA\n");
+	$upprrms = nan;
+} else {
+	$upprrms = sqrt($upprrms/($lastgood-$atbottom));
+}
 
 $rotrms = sqrt($rotrms/($lastgood-$firstgood));
 
@@ -718,8 +685,8 @@ print("#ANTS# [] $USAGE\n");
 $uFields = "{u} {u_err} {v} {v_err} {x} {x_err} {y} {y_err}"
 	if defined($opt_M);
 print("#ANTS#FIELDS# {ens} {time} {elapsed} {secno} {downcast} " .
-					"{w} {w_err} {depth} {depth_err} {depth_BT} " .
-					"{pitchroll} {rotation} " .
+					"{w} {w_err} {err_vel} {depth} {depth_err} {depth_BT} " .
+					"{pitchroll} {heading} {rotation} " .
 					"$uFields $addFields\n");
 
 printf("#ANTS#PARAMS# date{$dta{ENSEMBLE}[$firstgood]->{DATE}} " .
@@ -784,19 +751,12 @@ printf("#ANTS#PARAMS# magnetic_declination{$opt_M} " .
 		$dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME},
 	$vErr, $dta{ENSEMBLE}[$lastgood]->{Y}, $y_err,
 ) if defined ($opt_M);
-print("#ANTS#PARAMS# start_lat{$s_lat} start_lon{$s_lon} " .
-					  "end_lat{$e_lat} end_lon{$e_lon} " .
-						  "lat{$lat} lon{$lon}\n")
-	if defined($lat);
 if ($dta{TIME_BETWEEN_PINGS} == 0) {
 	 print("#ANTS#PARAMS# pinging_rate{staggered}\n");
 } else {
 	 printf("#ANTS#PARAMS# pinging_rate{%.2f}\n",
 		1/$dta{TIME_BETWEEN_PINGS});
 }	    
-printf("#ANTS#PARAMS# drift_x{%d} drift_y{%d} " .
-					 "drift_u{%.3f} drift_v{%.3f} " .
-	   "\n",$ddx,$ddy,$du,$dv) if defined($ddx);
 if (defined($water_depth)) {
 	printf("#ANTS#PARAMS# water_depth{%d} sig-water_depth{%d}\n",
 				$water_depth,$sig_wd);
@@ -815,10 +775,12 @@ for ($e=$firstgood; $e<=$lastgood; $e++) {
 	pb($dta{ENSEMBLE}[$e]->{UNIX_TIME} < $dta{ENSEMBLE}[$atbottom]->{UNIX_TIME});
 	p($dta{ENSEMBLE}[$e]->{W});
 	p($dta{ENSEMBLE}[$e]->{W_ERR});
+	p($dta{ENSEMBLE}[$e]->{ERR_VEL});
 	p($dta{ENSEMBLE}[$e]->{DEPTH});
 	p($dta{ENSEMBLE}[$e]->{DEPTH_ERR});
 	p($dta{ENSEMBLE}[$e]->{DEPTH_BT});
 	p($dta{ENSEMBLE}[$e]->{PITCHROLL});
+	p($dta{ENSEMBLE}[$e]->{HEADING});
 	p($dta{ENSEMBLE}[$e]->{ROTATION});
 	if (defined($opt_M)) {
 		p($dta{ENSEMBLE}[$e]->{U}); p($dta{ENSEMBLE}[$e]->{U_ERR});
