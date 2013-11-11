@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ C O O R D S . P L 
 #                    doc: Sun Jan 19 17:57:53 2003
-#                    dlm: Sun Jan 15 20:04:13 2012
+#                    dlm: Wed Aug  7 11:18:51 2013
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 33 74 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 199 23 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # RDI Workhorse Coordinate Transformations
@@ -31,6 +31,8 @@
 #	Jan 22, 2011: - made velApplyHdgBias calculate sin/cos every time to allow
 #				    per-ensemble corrections
 #	Jan 15, 2012: - replaced defined(@...) by (@...) to get rid of warning
+#	Aug  7, 2013: - BUG: &velBeamToBPInstrument did not return any val unless
+#						 all beam velocities are defined
 
 use strict;
 use POSIX;
@@ -159,9 +161,6 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 		my($dta,$ens,$b1,$b2,$b3,$b4) = @_;
 		my($v12,$w12,$v34,$w34);
 
-		return (undef,undef,undef,undef)
-			unless defined($b1) && defined($b2) && defined($b3) && defined($b4);
-
 		unless (defined($TwoCosBAngle)) {
 			$TwoCosBAngle = 2 * cos(rad($dta->{BEAM_ANGLE}));
 			$TwoSinBAngle = 2 * sin(rad($dta->{BEAM_ANGLE}));
@@ -195,6 +194,9 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 			$w34 = $w34_ic*$cp - $v34_ic*$sp - $v12_ic*$sr;
         	$v34 = $v34_ic*$cp + $w34_ic*$sp + $w12_ic*$sr;
 		}
+
+		$v12=$w12=undef unless (defined($b1) && defined($b2));
+		$v34=$w34=undef unless (defined($b3) && defined($b4));
 
 		return ($v12,$w12,$v34,$w34);
 	}

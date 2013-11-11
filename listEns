@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T E N S 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Fri Apr 12 10:37:10 2013
+#                    dlm: Wed Aug  7 10:38:17 2013
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 39 49 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 215 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the ensemble list or dump ensembles to
@@ -37,6 +37,11 @@
 #	May 12, 2011: - disabled error exit on built-in-test errors when ensembles are dumped to stdout
 #	Mar 20, 2013: - removed DATA_FORMAT stuff
 #	Apr 12, 2013: - added bin number to -E output
+#	Aug  7, 2013: - added -d, -4
+#				  - added w12, w34 to -E output
+#				  - added sounspeed correction warning
+#				  - changed -E from prefix to suffix
+#				  - added active header line to -E output
 
 # Notes:
 #	- -E outputs data in earth coordinates, unless -b is set also
@@ -50,16 +55,22 @@ require "$1RDI_Coords.pl";
 
 die("Usage: $0 [-A)nts] [-Q)uiet (errcheck only)] " .
 			  "[-f)ields <[name=]FIELD[,...]>] " .
-			  "[write -E)nsemples <pref> [-M)agnetic <declination>] [min -p)ercent-good <#>] [keep -b)eam coords]] " .
+			  "[require -4)-beam solutions] [-d)iscard <beam#>] " .
+			  "[write -E)nsemples <.suff> [-M)agnetic <declination>] [min -p)ercent-good <#>] [keep -b)eam coords]] " .
 			  "[-r)ange <first_ens,last_ens>] [in-w)ater ensembles only] " .
 			  "<RDI file...>\n")
-	unless (&Getopts("AbE:f:M:p:Qr:w") && $#ARGV >= 0);
+	unless (&Getopts("4Abd:E:f:M:p:Qr:w") && $#ARGV >= 0);
+
+print(STDERR "WARNING: no soundspeed correction applied!\n");
 
 print(STDERR "WARNING: magnetic declination not set!\n")
 	if defined($opt_E) && !defined($opt_M);
 
 die("$0: illegal option combination\n")
 	if ($opt_Q && $opt_A) || ((defined($opt_M) || defined($opt_p) || defined($opt_b)) && !defined($opt_E));
+
+die("$0: -4 and -d are mutually exclusive\n")
+	if ($opt_4 && defined($opt_d));
 
 ($first_ens,$last_ens) = split(',',$opt_r)
 	if defined($opt_r);
@@ -83,6 +94,8 @@ if ($opt_f) {										# additional fields
 #	print(STDERR "addLayout = $addLayout\n");
 #	print(STDERR "\@addFields = @addFields\n");
 }
+
+$RDI_Coords::minValidVels = 4 if ($opt_4);			# no 3-beam solutions
 
 #----------------------------------------------------------------------
 # MAIN
@@ -149,9 +162,10 @@ while (-f $ARGV[0]) {
 		{
 			my($e) = @_;
 			my($b,$i);
-			my($file) = "$opt_E.$dta{ENSEMBLE}[$e]->{NUMBER}";
+			my($file) = "$dta{ENSEMBLE}[$e]->{NUMBER}$opt_E";
 		
 			open(P,">$file") || die("$file: $!\n");
+			print(P "#!/usr/bin/perl -S list\n");
 			print(P "#ANTS#PARAMS# " .
 					"BT_u{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[0]} " .
 					"BT_v{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[1]} " .
@@ -165,10 +179,11 @@ while (-f $ARGV[0]) {
 					"BT_amp2{$dta{ENSEMBLE}[$e]->{BT_AMPLITUDE}[1]} " .
 					"BT_amp3{$dta{ENSEMBLE}[$e]->{BT_AMPLITUDE}[2]} " .
 					"BT_amp4{$dta{ENSEMBLE}[$e]->{BT_AMPLITUDE}[3]} " .
+					"soundspeed_correction{NONE!} " .
 					"\n"
 			);
 			print(P "#ANTS#FIELDS# " .
-					"{bin} {dz} {u} {v} {w} {e} {cor1} {cor2} {cor3} {cor4} " .
+					"{bin} {dz} {u} {v} {w} {e} {w12} {w34} {cor1} {cor2} {cor3} {cor4} " .
 					"{amp1} {amp2} {amp3} {amp4} "
 			);
 			if ($beamCoords) {
@@ -179,18 +194,20 @@ while (-f $ARGV[0]) {
 			print(P "$addLayout\n");
 			    
 			for (my($b)=0; $b<$dta{N_BINS}; $b++) {
-				my(@v);
+				my(@v,$w12,$w34);
 				my($dz) = $dta{DISTANCE_TO_BIN1_CENTER} + $b*$dta{BIN_LENGTH};
 		
 				if ($beamCoords) {
 					undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0])
-						if ($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][0] < $opt_p);
+						if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][0] < $opt_p) || ($opt_d == 1));
 					undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1])
-						if ($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][1] < $opt_p);
+						if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][1] < $opt_p) || ($opt_d == 2));
 					undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2])
-						if ($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][2] < $opt_p);
+						if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][2] < $opt_p) || ($opt_d == 3));
 					undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3])
-						if ($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][3] < $opt_p);
+						if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][3] < $opt_p) || ($opt_d == 4));
+					($dummy,$w12,$dummy,$w34) =
+						velBeamToBPEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
 					@v = $opt_b ? @{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]} :
 							velInstrumentToEarth(\%dta,$e,
 								velBeamToInstrument(\%dta,
@@ -199,12 +216,14 @@ while (-f $ARGV[0]) {
 					@v = velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
 				}
 		
-				$v[0] = nan unless defined($v[0]);
-				$v[1] = nan unless defined($v[1]);
-				$v[2] = nan unless defined($v[2]);
-				$v[3] = nan unless defined($v[3]);
+				$v[0] = nan unless defined($v[0]);		# u
+				$v[1] = nan unless defined($v[1]);		# v
+				$v[2] = nan unless defined($v[2]);		# w
+				$v[3] = nan unless defined($v[3]);		# err_vel
+				$w12 = nan unless defined($w12);		# w from beams 1&2
+				$w34 = nan unless defined($w34);		# w from beams 3&4
 				my(@out) = (
-					$b,$dz,$v[0],$v[1],$v[2],$v[3],
+					$b,$dz,$v[0],$v[1],$v[2],$v[3],$w12,$w34,
 					@{$dta{ENSEMBLE}[$e]->{CORRELATION}[$b]},
 					@{$dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b]},
 					@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]}
@@ -214,7 +233,7 @@ while (-f $ARGV[0]) {
 					$fn = $f unless defined($fn);
 					push(@out,eval("\$dta{ENSEMBLE}[$e]->{$fn}$fi"));
 				}
-				for ($i=0; $i<17+@addFields; $i++) {
+				for ($i=0; $i<19+@addFields; $i++) {
 					$out[$i] = nan unless defined($out[$i]);
 				}
 				print(P "@out\n");

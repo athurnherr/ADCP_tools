@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B I N S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Mon Apr 29 11:50:06 2013
+#                    dlm: Wed Aug  7 10:04:28 2013
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 108 20 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 48 46 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -45,6 +45,7 @@
 #	Aug 22, 2010: - added -R
 #	Apr 29, 2013: - cosmetics
 #				  - added warning on missing -S
+#	Aug  7, 2013: - BUG: -w did not respect -d
 
 # General Notes:
 #	- everything (e.g. beams) is numbered from 1
@@ -271,14 +272,13 @@ for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {				# check/transform velocities
 		$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1] -= $P{velbias_b2};
 		$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2] -= $P{velbias_b3};
 		$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3] -= $P{velbias_b4};
-		if ($opt_w) {
-			@{$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b]} =
-				velBeamToBPEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
-		}
-
 		if (defined($opt_d)) {
 			undef($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][$opt_d-1]);
 			undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][$opt_d-1]);
+		}
+		if ($opt_w) {
+			@{$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b]} =
+				velBeamToBPEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
 		}
 		for (my($i)=0; $i<4; $i++) {
 			if ($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][$i] < $opt_p) {
