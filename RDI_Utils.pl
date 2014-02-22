@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Thu Jun 20 15:26:47 2013
+#                    dlm: Thu Feb 13 16:23:34 2014
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 125 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 206 31 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -45,6 +45,8 @@
 #	May 14, 2013: - added incident-velocity, w12 & w34 to mkProfile
 #	Jun  5, 2013: - BUG: incident-flow warning was printed repeatedly
 #	Jun 20, 2013: - BUG: warning had used &antsInfo()
+#	Feb 13, 2014: - replaced {DEPTH_BT} by {seabed}
+#				  - added set_range_lim()
 
 use strict;
 
@@ -131,49 +133,83 @@ sub find_seabed($$$)
 						@{$d->{ENSEMBLE}[$i]->{BT_VELOCITY}}))
 				: velApplyHdgBias($d,$i,@{$d->{ENSEMBLE}[$i]->{BT_VELOCITY}});
 		next unless (abs($BT[3]) < 0.05);
-		$d->{ENSEMBLE}[$i]->{DEPTH_BT} =
+		$d->{ENSEMBLE}[$i]->{seabed} =
 			 $d->{ENSEMBLE}[$i]->{BT_RANGE}[0]/4 +
 			 $d->{ENSEMBLE}[$i]->{BT_RANGE}[1]/4 +
  			 $d->{ENSEMBLE}[$i]->{BT_RANGE}[2]/4 +
 			 $d->{ENSEMBLE}[$i]->{BT_RANGE}[3]/4;
-		next unless ($d->{ENSEMBLE}[$i]->{DEPTH_BT} >= $min_dist);
-		$d->{ENSEMBLE}[$i]->{DEPTH_BT} *= -1
+		next
+			unless ($d->{ENSEMBLE}[$i]->{seabed} >= $min_dist);
+		$d->{ENSEMBLE}[$i]->{seabed} *= -1
 			if ($d->{ENSEMBLE}[$i]->{XDUCER_FACING_UP});
-		$d->{ENSEMBLE}[$i]->{DEPTH_BT} += $d->{ENSEMBLE}[$i]->{DEPTH};
-		if ($d->{ENSEMBLE}[$i]->{DEPTH_BT} > $d->{ENSEMBLE}[$be]->{DEPTH}) {
-			$guesses[int($d->{ENSEMBLE}[$i]->{DEPTH_BT})+$z_offset]++;
+		$d->{ENSEMBLE}[$i]->{seabed} += $d->{ENSEMBLE}[$i]->{DEPTH};
+		if ($d->{ENSEMBLE}[$i]->{seabed} > $d->{ENSEMBLE}[$be]->{DEPTH}) {
+			$guesses[int($d->{ENSEMBLE}[$i]->{seabed})+$z_offset]++;
 			$nd++;
 		} else {
-			undef($d->{ENSEMBLE}[$i]->{DEPTH_BT});
+			undef($d->{ENSEMBLE}[$i]->{seabed});
 		}
 	}
 	return undef unless ($nd>5);
 
 	my($mode,$nmax);
 	for ($i=0; $i<=$#guesses; $i++) {			# find mode
-		$nmax=$guesses[$i],$mode=$i-$z_offset
+	$nmax=$guesses[$i],$mode=$i-$z_offset
 			if ($guesses[$i] > $nmax);
 	}
 
 	$nd = 0;
 	for ($i=$be-$search_width; $i<=$be+$search_width; $i++) {
-		next unless defined($d->{ENSEMBLE}[$i]->{DEPTH_BT});
-		if (abs($d->{ENSEMBLE}[$i]->{DEPTH_BT}-$mode) <= $mode_width) {
-			$dd += $d->{ENSEMBLE}[$i]->{DEPTH_BT};
+		next unless defined($d->{ENSEMBLE}[$i]->{seabed});
+		if (abs($d->{ENSEMBLE}[$i]->{seabed}-$mode) <= $mode_width) {
+			$dd += $d->{ENSEMBLE}[$i]->{seabed};
 			$nd++;
 		} else {
-			$d->{ENSEMBLE}[$i]->{DEPTH_BT} = undef;
+			$d->{ENSEMBLE}[$i]->{seabed} = undef;
 		}
 	}
 	return undef unless ($nd >= 2);
 
 	$dd /= $nd;
 	for ($i=$be-$search_width; $i<=$be+$search_width; $i++) {
-		next unless defined($d->{ENSEMBLE}[$i]->{DEPTH_BT});
-		$sd += ($d->{ENSEMBLE}[$i]->{DEPTH_BT}-$dd)**2;
+		next unless defined($d->{ENSEMBLE}[$i]->{seabed});
+		$sd += ($d->{ENSEMBLE}[$i]->{seabed}-$dd)**2;
 	}
 
 	return ($dd, sqrt($sd/($nd-1)));
+}
+
+#----------------------------------------------------------------------
+# set_range_lim(d)
+#	- set field range_lim
+#----------------------------------------------------------------------
+
+sub set_range_lim($)
+{
+	my($d) = @_;
+
+	for (my($e)=0; $e<=$#{$d->{ENSEMBLE}}; $e++) {
+		my($lastGood) = 1; my($b);
+		for ($b=0; $b<$d->{N_BINS}; $b++) {
+			if (defined($d->{ENSEMBLE}[$e]->{VELOCITY}[$b][0]) &&
+				defined($d->{ENSEMBLE}[$e]->{VELOCITY}[$b][1]) &&
+				defined($d->{ENSEMBLE}[$e]->{VELOCITY}[$b][2]) &&
+				defined($d->{ENSEMBLE}[$e]->{VELOCITY}[$b][3])) {
+					$lastGood = 1;
+			} elsif ($lastGood) {
+				$lastGood = 0;
+			} else {
+				last;
+			}
+	    }
+
+		next unless ($b>=2) && defined($d->{ENSEMBLE}[$e]->{DEPTH});
+	    $d->{ENSEMBLE}[$e]->{range_lim} =
+			$d->{DISTANCE_TO_BIN1_CENTER} + ($b-2) * $d->{BIN_LENGTH};
+		$d->{ENSEMBLE}[$e]->{range_lim} *= -1
+			if ($d->{ENSEMBLE}[$e]->{XDUCER_FACING_UP});
+		$d->{ENSEMBLE}[$e]->{range_lim} += $d->{ENSEMBLE}[$e]->{DEPTH};
+	}
 }
 
 #======================================================================

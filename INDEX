@@ -1,13 +1,14 @@
 #======================================================================
 #                    I N D E X 
 #                    doc: Thu Feb  7 14:21:21 2008
-#                    dlm: Wed Dec 12 15:58:29 2012
+#                    dlm: Tue Nov 26 21:55:56 2013
 #                    (c) 2008 A.M. Thurnherr
-#                    uE-Info: 28 36 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 12 0 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 =General Utilities=
 
+[editPD0]	edit RDI PD0 file
 [listHdr]	list header info
 [listEns]	list ensembles
 [listBT]	list bottom-track data

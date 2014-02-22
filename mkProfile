@@ -2,9 +2,9 @@
 #======================================================================
 #                    M K P R O F I L E 
 #                    doc: Sun Jan 19 18:55:26 2003
-#                    dlm: Tue May 14 11:37:04 2013
+#                    dlm: Thu Feb 13 15:45:20 2014
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 169 15 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 283 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Make an LADCP Profile by Integrating W (similar to Firing's scan*).
@@ -83,6 +83,8 @@
 #	May 14, 2013: - added heading to output
 #				  - added err_vel to output
 #				  - finally removed -d/-g
+#	Nov 25, 2013: - expunged checkEnsemble
+#	Feb 13, 2014: - added support set_range_lim()
 
 # NOTES:
 #	- the battery values are based on transmission voltages (different
@@ -107,7 +109,6 @@ require "getopts.pl";
 $USAGE = "$0 @ARGV";
 die("Usage: $0 " .
 	"[-Q)uiet] [-F)ilter <script>] " .
-	"[-s)uppress checkensemble()] " .
 	"[require -4)-beam solutions] [-d)iscard <beam#>] [apply beamvel-m)ask <file>] " .
 	"[-r)ef-layer <bin|1,bin|6>] [-n) vels <min|2>] " .
 	"[-e)rr-vel <max[0.1]] [-c)orrelation <min>] [-p)ct-good <min[100]>] " .
@@ -115,7 +116,7 @@ die("Usage: $0 " .
 	"[output -f)ields <field[,...]> " .
 	"[-M)agnetic <declination>] [profile -B)ottom <depth>] " .
 	"<RDI file>\n")
-		unless (&Getopts("4AB:F:M:Qd:g:r:n:e:c:f:m:sp:") && @ARGV == 1);
+		unless (&Getopts("4AB:F:M:Qd:g:r:n:e:c:f:m:p:") && @ARGV == 1);
 
 $RDI_Coords::minValidVels = 4 if ($opt_4);			# no 3-beam solutions
 
@@ -188,7 +189,7 @@ if (defined($opt_M)) {								# magnetic declination
 	$dta{HEADING_BIAS} = 0;
 }
 
-ensure_BT_RANGE(\%dta);								# calc if missing
+ensure_BT_RANGE(\%dta);								# set BT_RANGE field if it is missing (old firmware bug)
 
 if ($opt_f) {										# additional fields
 	@f = split(',',$opt_f);
@@ -245,7 +246,7 @@ if ($maxdt1-$mindt1>=0.1 || $maxdt2-$mindt2>=0.1) {
 #======================================================================
 
 ($firstgood,$lastgood,$atbottom,$w_gap_time,$zErr,$maxz,$rms_heave_accel) =
-	mk_prof(\%dta,!$opt_s,$opt_F,$minb,$maxb,$opt_c,$opt_e,$opt_g,$opt_p);
+	mk_prof(\%dta,0,$opt_F,$minb,$maxb,$opt_c,$opt_e,$opt_g,$opt_p);
 
 unless (($atbottom > $firstgood) && ($lastgood > $atbottom)) {
 	if ($opt_Q) {
@@ -277,6 +278,8 @@ if (defined($opt_B)) {										# scale Z
 				($dta{ENSEMBLE}[$e]->{DEPTH}-$dta{ENSEMBLE}[$lastgood]->{DEPTH});
 	}
 }
+
+set_range_lim(\%dta);										# set {range_lim} field
 
 ($water_depth,$sig_wd) =									# sea bed
 	find_seabed(\%dta,$atbottom,$beamCoords);
@@ -685,7 +688,7 @@ print("#ANTS# [] $USAGE\n");
 $uFields = "{u} {u_err} {v} {v_err} {x} {x_err} {y} {y_err}"
 	if defined($opt_M);
 print("#ANTS#FIELDS# {ens} {time} {elapsed} {secno} {downcast} " .
-					"{w} {w_err} {err_vel} {depth} {depth_err} {depth_BT} " .
+					"{w} {w_err} {err_vel} {depth} {depth_err} {seabed} " .
 					"{pitchroll} {heading} {rotation} " .
 					"$uFields $addFields\n");
 
@@ -778,7 +781,7 @@ for ($e=$firstgood; $e<=$lastgood; $e++) {
 	p($dta{ENSEMBLE}[$e]->{ERR_VEL});
 	p($dta{ENSEMBLE}[$e]->{DEPTH});
 	p($dta{ENSEMBLE}[$e]->{DEPTH_ERR});
-	p($dta{ENSEMBLE}[$e]->{DEPTH_BT});
+	p($dta{ENSEMBLE}[$e]->{seabed});
 	p($dta{ENSEMBLE}[$e]->{PITCHROLL});
 	p($dta{ENSEMBLE}[$e]->{HEADING});
 	p($dta{ENSEMBLE}[$e]->{ROTATION});

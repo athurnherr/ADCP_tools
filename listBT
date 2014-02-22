@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B T 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Sat Aug 21 23:24:42 2010
+#                    dlm: Mon Nov 25 18:30:11 2013
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 123 56 NIL 0 0 72 11 2 4 NIL ofnI
+#                    uE-Info: 42 44 NIL 0 0 72 11 2 4 NIL ofnI
 #======================================================================
 
 # Extract Bottom-Track Data
@@ -39,6 +39,7 @@
 #	Sep 19, 2007: - adapted to new [RDI_BB_Read.pl] (not tested)
 #	Nov  1, 2008: - BUG: sig(u) was reported instead of sig(v)
 #	Jul 30, 2009: - NaN => nan
+#	Nov 25, 2013: - checkEnsemble() expunged
 
 # NOTES:
 #	- the RDI BT data contains ranges that are greater than the
@@ -417,7 +418,6 @@ sub dumpProf($$$)
 #======================================================================
 
 for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {
-	checkEnsemble(\%dta,$e);
 	$dta{ENSEMBLE}[$e]->{W_REF} = w($e);
 	next unless (defined($start_e) ||
 				 defined($dta{ENSEMBLE}[$e]->{W_REF}));
