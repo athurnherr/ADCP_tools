@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T W 
 #                    doc: Wed Mar 24 06:45:09 2004
-#                    dlm: Thu Jul 30 17:42:33 2009
+#                    dlm: Mon Nov 25 18:30:33 2013
 #                    (c) 2004 A.M. Thurnherr
-#                    uE-Info: 205 53 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 23 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # dump vertical velocities
@@ -19,6 +19,7 @@
 #	Nov  8, 2005: - UNIXTIME => UNIX_TIME
 #	Sep 19, 2007: - adapted to new [RDI_BB_Read.pl] (not tested)
 #	Jul 30, 2009: - NaN => nan
+#   Nov 25, 2013: - checkEnsemble() expunged
 
 $0 =~ m{(.*)/[^/]+}; 
 require "$1/WorkhorseBinRead.pl";
@@ -123,7 +124,6 @@ sub ref_lr_w($)
 print(STDERR "Generating profile by integrating w...");
 
 for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {
-	checkEnsemble(\%dta,$e);								# sanity checks
 	filterEnsemble(\%dta,$e)								# filter ensemble 
 		if (defined($opt_F) &&
 			$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[0][0] > 0);

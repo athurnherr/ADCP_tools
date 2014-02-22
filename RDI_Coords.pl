@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ C O O R D S . P L 
 #                    doc: Sun Jan 19 17:57:53 2003
-#                    dlm: Wed Aug  7 11:18:51 2013
+#                    dlm: Wed Nov 27 11:21:49 2013
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 199 23 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 287 70 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # RDI Workhorse Coordinate Transformations
@@ -33,6 +33,7 @@
 #	Jan 15, 2012: - replaced defined(@...) by (@...) to get rid of warning
 #	Aug  7, 2013: - BUG: &velBeamToBPInstrument did not return any val unless
 #						 all beam velocities are defined
+#	Nov 27, 2013: - added &RDI_pitch(), &tilt_azimuth()
 
 use strict;
 use POSIX;
@@ -272,6 +273,18 @@ sub gimbal_pitch($$)	# RDI coord trans manual
 {
 	my($RDI_pitch,$RDI_roll) = @_;
 	return deg(atan(tan(rad($RDI_pitch)) * cos(rad($RDI_roll))));
+}
+
+sub RDI_pitch($$)
+{
+	my($gimbal_pitch,$roll) = @_;
+	return deg(atan(tan(rad($gimbal_pitch))/cos(rad($roll))));
+}
+
+sub tilt_azimuth($$)
+{
+	my($gimbal_pitch,$roll) = @_;
+	return angle(deg(atan2(sin(rad($gimbal_pitch)),sin(rad($roll)))));
 }
 
 # - angle from vertical is home grown and should be treated with caution

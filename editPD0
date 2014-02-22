@@ -1,0 +1,88 @@
+#!/usr/bin/perl
+#======================================================================
+#                    E D I T P D 0 
+#                    doc: Mon Nov 25 20:24:31 2013
+#                    dlm: Tue Nov 26 10:31:05 2013
+#                    (c) 2013 A.M. Thurnherr
+#                    uE-Info: 70 1 NIL 0 0 72 2 2 4 NIL ofnI
+#======================================================================
+
+# edit RDI PD0 file, e.g. to replace pitch/roll/heading with external values
+
+# HISTORY:
+#	Nov 25, 2013: - created
+
+$0 =~ m{(.*)/[^/]+}; 
+require "$1/RDI_PD0_IO.pl";
+require "getopts.pl";
+
+$USAGE = "$0 @ARGV";
+die("Usage: $0 " .
+	'-e) <edit-file> ' .
+	"<input file> <output file>\n")
+		unless (&Getopts('e:') && @ARGV == 2);
+
+die("$0: -e <edit-file> is required\n")
+	unless (-r $opt_e);
+
+print(STDERR "Reading $ARGV[0]...");				# read data
+readData($ARGV[0],\%dta);
+print(STDERR "done\n");
+
+#----------------------------------------------------------------------
+
+print(STDERR "Editing according to <$opt_e>...");
+
+#--------------------------------------------------
+# INTERFACE
+#	- example <edit_file> entry:
+#		162     p(3), r(4), h(3.14)
+#--------------------------------------------------
+
+sub p($) { $dta{ENSEMBLE}[$e]->{PITCH} = $_[0]; }
+sub r($) { $dta{ENSEMBLE}[$e]->{ROLL} = $_[0]; }
+sub h($) { $dta{ENSEMBLE}[$e]->{HEADING} = $_[0]; }
+
+#--------------------------------------------------
+# Main Routine
+#--------------------------------------------------
+
+open(EF,$opt_e) || die("$opt_e: $!\n");
+while (<EF>) {
+	s/\#.*//;
+	next if m/^\s+$/;
+	my($ens,$expr) = m/^\s*(\d+)\s+(.*)$/;
+
+	my($id) = ($expr =~ m/^([A-Z]+)\s/);							# e.g. PITCH, ROLL, HEADING
+	$expr = sprintf('$dta{ENSEMBLE}[$e]->{%s}',$id)
+		if defined($id);
+		
+	push(@EE,$ens);
+	push(@EX,$expr);
+}
+close(EF);
+
+for (local($e)=my($eei)=0; $e<@{$dta{ENSEMBLE}}; $e++) {			# local() needed for p(), r(), h()
+	if ($EE[$eei] == $dta{ENSEMBLE}[$e]->{NUMBER}) {				# match => edit
+#		print(STDERR "\n\@ens=$EE[$eei]: $EX[$eei]");
+#		print(STDERR "\n\tp($dta{ENSEMBLE}[$e]->{PITCH}), r($dta{ENSEMBLE}[$e]->{ROLL}), h($dta{ENSEMBLE}[$e]->{HEADING})");
+		eval($EX[$eei]) || die("$@ while executing <$EX[$eei]>\n");
+#		print(STDERR "\n\tp($dta{ENSEMBLE}[$e]->{PITCH}), r($dta{ENSEMBLE}[$e]->{ROLL}), h($dta{ENSEMBLE}[$e]->{HEADING})...");
+	} elsif ($EE[$eei] > $dta{ENSEMBLE}[$e]->{NUMBER}) {			# next edit later in file => skip
+		next;
+	} else {														# need next edit
+		$eei++;
+		last if ($eei >= @EE);
+		redo;
+	}
+}
+
+print(STDERR "done\n");
+
+#----------------------------------------------------------------------
+
+print(STDERR "Writing $ARGV[1]...");				# write data
+writeData($ARGV[1],\%dta);
+print(STDERR "done\n");
+
+exit(0);
