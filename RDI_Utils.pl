@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Thu Feb 13 16:23:34 2014
+#                    dlm: Sat Feb 22 16:57:30 2014
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 206 31 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 463 0 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -47,6 +47,8 @@
 #	Jun 20, 2013: - BUG: warning had used &antsInfo()
 #	Feb 13, 2014: - replaced {DEPTH_BT} by {seabed}
 #				  - added set_range_lim()
+#	Feb 22, 2014: - changed gap heuristic
+#			      - Earth coord beam-pair warning removed
 
 use strict;
 
@@ -295,7 +297,7 @@ sub ref_lr_w($$$$$$$)
 					 $dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][3] < $min_pctg);
 			@v = @{$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i]};
 			unless ($warned) {
-				print(STDERR "WARNING: incident-flow & beam-pair velocities not yet implemented for earth coordinates");
+###				print(STDERR "WARNING: incident-flow & beam-pair velocities not yet implemented for earth coordinates");
 				$warned = 1;
 			}
 		}
@@ -455,12 +457,13 @@ sub mk_prof(...)											# make profile
 				  $dta->{ENSEMBLE}[$lastgood]->{UNIX_TIME}; # ... last good ens
 	
 		if ($dt > $max_gap) {
-			if ($dta->{ENSEMBLE}[$lastgood]->{UNIX_TIME} -
-			    $dta->{ENSEMBLE}[$firstgood]->{UNIX_TIME} > 15*60) {
-					printf(STDERR "WARNING: %.1f-s gap too long, profile ended at ensemble $lastgood\n",$dt);
+#			if ($dta->{ENSEMBLE}[$lastgood]->{UNIX_TIME} -					# heuristic changed Feb 22, 2014
+#			    $dta->{ENSEMBLE}[$firstgood]->{UNIX_TIME} > 15*60) {
+			if (@{$dta->{ENSEMBLE}}-$e < @{$dta->{ENSEMBLE}}/2) {
+					printf(STDERR "WARNING: %.1f-s gap in 2nd half of profile is too long; profile ended at ensemble $lastgood\n",$dt);
 					last;
 			}
-			printf(STDERR "WARNING: %.1f-s gap too long, profile restarted at ensemble $e\n",$dt);
+			printf(STDERR "WARNING: %.1f-s gap in first half of profile is too long; profile restarted at ensemble $e\n",$dt);
 			$firstgood = $lastgood = $e;
 			$dta->{ENSEMBLE}[$e]->{ELAPSED_TIME} = 0;
 			$z = $zErr = $maxz = 0;
