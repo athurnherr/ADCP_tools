@@ -1,10 +1,10 @@
 #!/usr/bin/perl
 #======================================================================
-#                    L I S T B I N S 
+#                    B E A M S T A T S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Thu Feb 21 15:05:40 2008
+#                    dlm: Tue Mar  4 13:09:14 2014
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 32 57 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 33 64 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -30,6 +30,7 @@
 #					BUG: min() did not work with 1st elt undef
 #	Feb 21, 2008: - BUG: had forgotten to undo debugging changes
 #				  - removed missing magdecl warning on -b
+#	Mar  4, 2014: - added support for missing PITCH/ROLL/HEADING
 
 # General Notes:
 #	- everything (e.g. beams) is numbered from 1
@@ -160,9 +161,9 @@ sub dumpBin($$$)						# write time series of single bin
 		print(P "$dta{ENSEMBLE}[$e]->{DATE} ");
 		print(P "$dta{ENSEMBLE}[$e]->{TIME} ");
 		printf(P "%d ",$dta{ENSEMBLE}[$e]->{UNIX_TIME}-$t0);
-		print(P "$dta{ENSEMBLE}[$e]->{HEADING} ");
-		print(P "$dta{ENSEMBLE}[$e]->{PITCH} ");
-		print(P "$dta{ENSEMBLE}[$e]->{ROLL} ");
+		print(P defined($dta{ENSEMBLE}[$e]->{HEADING}) ? "$dta{ENSEMBLE}[$e]->{HEADING} " : 'nan ');
+		print(P defined($dta{ENSEMBLE}[$e]->{PITCH}) ? "$dta{ENSEMBLE}[$e]->{PITCH} " : 'nan ');
+		print(P defined($dta{ENSEMBLE}[$e]->{ROLL}) ? "$dta{ENSEMBLE}[$e]->{ROLL} " : 'nan ');
 		print(P "$dta{ENSEMBLE}[$e]->{HEADING_STDDEV} ");
 		print(P "$dta{ENSEMBLE}[$e]->{PITCH_STDDEV} ");
 		print(P "$dta{ENSEMBLE}[$e]->{ROLL_STDDEV} ");

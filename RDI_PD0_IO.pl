@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Tue Nov 26 01:29:26 2013
+#                    dlm: Wed May  7 10:41:18 2014
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 873 10 NIL 0 0 72 74 2 4 NIL ofnI
+#                    uE-Info: 827 0 NIL 0 0 72 74 2 4 NIL ofnI
 #======================================================================
 
 # Read RDI BroadBand Binary Data Files (*.[0-9][0-9][0-9])
@@ -54,6 +54,11 @@
 #	Nov 25, 2013: - renamed from [RDI_BB_Read.pl]
 #				  - begin implementing WBWens()
 #				  - checkEnsemble() expunged
+#	Mar  3, 2014: - BUG: WBPens() did not handle incomple ensembles at EOF correctly
+#	Mar  4, 2014: - added support for DATA_SOURCE_ID
+#	Apr 24, 2014: - added debug statements to log %-GOOD values
+#	May  6, 2014: - loosened input format checks
+#	May  7, 2014: - removed BT_present flag
 
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -66,6 +71,14 @@
 #	16.12	WH300 (1)				FSU 	A0304		53
 #	16.21	WH300 (1)				LDEO 	NBP0402		53
 #	16.27	WH300 (2)				Nash 	?			59
+
+# PD0 IMP FILE FORMAT EXTENSIONS:
+#	- DATA_SOURCE_ID = 0xA0 | PATCHED_MASK (vs. 0x7F for TRDI PD0 files)
+#		PATCHED_MASK & 0x04:	pitch value has been patched
+#		PATCHED_MASK & 0x02:	roll value has been patched
+#		PATCHED_MASK & 0x01:	heading value has been patched
+#	- PITCH & ROLL can be missing (0x8000 badval as in velocities)
+#	- HEADING can be missing (0xF000 badval, as 0x8000 is valid 327.68 heading)
 
 # NOTES:
 #	- RDI stores data in VAX/Intel byte order (little endian)
@@ -99,6 +112,7 @@
 # &readData() returns perl obj (ref to anonymous hash) with the following
 # structure:
 #
+#	DATA_SOURCE_ID					scalar		0x7f (Workhorse, also DVL)
 #	NUMBER_OF_DATA_TYPES			scalar		6 (no BT) or 7
 #	ENSEMBLE_BYTES					scalar		?, number of bytes w/o checksum
 #	HEADER_BYTES					scalar		?
@@ -183,9 +197,9 @@
 #		BUILT_IN_TEST_ERROR			scalar		?,undefined=none
 #		SPEED_OF_SOUND				scalar		1400--1600 [m/s]
 #		XDUCER_DEPTH				scalar		0.1--999.9 [m]
-#		HEADING						scalar		0--359.99 [deg]
-#		PITCH						scalar		-20.00-20.00 [deg]
-#		ROLL						scalar		-20.00-20.00 [deg]
+#		HEADING						scalar		0--359.99 [deg]    --- IMP EXTENSION: undef
+#		PITCH						scalar		-20.00-20.00 [deg] --- IMP EXTENSION: undef
+#		ROLL						scalar		-20.00-20.00 [deg] --- IMP EXTENSION: undef
 #		SALINITY					scalar		0-40 [psu]
 #		TEMPERATURE					scalar		-5.00--40.00 [deg]
 #		MIN_PRE_PING_WAIT_TIME		scalar		? [s]
@@ -317,7 +331,7 @@ sub WBRhdr($)
 	($hid,$did,$dta->{ENSEMBLE_BYTES},$dummy,$dta->{NUMBER_OF_DATA_TYPES})
 		= unpack('CCvCC',$buf);
 	$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header",$hid,0));
-	$did == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Data Source",$did,0));
+##	$did == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Data Source",$did,0));
 	printf(STDERR "\n$WBRcfn: WARNING: unexpected number of data types (%d)\n",
 		$dta->{NUMBER_OF_DATA_TYPES})
 			unless ($dta->{NUMBER_OF_DATA_TYPES} == 6 ||
@@ -553,7 +567,7 @@ sub WBRens($$$)
 {
 	my($nbins,$fixed_leader_bytes,$E) = @_;
 	my($start_ens,$B1,$B2,$B3,$B4,$I,$id,$bin,$beam,$buf,$dummy,@dta,$i,$cs,@WBRofs);
-	my($ens,$ensNo,$dayStart,$ens_length,$BT_present,$hid,$did,$ndt);
+	my($ens,$ensNo,$dayStart,$ens_length,$hid,$did,$ndt);
 
 	for ($ens=$start_ens=0; 1; $ens++,$start_ens+=$ens_length+2) {
 #		print(STDERR "ens = $ens\n");
@@ -567,10 +581,9 @@ sub WBRens($$$)
 		sysread(WBRF,$buf,6) == 6 || last;
 		($hid,$did,$ens_length,$dummy,$ndt) = unpack('CCvCC',$buf);
 		$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header",$hid,0));
-		$did == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Data Source",$did,0));
-		printf(STDERR "\n$WBRcfn: WARNING: unexpected number of data types (%d, ens=$ens)\n",$ndt),last
-				unless ($ndt == 6 || $ndt == 7);
-		$BT_present = ($ndt == 7);
+##		$did == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Data Source",$did,0));
+##		printf(STDERR "\n$WBRcfn: WARNING: unexpected number of data types (%d, ens=$ens)\n",$ndt),last
+##				unless ($ndt == 6 || $ndt == 7);
 		sysread(WBRF,$buf,2*$ndt) == 2*$ndt || die("$WBRcfn: $!");
 		@WBRofs = unpack("v$ndt",$buf);
 		$fixed_leader_bytes = $WBRofs[1] - $WBRofs[0];
@@ -594,6 +607,8 @@ sub WBRens($$$)
 		# Variable Leader
 		#------------------------------
 	
+		${$E}[$ens]->{DATA_SOURCE_ID} = $did;								# IMP extension
+
 		sysseek(WBRF,$start_ens+$WBRofs[1],0) || die("$WBRcfn: $!");
 		sysread(WBRF,$buf,4) == 4 || die("$WBRcfn: $!");
 		($id,$ensNo) = unpack("vv",$buf);
@@ -635,11 +650,22 @@ sub WBRens($$$)
 		$BIT_errors++ if (${$E}[$ens]->{BUILT_IN_TEST_ERROR});
 
 		${$E}[$ens]->{XDUCER_DEPTH} /= 10;
-		${$E}[$ens]->{HEADING} /= 100;
-		${$E}[$ens]->{PITCH} = unpack('s',pack('S',${$E}[$ens]->{PITCH})) / 100;
-		${$E}[$ens]->{ROLL}  = unpack('s',pack('S',${$E}[$ens]->{ROLL})) / 100;
-		${$E}[$ens]->{TEMPERATURE} =
-			unpack('s',pack('S',${$E}[$ens]->{TEMPERATURE})) / 100;
+
+		#-------------------------------------------------
+		# IMP EXTENSION: PITCH/ROLL/HEADING CAN BE MISSING
+		#-------------------------------------------------
+		
+		${$E}[$ens]->{HEADING} = (${$E}[$ens]->{HEADING} == 0xF000)
+							   ? undef
+							   : ${$E}[$ens]->{HEADING} / 100;
+		${$E}[$ens]->{PITCH} = (${$E}[$ens]->{PITCH} == 0x8000)
+							 ? undef
+							 : unpack('s',pack('S',${$E}[$ens]->{PITCH})) / 100;
+		${$E}[$ens]->{ROLL}  = (${$E}[$ens]->{ROLL} == 0x8000)
+                             ? undef
+                             : unpack('s',pack('S',${$E}[$ens]->{ROLL})) / 100;
+                             
+		${$E}[$ens]->{TEMPERATURE} = unpack('s',pack('S',${$E}[$ens]->{TEMPERATURE})) / 100;
 		${$E}[$ens]->{MIN_PRE_PING_WAIT_TIME} *= 60;
 		${$E}[$ens]->{MIN_PRE_PING_WAIT_TIME} += $B1 + $B2/100;
 		${$E}[$ens]->{PITCH_STDDEV} /= 10;
@@ -780,84 +806,90 @@ sub WBRens($$$)
 			die(sprintf($FmtErr,$WBRcfn,"Percent-Good Data",$id,$ens));
 
 		for ($i=0,$bin=0; $bin<$nbins; $bin++) {
+#			printf(STDERR "%-GOOD($bin): ");
 			for ($beam=0; $beam<4; $beam++,$i++) {
+#				printf(STDERR "$dta[$i] ");
 				${$E}[$ens]->{PERCENT_GOOD}[$bin][$beam] = $dta[$i];
 			}
+#			printf(STDERR "\n");
 		}
 
-		#--------------------
+		#-----------------------------------------
 		# Bottom-Track Data
-		#--------------------
+		#	- scan through remaining data types
+		#-----------------------------------------
 
-		if ($BT_present) {
-			sysseek(WBRF,$start_ens+$WBRofs[6],0) || die("$WBRcfn: $!");
+		my($nxt);
+		for ($nxt=6; $nxt<$ndt; $nxt++) {										# scan until BT found
+			sysseek(WBRF,$start_ens+$WBRofs[$nxt],0) || die("$WBRcfn: $!");
 			sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 			$id = unpack('v',$buf);
-	
-			$id == 0x0600 ||
-				die(sprintf($FmtErr,$WBRcfn,"Bottom Track",$id,$ens));
-	
-			sysseek(WBRF,14,1) || die("$WBRcfn: $!");		# BT config
-	
-			sysread(WBRF,$buf,28) == 28 || die("$WBRcfn: $!");
-			@dta = unpack('v4v4C4C4C4',$buf);
-		    
-			for ($beam=0; $beam<4; $beam++) {
-				${$E}[$ens]->{BT_RANGE}[$beam] = $dta[$beam] / 100
-						if ($dta[$beam]);
-			}
-			for ($beam=0; $beam<4; $beam++) {
-				${$E}[$ens]->{BT_VELOCITY}[$beam] =
-					unpack('s',pack('S',$dta[4+$beam])) / 1000
-						if ($dta[4+$beam] != 0x8000);
-			}
-			for ($beam=0; $beam<4; $beam++) {
-				${$E}[$ens]->{BT_CORRELATION}[$beam] = $dta[8+$beam]
-					if ($dta[8+$beam]);
-			}
-			for ($beam=0; $beam<4; $beam++) {
-				${$E}[$ens]->{BT_EVAL_AMPLITUDE}[$beam] = $dta[12+$beam];
-			}
-			for ($beam=0; $beam<4; $beam++) {
-				${$E}[$ens]->{BT_PERCENT_GOOD}[$beam] = $dta[16+$beam];
-			}
-	
-			sysseek(WBRF,6,1) || die("$WBRcfn: $!");		# BT config
-	
-			sysread(WBRF,$buf,20) == 20 || die("$WBRcfn: $!");
-			@dta = unpack('v4C4C4C4',$buf);
-	
-			for ($beam=0; $beam<4; $beam++) {
-				${$E}[$ens]->{BT_RL_VELOCITY}[$beam] =
-					unpack('s',pack('S',$dta[$beam])) / 1000
-						if ($dta[$beam] != 0x8000);
-			}
-			for ($beam=0; $beam<4; $beam++) {
-				${$E}[$ens]->{BT_RL_CORRELATION}[$beam] = $dta[4+$beam]
-					if ($dta[4+$beam]);
-			}
-			for ($beam=0; $beam<4; $beam++) {
-				${$E}[$ens]->{BT_RL_ECHO_AMPLITUDE}[$beam] = $dta[8+$beam];
-			}
-			for ($beam=0; $beam<4; $beam++) {
-				${$E}[$ens]->{BT_RL_PERCENT_GOOD}[$beam] = $dta[12+$beam];
-			}
-	
-			sysseek(WBRF,2,1) || die("$WBRcfn: $!");		# BT config
-	
-			sysread(WBRF,$buf,9) == 9 || die("$WBRcfn: $!");
-			@dta = unpack('C4CC4',$buf);
-	
-			for ($beam=0; $beam<4; $beam++) {
-				${$E}[$ens]->{BT_SIGNAL_STRENGTH}[$beam] = $dta[$beam];
-			}
-			${$E}[$ens]->{HIGH_GAIN} if	   ($dta[4]);
-			${$E}[$ens]->{LOW_GAIN}	unless ($dta[4]);
-			for ($beam=0; $beam<4; $beam++) {
-				${$E}[$ens]->{BT_RANGE}[$beam] += $dta[5+$beam] * 655.36
-					if ($dta[5+$beam]);
-	        }
-	    } # BT present
+			last if ($id == 0x0600);
+		}
+
+		next if ($nxt == $ndt);													# no BT found => next ens
+
+
+		sysseek(WBRF,14,1) || die("$WBRcfn: $!");								# BT config
+
+		sysread(WBRF,$buf,28) == 28 || die("$WBRcfn: $!");
+		@dta = unpack('v4v4C4C4C4',$buf);
+	    
+		for ($beam=0; $beam<4; $beam++) {
+			${$E}[$ens]->{BT_RANGE}[$beam] = $dta[$beam] / 100
+					if ($dta[$beam]);
+		}
+		for ($beam=0; $beam<4; $beam++) {
+			${$E}[$ens]->{BT_VELOCITY}[$beam] =
+				unpack('s',pack('S',$dta[4+$beam])) / 1000
+					if ($dta[4+$beam] != 0x8000);
+		}
+		for ($beam=0; $beam<4; $beam++) {
+			${$E}[$ens]->{BT_CORRELATION}[$beam] = $dta[8+$beam]
+				if ($dta[8+$beam]);
+		}
+		for ($beam=0; $beam<4; $beam++) {
+			${$E}[$ens]->{BT_EVAL_AMPLITUDE}[$beam] = $dta[12+$beam];
+		}
+		for ($beam=0; $beam<4; $beam++) {
+			${$E}[$ens]->{BT_PERCENT_GOOD}[$beam] = $dta[16+$beam];
+		}
+
+		sysseek(WBRF,6,1) || die("$WBRcfn: $!");		# BT config
+
+		sysread(WBRF,$buf,20) == 20 || die("$WBRcfn: $!");
+		@dta = unpack('v4C4C4C4',$buf);
+
+		for ($beam=0; $beam<4; $beam++) {
+			${$E}[$ens]->{BT_RL_VELOCITY}[$beam] =
+				unpack('s',pack('S',$dta[$beam])) / 1000
+					if ($dta[$beam] != 0x8000);
+		}
+		for ($beam=0; $beam<4; $beam++) {
+			${$E}[$ens]->{BT_RL_CORRELATION}[$beam] = $dta[4+$beam]
+				if ($dta[4+$beam]);
+		}
+		for ($beam=0; $beam<4; $beam++) {
+			${$E}[$ens]->{BT_RL_ECHO_AMPLITUDE}[$beam] = $dta[8+$beam];
+		}
+		for ($beam=0; $beam<4; $beam++) {
+			${$E}[$ens]->{BT_RL_PERCENT_GOOD}[$beam] = $dta[12+$beam];
+		}
+
+		sysseek(WBRF,2,1) || die("$WBRcfn: $!");		# BT config
+
+		sysread(WBRF,$buf,9) == 9 || die("$WBRcfn: $!");
+		@dta = unpack('C4CC4',$buf);
+
+		for ($beam=0; $beam<4; $beam++) {
+			${$E}[$ens]->{BT_SIGNAL_STRENGTH}[$beam] = $dta[$beam];
+		}
+		${$E}[$ens]->{HIGH_GAIN} if    ($dta[4]);
+		${$E}[$ens]->{LOW_GAIN} unless ($dta[4]);
+		for ($beam=0; $beam<4; $beam++) {
+			${$E}[$ens]->{BT_RANGE}[$beam] += $dta[5+$beam] * 655.36
+				if ($dta[5+$beam]);
+		}
 	} # ens loop
 }
 
@@ -886,22 +918,28 @@ sub WBPens($$$)
 {
 	my($nbins,$fixed_leader_bytes,$E) = @_;
 	my($start_ens,$B1,$B2,$B3,$B4,$I,$id,$bin,$beam,$buf,$dummy,@dta,$i,$cs,@WBPofs);
-	my($ens,$ensNo,$dayStart,$ens_length,$BT_present,$hid,$did,$ndt);
+	my($ens,$ensNo,$dayStart,$ens_length,$hid,$ndt);
 
-	for ($ens=$start_ens=0; 1; $ens++,$start_ens+=$ens_length+2) {
+	for ($ens=$start_ens=0; $ens<=$#{$E}; $ens++,$start_ens+=$ens_length+2) {
 
-		#----------------------------------------
-		# Get ensemble length and # of data types 
-		#----------------------------------------
+		#------------------------------
+		# Patch Header (Data Source Id)
+		#------------------------------
 
 		sysseek(WBPF,$start_ens,0) || die("$WBPcfn: $!");
-		sysread(WBPF,$buf,6) == 6 || last;
-		($hid,$did,$ens_length,$dummy,$ndt) = unpack('CCvCC',$buf);
-		$hid == 0x7f || die(sprintf($FmtErr,$WBPcfn,"Header",$hid,0));
-		$did == 0x7f || die(sprintf($FmtErr,$WBPcfn,"Data Source",$did,0));
+		sysread(WBPF,$buf,1) || die("$WBPcfn: unexpected EOF");
+		($hid) = unpack('C',$buf);
+		$hid == 0x7f || die(sprintf($FmtErr,$WBPcfn,"Header",$hid,$ens));
+
+		$buf = pack('C',${$E}[$ens]->{DATA_SOURCE_ID});
+		my($nw) = syswrite(WBPF,$buf,1);
+		$nw == 1 || die("$WBPcfn: $nw bytes written ($!)");
+
+		sysread(WBPF,$buf,4) == 4 || die("$WBPcfn: unexpected EOF");
+		($ens_length,$dummy,$ndt) = unpack('vCC',$buf);
 		printf(STDERR "\n$WBPcfn: WARNING: unexpected number of data types (%d, ens=$ens)\n",$ndt),last
 				unless ($ndt == 6 || $ndt == 7);
-		$BT_present = ($ndt == 7);
+
 		sysread(WBPF,$buf,2*$ndt) == 2*$ndt || die("$WBPcfn: $!");
 		@WBPofs = unpack("v$ndt",$buf);
 		$fixed_leader_bytes = $WBPofs[1] - $WBPofs[0];
@@ -913,10 +951,19 @@ sub WBPens($$$)
 		sysseek(WBPF,$start_ens+$WBPofs[1]+12,0) || die("$WBPcfn: $!");
 		
 		${$E}[$ens]->{XDUCER_DEPTH} *= 10;
-		${$E}[$ens]->{HEADING} *= 100;
-		
-		${$E}[$ens]->{PITCH} = unpack('S',pack('s',${$E}[$ens]->{PITCH}*100));
-		${$E}[$ens]->{ROLL}  = unpack('S',pack('s',${$E}[$ens]->{ROLL} *100));
+
+		# IMP EXTENSIONS
+		#---------------
+		${$E}[$ens]->{HEADING} = defined(${$E}[$ens]->{HEADING})
+							   ? ${$E}[$ens]->{HEADING} * 100
+							   : 0xF000;
+		${$E}[$ens]->{PITCH} = defined(${$E}[$ens]->{PITCH})
+							 ? unpack('S',pack('s',${$E}[$ens]->{PITCH}*100))
+							 : 0x8000;
+		${$E}[$ens]->{ROLL} = defined(${$E}[$ens]->{ROLL})
+						    ? unpack('S',pack('s',${$E}[$ens]->{ROLL}*100))
+						    : 0x8000;
+
 		${$E}[$ens]->{TEMPERATURE} =
 			unpack('S',pack('s',${$E}[$ens]->{TEMPERATURE}*100));
 
@@ -932,20 +979,6 @@ sub WBPens($$$)
 			 ${$E}[$ens]->{XDUCER_DEPTH},${$E}[$ens]->{HEADING},
 			 ${$E}[$ens]->{PITCH},${$E}[$ens]->{ROLL},
 			 ${$E}[$ens]->{SALINITY},${$E}[$ens]->{TEMPERATURE});
-
-#		unless ($b1 eq $buf) {
-#			printf(STDERR "ens = $ens\n");
-#			printf(STDERR "hdg: $hdg, ${$E}[$ens]->{HEADING}\n");
-#			printf(STDERR "xd: $xd, ${$E}[$ens]->{XDUCER_DEPTH}\n");
-#			printf(STDERR "pit: $pit, ${$E}[$ens]->{PITCH}\n");
-#			printf(STDERR "rol: $rol, ${$E}[$ens]->{ROLL}\n");
-#			printf(STDERR "sal: $sal, ${$E}[$ens]->{SALINITY}\n");
-#			printf(STDERR "tem: $tem, ${$E}[$ens]->{TEMPERATURE}\n");
-#
-#			printf(STDERR "read: %04X %04X %04X %04X %04X %04X %04X written: %04X %04X %04X %04X %04X %04X %04X\n",unpack('v7',$b1),unpack('v7',$buf));
-#
-#			die;
-#		}
 
 		my($nw) = syswrite(WBPF,$buf,14);
 		$nw == 14 || die("$WBPcfn: $nw bytes written ($!)");

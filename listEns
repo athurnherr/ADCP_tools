@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T E N S 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Wed Aug  7 10:38:17 2013
+#                    dlm: Tue Mar  4 12:56:36 2014
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 215 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 46 64 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the ensemble list or dump ensembles to
@@ -42,6 +42,8 @@
 #				  - added sounspeed correction warning
 #				  - changed -E from prefix to suffix
 #				  - added active header line to -E output
+#	Mar  4, 2014: - added partial support for DATA_SOURCE_ID
+#				  - added support for missing PITCH/ROLL/HEADING
 
 # Notes:
 #	- -E outputs data in earth coordinates, unless -b is set also
@@ -134,14 +136,19 @@ while (-f $ARGV[0]) {
 		{
 			my($e) = @_;
 			
-			printf('%d %lf %d %g %g %g %g %g %g',
+			printf('%d %lf %d %g',
 				$dta{ENSEMBLE}[$e]->{NUMBER},
 				$dta{ENSEMBLE}[$e]->{UNIX_TIME},
 				$dta{ENSEMBLE}[$e]->{XDUCER_FACING_UP} ? 1 : 0,
 				$dta{ENSEMBLE}[$e]->{TEMPERATURE},
-				$dta{ENSEMBLE}[$e]->{HEADING},
-				$dta{ENSEMBLE}[$e]->{PITCH},
-				$dta{ENSEMBLE}[$e]->{ROLL},
+			);
+			if (defined($dta{ENSEMBLE}[$e]->{HEADING})) { printf(' %g',$dta{ENSEMBLE}[$e]->{HEADING}); }
+			else { printf(' nan'); }
+			if (defined($dta{ENSEMBLE}[$e]->{PITCH})) { printf(' %g',$dta{ENSEMBLE}[$e]->{PITCH}); }
+			else { printf(' nan'); }
+			if (defined($dta{ENSEMBLE}[$e]->{ROLL})) { printf(' %g',$dta{ENSEMBLE}[$e]->{ROLL}); }
+			else { printf(' nan'); }
+			printf(' %g %g',
 				$dta{ENSEMBLE}[$e]->{ADC_XMIT_VOLTAGE},
 				$dta{ENSEMBLE}[$e]->{ADC_XMIT_CURRENT},
 			);
@@ -244,10 +251,10 @@ while (-f $ARGV[0]) {
 	} else {											# neither ANTS nor ens files
 		unless ($opt_Q) {
 			if ($dta{FIXED_LEADER_BYTES} >= 53) {
-				printf("    # Date       Time        XD  Temp Headng Pitch  Roll vels(bin1) ESW$addLayout\n");
+				printf("    # Date       Time        XD  Temp Headng Pitch  Roll #vv DSID ESW$addLayout\n");
 				printf("-----------------------------------------------------------------------\n");
 			} else {
-				printf("    # Date       Time        XD  Temp Headng Pitch  Roll vels(bin1)$addLayout\n");
+				printf("    # Date       Time        XD  Temp Headng Pitch  Roll #vv DSID$addLayout\n");
 				printf("-------------------------------------------------------------------\n");
 			}
 		}
@@ -256,16 +263,22 @@ while (-f $ARGV[0]) {
 		{
 			my($e) = @_;
 
-			printf('%5d %s %s %s %5.1f %6.1f %5.1f %5.1f %3d',
+			printf('%5d %s %s %s %5.1f',
 				$dta{ENSEMBLE}[$e]->{NUMBER},
 				$dta{ENSEMBLE}[$e]->{DATE},
 				$dta{ENSEMBLE}[$e]->{TIME},
 				$dta{ENSEMBLE}[$e]->{XDUCER_FACING_UP} ? "UP" : "DN",
 				$dta{ENSEMBLE}[$e]->{TEMPERATURE},
-				$dta{ENSEMBLE}[$e]->{HEADING},
-				$dta{ENSEMBLE}[$e]->{PITCH},
-				$dta{ENSEMBLE}[$e]->{ROLL},
+			);
+			if (defined($dta{ENSEMBLE}[$e]->{HEADING})) { printf(' %6.1f',$dta{ENSEMBLE}[$e]->{HEADING}); }
+			else { printf('    nan'); }
+			if (defined($dta{ENSEMBLE}[$e]->{PITCH})) { printf(' %5.1f',$dta{ENSEMBLE}[$e]->{PITCH}); }
+			else { printf('   nan'); }
+			if (defined($dta{ENSEMBLE}[$e]->{ROLL})) { printf(' %5.1f',$dta{ENSEMBLE}[$e]->{ROLL}); }
+			else { printf('   nan'); }
+			printf(' %3d 0x%02X',
 				$dta{ENSEMBLE}[$e]->{BIN1VELS},
+				$dta{ENSEMBLE}[$e]->{DATA_SOURCE_ID},
 			);
 			printf(' 0x%08X',$dta{ENSEMBLE}[$e]->{ERROR_STATUS_WORD})
 				if ($dta{FIXED_LEADER_BYTES} >= 53);

@@ -2,9 +2,9 @@
 #======================================================================
 #                    M K P R O F I L E 
 #                    doc: Sun Jan 19 18:55:26 2003
-#                    dlm: Thu Feb 13 15:45:20 2014
+#                    dlm: Sat May 24 22:50:02 2014
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 283 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 797 76 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Make an LADCP Profile by Integrating W (similar to Firing's scan*).
@@ -85,6 +85,9 @@
 #				  - finally removed -d/-g
 #	Nov 25, 2013: - expunged checkEnsemble
 #	Feb 13, 2014: - added support set_range_lim()
+#	Mar  4, 2014: - added support to allow missing PITCH/ROLL/HEADING values
+#	May 24, 2014: - finally added (gimbal-)pitch & roll to default output
+#				  - renamed heading to hdg and pitchroll to tilt
 
 # NOTES:
 #	- the battery values are based on transmission voltages (different
@@ -564,12 +567,19 @@ $gb = ($gb[0]+$gb[1]+$gb[2]+$gb[3]) / 4;
 # Step 6: Pitch, Roll, Rotation
 #======================================================================
 
+# in case of PITCH/ROLL/HEADING data gaps (IMP data), the calculations
+# are not entirely correct, as
+# 	i)  the rotation implied by the pre-/post-gap headings is not counted
+#	ii) the gappy ensembles are counted for calculating the rms vals
+
 my($prrms,$dnprrms,$upprrms) = (0,0,0);
 my($rotrms,$prerot,$dnrot,$uprot,$postrot) = (0,0,0,0,0);
 
 sub rot($)
 {
 	my($e) = @_;
+	return 0
+		unless defined($dta{ENSEMBLE}[$e]->{HEADING}) && defined($dta{ENSEMBLE}[$e-1]->{HEADING});
 	my($rot) = $dta{ENSEMBLE}[$e]->{HEADING} -
 			   $dta{ENSEMBLE}[$e-1]->{HEADING};
 	$rot -= 360 if ($rot >  180);
@@ -582,10 +592,11 @@ for ($e=1; $e<$firstgood; $e++) {				# pre-deployment
 }
 
 for (; $e<= $atbottom; $e++) {					# downcast
-	$dta{ENSEMBLE}[$e]->{PITCHROLL} =
+	$dta{ENSEMBLE}[$e]->{TILT} =
 		&angle_from_vertical($dta{ENSEMBLE}[$e]->{PITCH},
 						  	 $dta{ENSEMBLE}[$e]->{ROLL});
-	$prrms += $dta{ENSEMBLE}[$e]->{PITCHROLL}**2;
+	$prrms += $dta{ENSEMBLE}[$e]->{TILT}**2
+		if numberp($dta{ENSEMBLE}[$e]->{TILT});
 				 
 	$dta{ENSEMBLE}[$e]->{ROTATION} = rot($e);
 	$dnrot += $dta{ENSEMBLE}[$e]->{ROTATION};
@@ -594,10 +605,11 @@ for (; $e<= $atbottom; $e++) {					# downcast
 $dnprrms = $prrms;
 
 for (; $e<=$lastgood; $e++) {					# upcast
-	$dta{ENSEMBLE}[$e]->{PITCHROLL} =
+	$dta{ENSEMBLE}[$e]->{TILT} =
 		&angle_from_vertical($dta{ENSEMBLE}[$e]->{PITCH},
 						  	 $dta{ENSEMBLE}[$e]->{ROLL});
-	$prrms += $dta{ENSEMBLE}[$e]->{PITCHROLL}**2;
+	$prrms += $dta{ENSEMBLE}[$e]->{TILT}**2
+		if numberp($dta{ENSEMBLE}[$e]->{TILT});
 				 
 	$dta{ENSEMBLE}[$e]->{ROTATION} = rot($e);
 	$uprot += $dta{ENSEMBLE}[$e]->{ROTATION};
@@ -689,7 +701,7 @@ $uFields = "{u} {u_err} {v} {v_err} {x} {x_err} {y} {y_err}"
 	if defined($opt_M);
 print("#ANTS#FIELDS# {ens} {time} {elapsed} {secno} {downcast} " .
 					"{w} {w_err} {err_vel} {depth} {depth_err} {seabed} " .
-					"{pitchroll} {heading} {rotation} " .
+					"{pitch} {roll} {tilt} {hdg} {rotation} " .
 					"$uFields $addFields\n");
 
 printf("#ANTS#PARAMS# date{$dta{ENSEMBLE}[$firstgood]->{DATE}} " .
@@ -704,18 +716,18 @@ printf("#ANTS#PARAMS# date{$dta{ENSEMBLE}[$firstgood]->{DATE}} " .
 		  "0.8_valid_range{%.1f} " .
 				"max_depth{%.1f} " .
 			  "depth_error{%.1f} " .
-				"min_range{%d} " .
-			  "n_ensembles{%d} " .
-			   "w_gap_time{%d} " .
+				  "min_range{%d} " .
+				"n_ensembles{%d} " .
+                 "w_gap_time{%d} " .
 				 "stderr_w{%.4f} " .
-			"rms_pitchroll{%.1f} " .
-   "downcast_rms_pitchroll{%.1f} " .
-	 "upcast_rms_pitchroll{%.1f} " .
+				 "rms_tilt{%.1f} " .
+		"downcast_rms_tilt{%.1f} " .
+          "upcast_rms_tilt{%.1f} " .
 			 "rms_rotation{%.2f} " .
-	 "deployment_rotations{%d} " .
-	   "downcast_rotations{%d} " .
-		 "upcast_rotations{%d} " .
-	   "recovery_rotations{%d} " .
+	   "deployment_rotations{%d} " .
+		 "downcast_rotations{%d} " .
+		   "upcast_rotations{%d} " .
+         "recovery_rotations{%d} " .
    "rms_heave_acceleration{%.2f} " .
 				"bin1_dist{%.1f} " .
 			   "bin_length{%.1f} " .
@@ -782,7 +794,9 @@ for ($e=$firstgood; $e<=$lastgood; $e++) {
 	p($dta{ENSEMBLE}[$e]->{DEPTH});
 	p($dta{ENSEMBLE}[$e]->{DEPTH_ERR});
 	p($dta{ENSEMBLE}[$e]->{seabed});
-	p($dta{ENSEMBLE}[$e]->{PITCHROLL});
+	p(&gimbal_pitch($dta{ENSEMBLE}[$e]->{PITCH},$dta{ENSEMBLE}[$e]->{ROLL}));
+	p($dta{ENSEMBLE}[$e]->{ROLL});
+	p($dta{ENSEMBLE}[$e]->{TILT});
 	p($dta{ENSEMBLE}[$e]->{HEADING});
 	p($dta{ENSEMBLE}[$e]->{ROTATION});
 	if (defined($opt_M)) {

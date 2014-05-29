@@ -2,9 +2,9 @@
 #======================================================================
 #                    S P L I T R D I 
 #                    doc: Sat Aug 21 22:20:27 2010
-#                    dlm: Thu Feb 13 14:42:02 2014
+#                    dlm: Wed Mar 19 16:35:45 2014
 #                    (c) 2010 A.M. Thurnherr
-#                    uE-Info: 19 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 36 43 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # split RDI files based on list of ensemble numbers (e.g. from yoyo -t)
@@ -13,6 +13,7 @@
 #	Aug 21, 2010: - created
 #	Jun 24, 2011: - replaced -b, -n by -o
 #   Feb 13, 2014: - updated doc
+#	Mar 19, 2014: - added -s)kip small files
 
 # NOTES:
 #   - it is assumed that the input file begins with ensemble #1
@@ -32,13 +33,16 @@ use Getopt::Std;
 
 die("Usage: $0 " .
 	"[-o)ut-file <fmt[e.g. 017%02dDL000.000]>] " .
+	"[require -m)in <ens> to produce output] " .
 	"<RDI file> <ens> <ens[...]>\n")
-		unless (&getopts('o:') && @ARGV>=3);
+		unless (&getopts('o:m:') && @ARGV>=3);
 
 $opt_o = substr($ARGV[0],0,3)					# default output filename format
 		 . '%02d'
 		 . substr($ARGV[0],-9)
 			unless defined($opt_o);
+
+$opt_m = 0 unless defined($opt_m);				# default: produce tiny files as well
 	
 readHeader($ARGV[0],\%hdr); shift;				# get length of ensembles
 $ens_len = $hdr{ENSEMBLE_BYTES} + 2;
@@ -48,19 +52,21 @@ $last_ens  = $ARGV[0]; shift;
 $cnr = 0;
 
 do {											# split data
-	sysseek(WBRF,($first_ens-2)*$ens_len,0) ||
+	sysseek(WBRF,($first_ens-2)*$ens_len,0) ||	# read next block of data
 		die("$WBRcfn: $!");
 	$last_ens++ unless defined($ARGV[0]);
 	$nBytes = ($last_ens-$first_ens+1) * $ens_len;
 	sysread(WBRF,$buf,$nBytes) == $nBytes ||
 		die("$WBRcfn: file truncated");
 
-	$fn = sprintf($opt_o,$cnr++);
-	open(F,">$fn") || die("$fn: $!\n");
-	syswrite(F,$buf,$nBytes) == $nBytes ||
-		die("$fn: $!\n");
-	close(F);
-	printf(STDERR "$fn: %d ensembles ($nBytes bytes)\n",$last_ens-$first_ens+1);
+	if ($last_ens-$first_ens+1 > $opt_m) {		# produce file only if sufficient # of ensembles
+		$fn = sprintf($opt_o,$cnr++);
+		open(F,">$fn") || die("$fn: $!\n");
+		syswrite(F,$buf,$nBytes) == $nBytes ||
+			die("$fn: $!\n");
+		close(F);
+	    printf(STDERR "$fn: %d ensembles ($nBytes bytes)\n",$last_ens-$first_ens+1);
+	}
 	
 	$first_ens = $last_ens+1;
 	$last_ens  = $ARGV[0]; shift;

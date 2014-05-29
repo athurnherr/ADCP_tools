@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ C O O R D S . P L 
 #                    doc: Sun Jan 19 17:57:53 2003
-#                    dlm: Sat Feb 22 09:43:27 2014
+#                    dlm: Tue Mar  4 13:35:21 2014
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 37 0 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 273 60 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # RDI Workhorse Coordinate Transformations
@@ -34,6 +34,7 @@
 #	Aug  7, 2013: - BUG: &velBeamToBPInstrument did not return any val unless
 #						 all beam velocities are defined
 #	Nov 27, 2013: - added &RDI_pitch(), &tilt_azimuth()
+#	Mar  4, 2014: - added support for missing PITCH/ROLL/HEADING
 
 use strict;
 use POSIX;
@@ -111,7 +112,10 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 	{
 		my($dta,$ens,$v1,$v2,$v3,$v4) = @_;
 		return undef unless (defined($v1) && defined($v2) &&
-					   		 defined($v3) && defined($v4));
+					   		 defined($v3) && defined($v4) &&
+							 defined($dta->{ENSEMBLE}[$ens]->{PITCH}) &&
+							 defined($dta->{ENSEMBLE}[$ens]->{ROLL}) &&
+							 defined($dta->{ENSEMBLE}[$ens]->{HEADING}));
 	
 		unless (@I2E &&
 				$hdg   == $dta->{ENSEMBLE}[$ens]->{HEADING}
@@ -161,6 +165,11 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 	{
 		my($dta,$ens,$b1,$b2,$b3,$b4) = @_;
 		my($v12,$w12,$v34,$w34);
+
+		return (undef,undef,undef,undef) 
+			unless (defined($dta->{ENSEMBLE}[$ens]->{PITCH}) &&
+                    defined($dta->{ENSEMBLE}[$ens]->{ROLL}) &&
+                    defined($dta->{ENSEMBLE}[$ens]->{HEADING}));
 
 		unless (defined($TwoCosBAngle)) {
 			$TwoCosBAngle = 2 * cos(rad($dta->{BEAM_ANGLE}));
@@ -216,6 +225,11 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 		my($dta,$ens,$b1,$b2,$b3,$b4) = @_;
 		my($v12,$w12,$v34,$w34);
 
+		return (undef,undef,undef,undef) 
+			unless (defined($dta->{ENSEMBLE}[$ens]->{PITCH}) &&
+                    defined($dta->{ENSEMBLE}[$ens]->{ROLL}) &&
+                    defined($dta->{ENSEMBLE}[$ens]->{HEADING}));
+
 		unless (defined($TwoCosBAngle)) {
 			$TwoCosBAngle = 2 * cos(rad($dta->{BEAM_ANGLE}));
 			$TwoSinBAngle = 2 * sin(rad($dta->{BEAM_ANGLE}));
@@ -254,7 +268,9 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 sub velApplyHdgBias(@)
 {
 	my($dta,$ens,$v1,$v2,$v3,$v4) = @_;
-	return undef unless (defined($v1) && defined($v2));
+	return (undef,undef,undef,undef) 
+		unless (defined($v1) && defined($v2) &&
+				defined($dta->{ENSEMBLE}[$ens]->{HEADING}));
 
 	my($sh) = sin(rad(-$dta->{HEADING_BIAS}));
 	my($ch) = cos(rad(-$dta->{HEADING_BIAS}));
@@ -272,22 +288,25 @@ sub velApplyHdgBias(@)
 sub gimbal_pitch($$)	# RDI coord trans manual
 {
 	my($RDI_pitch,$RDI_roll) = @_;
+	return 'nan' unless defined($RDI_pitch) && defined($RDI_roll);
 	return deg(atan(tan(rad($RDI_pitch)) * cos(rad($RDI_roll))));
 }
 
 sub RDI_pitch($$)
 {
 	my($gimbal_pitch,$roll) = @_;
+	return 'nan' unless defined($gimbal_pitch) && defined($roll);
 	return deg(atan(tan(rad($gimbal_pitch))/cos(rad($roll))));
 }
 
 sub tilt_azimuth($$)
 {
 	my($gimbal_pitch,$roll) = @_;
+	return 'nan' unless defined($gimbal_pitch) && defined($roll);
 	return angle(deg(atan2(sin(rad($gimbal_pitch)),sin(rad($roll)))));
 }
 
-# - angle from vertical is home grown and should be treated with caution
+# - angle from vertical is home grown
 # - angle between two unit vectors given by acos(v1 dot v2)
 # - vertical unit vector v1 = (0 0 1) => dot product = z-component of v2
 # - when vertical unit vector is pitched in x direction, followed by
@@ -301,6 +320,7 @@ sub tilt_azimuth($$)
 sub angle_from_vertical($$)
 {
 	my($RDI_pitch,$RDI_roll) = @_;
+	return 'nan' unless defined($RDI_pitch) && defined($RDI_roll);
 	my($rad_pitch) = atan(tan(rad($RDI_pitch)) * cos(rad($RDI_roll)));
 	return deg(acos(cos($rad_pitch) * cos(rad($RDI_roll))));
 }

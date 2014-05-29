@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T H D R 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Mon Mar 25 19:20:19 2013
+#                    dlm: Thu Apr 24 14:50:23 2014
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 79 0 NIL 0 0 72 8 2 4 NIL ofnI
+#                    uE-Info: 33 81 NIL 0 0 72 8 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the RDI BB header
@@ -30,6 +30,7 @@
 #	Jul  9, 2008: - added output regarding available sensors
 #	Mar 20, 2013: - removed DATA_FORMAT stuff
 #	Mar 25, 2013: - added INSTRUMENT_TYPE stuff instead
+#	Apr 24, 2014: - BUG: USE_3_BEAM_ON_LOW_CORR was reported in water-track setup
 
 $0 =~ m{(.*/)[^/]+};
 require "$1RDI_BB_Read.pl";
@@ -103,6 +104,7 @@ while (-f $ARGV[0]) {
 	printf("EARTH_COORDINATES ")				if ($hdr{EARTH_COORDINATES});
 	printf("PITCH_AND_ROLL_USED ")				if ($hdr{PITCH_AND_ROLL_USED});
 	printf("BIN_MAPPING_ALLOWED ")				if ($hdr{ALLOW_BIN_MAPPING});
+	printf("USE_3_BEAM_ON_LOW_CORR ")			if ($hdr{USE_3_BEAM_ON_LOW_CORR});
 	print("\n");
 	
 	
@@ -149,7 +151,6 @@ while (-f $ARGV[0]) {
 	printf("NARROW_BANDWIDTH ") 				if ($hdr{NARROW_BANDWIDTH});
 	printf("WIDE_BANDWIDTH ")					if ($hdr{WIDE_BANDWIDTH});
 	printf("TRANSMIT_POWER_HIGH ")				if ($hdr{TRANSMIT_POWER_HIGH});
-	printf("USE_3_BEAM_ON_LOW_CORR ")			if ($hdr{USE_3_BEAM_ON_LOW_CORR});
 	print("\n");
 
 #----------------------------------------------------------------------
