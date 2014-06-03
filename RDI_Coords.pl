@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ C O O R D S . P L 
 #                    doc: Sun Jan 19 17:57:53 2003
-#                    dlm: Tue Mar  4 13:35:21 2014
+#                    dlm: Thu May 29 09:19:54 2014
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 273 60 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 282 0 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # RDI Workhorse Coordinate Transformations
@@ -34,7 +34,11 @@
 #	Aug  7, 2013: - BUG: &velBeamToBPInstrument did not return any val unless
 #						 all beam velocities are defined
 #	Nov 27, 2013: - added &RDI_pitch(), &tilt_azimuth()
-#	Mar  4, 2014: - added support for missing PITCH/ROLL/HEADING
+#	Mar  4, 2014: - added support for ensembles with missing PITCH/ROLL/HEADING
+#	May 29, 2014: - BUG: vertical velocity can be calculated even without
+#						 heading
+#				  - removed some old debug statements
+#				  - removed unused code from &velBeamToBPInstrument
 
 use strict;
 use POSIX;
@@ -65,7 +69,6 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 								>= $RDI_Coords::minValidVels);
 
 		unless (@B2I) {
-#			print(STDERR "RDI_Coords::minValidVels = $RDI_Coords::minValidVels\n");
 			my($a) = 1 / (2 * sin(rad($dta->{BEAM_ANGLE})));
 			my($b) = 1 / (4 * cos(rad($dta->{BEAM_ANGLE})));
 			my($c) = $dta->{CONVEX_BEAM_PATTERN} ? 1 : -1;
@@ -74,7 +77,6 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 				    [0,		0,		-$c*$a,	$c*$a],
 				    [$b,	$b,		$b,		$b	 ],
 				    [$d,	$d,		-$d,	-$d	 ]);
-#			print(STDERR "@{$B2I[0]}\n@{$B2I[1]}\n@{$B2I[2]}\n@{$B2I[3]}\n");
 		}
 
 		if (!defined($v1)) {					# 3-beam solutions
@@ -114,22 +116,21 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 		return undef unless (defined($v1) && defined($v2) &&
 					   		 defined($v3) && defined($v4) &&
 							 defined($dta->{ENSEMBLE}[$ens]->{PITCH}) &&
-							 defined($dta->{ENSEMBLE}[$ens]->{ROLL}) &&
-							 defined($dta->{ENSEMBLE}[$ens]->{HEADING}));
+							 defined($dta->{ENSEMBLE}[$ens]->{ROLL}));
 	
 		unless (@I2E &&
-				$hdg   == $dta->{ENSEMBLE}[$ens]->{HEADING}
-							- $dta->{HEADING_BIAS} &&
 				$pitch == $dta->{ENSEMBLE}[$ens]->{PITCH} &&
 				$roll  == $dta->{ENSEMBLE}[$ens]->{ROLL}) {
 			printf(STDERR "$0: warning HEADING_ALIGNMENT == %g ignored\n",
 						  $dta->{HEADING_ALIGNMENT})
 				if ($dta->{HEADING_ALIGNMENT});
-			$hdg   = $dta->{ENSEMBLE}[$ens]->{HEADING} - $dta->{HEADING_BIAS};
+			$hdg   = $dta->{ENSEMBLE}[$ens]->{HEADING} - $dta->{HEADING_BIAS}
+				if defined($dta->{ENSEMBLE}[$ens]->{HEADING});
 			$pitch = $dta->{ENSEMBLE}[$ens]->{PITCH};
 			$roll  = $dta->{ENSEMBLE}[$ens]->{ROLL};
 			my($rad_gimbal_pitch) = atan(tan(rad($pitch)) * cos(rad($roll)));
-			my($sh,$ch) = (sin(rad($hdg)),	cos(rad($hdg)));
+			my($sh,$ch) = (sin(rad($hdg)),cos(rad($hdg)))
+				if defined($hdg);				
 			my($sp,$cp) = (sin($rad_gimbal_pitch),cos($rad_gimbal_pitch));
 			my($sr,$cr) = (sin(rad($roll)),	cos(rad($roll)));
 			@I2E = $dta->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP}
@@ -143,11 +144,14 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 					[-$cp*$sr,				$sp,	 $cp*$cr,			],
 				 );
 		}
-		return ($v1*$I2E[0][0]+$v2*$I2E[0][1]+$v3*$I2E[0][2],
-				$v1*$I2E[1][0]+$v2*$I2E[1][1]+$v3*$I2E[1][2],
-				$v1*$I2E[2][0]+$v2*$I2E[2][1]+$v3*$I2E[2][2],
-				$v4);
-		
+		return defined($dta->{ENSEMBLE}[$ens]->{HEADING})
+			   ? ($v1*$I2E[0][0]+$v2*$I2E[0][1]+$v3*$I2E[0][2],
+				  $v1*$I2E[1][0]+$v2*$I2E[1][1]+$v3*$I2E[1][2],
+				  $v1*$I2E[2][0]+$v2*$I2E[2][1]+$v3*$I2E[2][2],
+				  $v4)
+			   : (undef,undef,
+				  $v1*$I2E[2][0]+$v2*$I2E[2][1]+$v3*$I2E[2][2],
+				  $v4);
 	}
 } # STATIC SCOPE
 
@@ -168,8 +172,7 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 
 		return (undef,undef,undef,undef) 
 			unless (defined($dta->{ENSEMBLE}[$ens]->{PITCH}) &&
-                    defined($dta->{ENSEMBLE}[$ens]->{ROLL}) &&
-                    defined($dta->{ENSEMBLE}[$ens]->{HEADING}));
+                    defined($dta->{ENSEMBLE}[$ens]->{ROLL}));
 
 		unless (defined($TwoCosBAngle)) {
 			$TwoCosBAngle = 2 * cos(rad($dta->{BEAM_ANGLE}));
@@ -227,17 +230,12 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 
 		return (undef,undef,undef,undef) 
 			unless (defined($dta->{ENSEMBLE}[$ens]->{PITCH}) &&
-                    defined($dta->{ENSEMBLE}[$ens]->{ROLL}) &&
-                    defined($dta->{ENSEMBLE}[$ens]->{HEADING}));
+                    defined($dta->{ENSEMBLE}[$ens]->{ROLL}));
 
 		unless (defined($TwoCosBAngle)) {
 			$TwoCosBAngle = 2 * cos(rad($dta->{BEAM_ANGLE}));
 			$TwoSinBAngle = 2 * sin(rad($dta->{BEAM_ANGLE}));
 		}
-		my($roll)  = rad($dta->{ENSEMBLE}[$ens]->{ROLL});							
-		my($sr) = sin($roll); my($cr) = cos($roll);
-		my($pitch) = atan(tan(rad($dta->{ENSEMBLE}[$ens]->{PITCH})) * $cr);	# gimbal pitch
-		my($sp) = sin($pitch); my($cp) = cos($pitch);
 
 		# Sign convention:
 		#	- refer to Coord manual Fig. 3

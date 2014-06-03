@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Sat Feb 22 16:57:30 2014
+#                    dlm: Thu May 29 09:23:46 2014
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 463 0 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 302 0 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -49,6 +49,7 @@
 #				  - added set_range_lim()
 #	Feb 22, 2014: - changed gap heuristic
 #			      - Earth coord beam-pair warning removed
+#	May 29, 2014: - removed unused code (disabled warning) from ref_lr_w
 
 use strict;
 
@@ -261,8 +262,6 @@ sub soundSpeed($$$)
 
 # calculate reference-layer vertical and incident velocities
 
-{ my($warned);	# static scope
-
 sub ref_lr_w($$$$$$$)
 {
 	my($dta,$ens,$rl_b0,$rl_b1,$min_corr,$max_e,$min_pctg) = @_;
@@ -296,15 +295,11 @@ sub ref_lr_w($$$$$$$)
 					 $dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][2] > 0 ||
 					 $dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][3] < $min_pctg);
 			@v = @{$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i]};
-			unless ($warned) {
-###				print(STDERR "WARNING: incident-flow & beam-pair velocities not yet implemented for earth coordinates");
-				$warned = 1;
-			}
 		}
 ###		next if (!defined($v[3]) || abs($v[3]) > $max_e);		# disallow 3-beam solutions
 		next if (defined($v[3]) && abs($v[3]) > $max_e);		# allow 3-beam solutions
 
-		if (defined($v[2])) {									# valid velocity
+		if (defined($v[2])) {									# valid vertical velocity
 			$vel[2] += $v[2]; $n[2]++;							# vertical velocity
 			$vel[3] += $v[3], $n[3]++ if defined($v[3]);		# error velocity
 			push(@w,$v[2]); 									# save for stderr calculation
@@ -406,8 +401,6 @@ sub ref_lr_w($$$$$$$)
 #	}
 
 }
-
-} # static scope
 
 
 sub mk_prof(...)											# make profile
