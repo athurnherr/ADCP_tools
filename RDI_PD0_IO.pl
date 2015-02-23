@@ -1,9 +1,9 @@
 #======================================================================
-#                    R D I _ P D 0 _ I O . P L 
+#                    R D I _ B B _ R E A D . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Wed May  7 10:41:18 2014
+#                    dlm: Wed Oct 15 21:50:07 2014
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 827 0 NIL 0 0 72 74 2 4 NIL ofnI
+#                    uE-Info: 65 77 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Read RDI BroadBand Binary Data Files (*.[0-9][0-9][0-9])
@@ -59,6 +59,10 @@
 #	Apr 24, 2014: - added debug statements to log %-GOOD values
 #	May  6, 2014: - loosened input format checks
 #	May  7, 2014: - removed BT_present flag
+#	Sep  6, 2014: - adapted WBRhdr to >7 data types
+#	Oct 15, 2014: - implemented work-around for readData() not recognizing
+#					incomplete ensemble at the end, which seems to imply that there is
+#				    a garbage final ensemble that passes the checksum test???
 
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -332,11 +336,12 @@ sub WBRhdr($)
 		= unpack('CCvCC',$buf);
 	$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header",$hid,0));
 ##	$did == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Data Source",$did,0));
-	printf(STDERR "\n$WBRcfn: WARNING: unexpected number of data types (%d)\n",
+	printf(STDERR "WARNING: unexpected number of data types (%d)\n",
 		$dta->{NUMBER_OF_DATA_TYPES})
 			unless ($dta->{NUMBER_OF_DATA_TYPES} == 6 ||
 					$dta->{NUMBER_OF_DATA_TYPES} == 7);
-	$dta->{BT_PRESENT} = ($dta->{NUMBER_OF_DATA_TYPES} == 7);
+##	$dta->{BT_PRESENT} = ($dta->{NUMBER_OF_DATA_TYPES} == 7);
+	$dta->{BT_PRESENT} = ($dta->{NUMBER_OF_DATA_TYPES} >= 7);
 					  
 	sysread(WBRF,$buf,2*$dta->{NUMBER_OF_DATA_TYPES})
 		== 2*$dta->{NUMBER_OF_DATA_TYPES}
@@ -399,11 +404,19 @@ sub WBRhdr($)
 	$id = unpack('v',$buf);
 	$id == 0x0400 || die(sprintf($FmtErr,$WBRcfn,"Percent-Good Data",$id,1));
 
+	my($BT_dt);
 	if ($dta->{BT_PRESENT}) {
-		sysseek(WBRF,$WBRofs[6],0) || die("$WBRcfn: $!");
-		sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
-		$id = unpack('v',$buf);
-		$id == 0x0600 || die(sprintf($FmtErr,$WBRcfn,"Bottom Track",$id,1));
+		for ($BT_dt=6; $BT_dt<$dta->{NUMBER_OF_DATA_TYPES}; $BT_dt++) {										# scan until BT found
+			sysseek(WBRF,$WBRofs[$BT_dt],0) || die("$WBRcfn: $!");
+			sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
+			$id = unpack('v',$buf);
+			last if ($id == 0x0600);
+		}
+
+		if ($BT_dt == $dta->{NUMBER_OF_DATA_TYPES}) {
+			printf(STDERR "WARNING: no BT data found\n");die;
+			undef($dta->{BT_PRESENT});
+		}
     }
 
 	#--------------------
@@ -515,7 +528,7 @@ sub WBRhdr($)
 	#-----------------------
 
 	if ($dta->{BT_PRESENT}) {
-		sysseek(WBRF,$WBRofs[6],0) || die("$WBRcfn: $!");
+		sysseek(WBRF,$WBRofs[$BT_dt],0) || die("$WBRcfn: $!");
 		sysread(WBRF,$buf,12) == 12 || die("$WBRcfn: $!");
 		($id,$dta->{BT_PINGS_PER_ENSEMBLE},$dta->{BT_DELAY_BEFORE_REACQUIRE},
 		 $dta->{BT_MIN_CORRELATION},$dta->{BT_MIN_EVAL_AMPLITUDE},
@@ -686,6 +699,8 @@ sub WBRens($$$)
 			${$E}[$ens]->{SECONDS} += $B4/100;
 		}
 
+		pop(@{$E}),last if (${$E}[$ens]->{MONTH}>12);						# 10/15/2014; IWISE#145 UL ???
+
 		if ($fixed_leader_bytes == 58) {									# Explorer DVL
 			sysread(WBRF,$buf,14) == 14 || die("$WBRcfn: $!");
 			(${$E}[$ens]->{ERROR_STATUS_WORD},
@@ -828,7 +843,6 @@ sub WBRens($$$)
 		}
 
 		next if ($nxt == $ndt);													# no BT found => next ens
-
 
 		sysseek(WBRF,14,1) || die("$WBRcfn: $!");								# BT config
 

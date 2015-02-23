@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T E N S 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Tue Mar  4 12:56:36 2014
+#                    dlm: Mon Sep  8 19:22:44 2014
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 46 64 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 244 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the ensemble list or dump ensembles to
@@ -44,6 +44,7 @@
 #				  - added active header line to -E output
 #	Mar  4, 2014: - added partial support for DATA_SOURCE_ID
 #				  - added support for missing PITCH/ROLL/HEADING
+#	Sep  8, 2014: - added -B)T  
 
 # Notes:
 #	- -E outputs data in earth coordinates, unless -b is set also
@@ -58,10 +59,10 @@ require "$1RDI_Coords.pl";
 die("Usage: $0 [-A)nts] [-Q)uiet (errcheck only)] " .
 			  "[-f)ields <[name=]FIELD[,...]>] " .
 			  "[require -4)-beam solutions] [-d)iscard <beam#>] " .
-			  "[write -E)nsemples <.suff> [-M)agnetic <declination>] [min -p)ercent-good <#>] [keep -b)eam coords]] " .
+			  "[write -E)nsemples <.suff> [use -B)T] [-M)agnetic <declination>] [min -p)ercent-good <#>] [keep -b)eam coords]] " .
 			  "[-r)ange <first_ens,last_ens>] [in-w)ater ensembles only] " .
 			  "<RDI file...>\n")
-	unless (&Getopts("4Abd:E:f:M:p:Qr:w") && $#ARGV >= 0);
+	unless (&Getopts("4ABbd:E:f:M:p:Qr:w") && $#ARGV >= 0);
 
 print(STDERR "WARNING: no soundspeed correction applied!\n");
 
@@ -69,7 +70,7 @@ print(STDERR "WARNING: magnetic declination not set!\n")
 	if defined($opt_E) && !defined($opt_M);
 
 die("$0: illegal option combination\n")
-	if ($opt_Q && $opt_A) || ((defined($opt_M) || defined($opt_p) || defined($opt_b)) && !defined($opt_E));
+	if ($opt_Q && $opt_A) || ((defined($opt_M) || defined($opt_p) || defined($opt_b) || $opt_B) && !defined($opt_E));
 
 die("$0: -4 and -d are mutually exclusive\n")
 	if ($opt_4 && defined($opt_d));
@@ -229,12 +230,26 @@ while (-f $ARGV[0]) {
 				$v[3] = nan unless defined($v[3]);		# err_vel
 				$w12 = nan unless defined($w12);		# w from beams 1&2
 				$w34 = nan unless defined($w34);		# w from beams 3&4
-				my(@out) = (
-					$b,$dz,$v[0],$v[1],$v[2],$v[3],$w12,$w34,
-					@{$dta{ENSEMBLE}[$e]->{CORRELATION}[$b]},
-					@{$dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b]},
-					@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]}
-				);
+
+				my(@out);
+				if ($opt_B) {
+					$v[0] = nan unless defined($dta{ENSEMBLE}[$e]->{BT_VELOCITY}[0]);
+					$v[1] = nan unless defined($dta{ENSEMBLE}[$e]->{BT_VELOCITY}[1]);
+					@out = (
+						$b,$dz,$v[0]-$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[0],
+						$v[1]-$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[1],$v[2],$v[3],$w12,$w34,
+						@{$dta{ENSEMBLE}[$e]->{CORRELATION}[$b]},
+						@{$dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b]},
+						@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]}
+					);
+				} else {
+					@out = (
+						$b,$dz,$v[0],$v[1],$v[2],$v[3],$w12,$w34,
+						@{$dta{ENSEMBLE}[$e]->{CORRELATION}[$b]},
+						@{$dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b]},
+						@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]}
+					);
+				}
 				foreach my $f (@addFields) {
 					my($fn,$fi) = ($f =~ m{([^[]*)(\[.*)});
 					$fn = $f unless defined($fn);

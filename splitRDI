@@ -2,9 +2,9 @@
 #======================================================================
 #                    S P L I T R D I 
 #                    doc: Sat Aug 21 22:20:27 2010
-#                    dlm: Wed Mar 19 16:35:45 2014
+#                    dlm: Sun Sep 14 17:47:48 2014
 #                    (c) 2010 A.M. Thurnherr
-#                    uE-Info: 36 43 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 54 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # split RDI files based on list of ensemble numbers (e.g. from yoyo -t)
@@ -14,6 +14,7 @@
 #	Jun 24, 2011: - replaced -b, -n by -o
 #   Feb 13, 2014: - updated doc
 #	Mar 19, 2014: - added -s)kip small files
+#	Sep 14, 2014: - added -f)irst 
 
 # NOTES:
 #   - it is assumed that the input file begins with ensemble #1
@@ -33,9 +34,10 @@ use Getopt::Std;
 
 die("Usage: $0 " .
 	"[-o)ut-file <fmt[e.g. 017%02dDL000.000]>] " .
+	"[-f)irst <cast #>] " .
 	"[require -m)in <ens> to produce output] " .
 	"<RDI file> <ens> <ens[...]>\n")
-		unless (&getopts('o:m:') && @ARGV>=3);
+		unless (&getopts('f:o:m:') && @ARGV>=3);
 
 $opt_o = substr($ARGV[0],0,3)					# default output filename format
 		 . '%02d'
@@ -60,7 +62,7 @@ do {											# split data
 		die("$WBRcfn: file truncated");
 
 	if ($last_ens-$first_ens+1 > $opt_m) {		# produce file only if sufficient # of ensembles
-		$fn = sprintf($opt_o,$cnr++);
+		$fn = sprintf($opt_o,$opt_f+$cnr++);
 		open(F,">$fn") || die("$fn: $!\n");
 		syswrite(F,$buf,$nBytes) == $nBytes ||
 			die("$fn: $!\n");

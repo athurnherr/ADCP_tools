@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T H D R 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Thu Apr 24 14:50:23 2014
+#                    dlm: Sat Sep  6 16:43:30 2014
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 33 81 NIL 0 0 72 8 2 4 NIL ofnI
+#                    uE-Info: 36 55 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the RDI BB header
@@ -30,19 +30,41 @@
 #	Jul  9, 2008: - added output regarding available sensors
 #	Mar 20, 2013: - removed DATA_FORMAT stuff
 #	Mar 25, 2013: - added INSTRUMENT_TYPE stuff instead
-#	Apr 24, 2014: - BUG: USE_3_BEAM_ON_LOW_CORR was reported in water-track setup
+#   Apr 24, 2014: - BUG: USE_3_BEAM_ON_LOW_CORR was reported in water-track setup
+#   Jul 12, 2014: - BUG: did not work with multiple input files
+#                 - added -s)ummary option
+#	Sep  9, 2014: - adapted to files with >7 data types
 
+require 'getopts.pl';
 $0 =~ m{(.*/)[^/]+};
 require "$1RDI_BB_Read.pl";
 
-die("Usage: $0 <RDI file[...]>\n")
-	unless (@ARGV);
+die("Usage: $0 [-s)ummary] <RDI file[...]>\n")
+    unless (&Getopts('s' && @ARGV));
+
+if ($opt_s) {
+	print("#!/usr/bin/perl -S list\n");     
+	chmod(0777&~umask,*STDOUT);
+	print("#ANTS#FIELDS# {id} {serial_number} {transducer_frequency} {number_of_bins} {blanking_distance} {bin_length} {pulse_length}\n");
+}
 
 while (-f $ARGV[0]) {
-	print("$ARGV[0]:\n");
-	readHeader(@ARGV,\%hdr);
-	shift;
+	print("$ARGV[0]:\n") unless ($opt_s);
+	readHeader($ARGV[0],\%hdr);
 
+	if ($opt_s) {														# summary ANTS output
+		my($id) = $ARGV[0];
+		$id =~ s/00[0-9]\.000//;										# leave just deployment name for std RDI files
+		$id =~ s@^.*/([^/]+)@\1@;
+		printf("%s %d %d %d %g %d %.1f\n",
+			$id,$hdr{SERIAL_NUMBER},$hdr{BEAM_FREQUENCY},
+			$hdr{N_BINS},$hdr{BLANKING_DISTANCE},$hdr{BIN_LENGTH},
+			$hdr{TRANSMITTED_PULSE_LENGTH});
+		shift;
+		next;
+	}
+
+	shift;
 	print("    Instrument Characteristics:\n");
 
 	if (defined($hdr{SERIAL_NUMBER})) {
@@ -86,7 +108,7 @@ while (-f $ARGV[0]) {
 	printf("\tECHO_INTENSITY_DATA_BYTES\t= %3d bytes\n",$hdr{ECHO_INTENSITY_DATA_BYTES});
 	printf("\tPERCENT_GOOD_DATA_BYTES\t\t= %3d bytes\n",$hdr{PERCENT_GOOD_DATA_BYTES});
 	printf("\tBT_DATA_BYTES\t\t\t= %3d bytes\n",$hdr{BT_DATA_BYTES})
-		if ($dta->{BT_PRESENT});
+		if ($hdr{BT_PRESENT});
 
 
 	print("    Coordinate System:\n");
@@ -155,7 +177,7 @@ while (-f $ARGV[0]) {
 
 #----------------------------------------------------------------------
 
-	if ($hdr{NUMBER_OF_DATA_TYPES} == 7) {
+	if ($hdr{BT_PRESENT}) {
 		print("    Bottom-Track Setup:\n");
 		printf("\tBT_MODE\t\t\t\t= %d\n", 		$hdr{BT_MODE});
 		printf("\tBT_PINGS_PER_ENSEMBLE\t\t= %d\n",

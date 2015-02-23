@@ -2,9 +2,9 @@
 #======================================================================
 #                    M K P R O F I L E 
 #                    doc: Sun Jan 19 18:55:26 2003
-#                    dlm: Sat May 24 22:50:02 2014
+#                    dlm: Wed Nov  5 13:02:59 2014
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 797 76 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 255 17 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Make an LADCP Profile by Integrating W (similar to Firing's scan*).
@@ -251,12 +251,16 @@ if ($maxdt1-$mindt1>=0.1 || $maxdt2-$mindt2>=0.1) {
 ($firstgood,$lastgood,$atbottom,$w_gap_time,$zErr,$maxz,$rms_heave_accel) =
 	mk_prof(\%dta,0,$opt_F,$minb,$maxb,$opt_c,$opt_e,$opt_g,$opt_p);
 
-unless (($atbottom > $firstgood) && ($lastgood > $atbottom)) {
+if ($lastgood == $atbottom) {
+	print(STDERR "$ARGV[0]: truncated file (ends at max depth)\n")
+} elsif (($atbottom > $firstgood) && ($lastgood > $atbottom)) {
+	# all good
+} else {
 	if ($opt_Q) {
 		print(STDERR "$ARGV[0]: no valid cast data found\n");
 		exit(0);
     } else {
-		die("$ARGV[0]: no valid cast data found\n");
+		die(sprintf("$ARGV[0]: no valid cast data found (firstgood=%d atbottom=%d lastgood=%d)\n",$firstgood,$atbottom,$lastgood));
 	}
 }
 

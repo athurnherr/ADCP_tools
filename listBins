@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B I N S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Tue Apr 22 12:39:09 2014
+#                    dlm: Mon Nov 24 19:46:05 2014
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 50 45 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 284 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -48,6 +48,7 @@
 #	Aug  7, 2013: - BUG: -w did not respect -d
 #   Mar  4, 2014: - added support for missing PITCH/ROLL/HEADING
 #	Apr 22, 2014: - BUG: extraneous semicolon
+#	Nov 24, 2014: - enabled -w always
 
 # General Notes:
 #	- everything (e.g. beams) is numbered from 1
@@ -82,9 +83,9 @@ die("Usage: $0 [-r)ange <first_ens,last_ens>] [-R)enumber ensembles] " .
 			  "[-P)itch/Roll <bias/bias>] [-B)eamvel <bias/bias/bias/bias>] " .
 		 	  "[require -4)-beam solutions] [-d)iscard <beam#>] " .
 		 	  "[-p)ct-good <min>] " .
-		 	  "[output -b)eam coordinates] [output two separate -w) estimates] " .
+		 	  "[output -b)eam coordinates] " .
 			  "<RDI file>\n")
-	unless (&Getopts("4abB:d:f:M:p:r:P:RS:w") && @ARGV == 1);
+	unless (&Getopts("4abB:d:f:M:p:r:P:RS:") && @ARGV == 1);
 
 ($P{pitch_bias},$P{roll_bias}) = split('[,/]',$opt_P);
 ($P{velbias_b1},$P{velbias_b2},$P{velbias_b3},$P{velbias_b4}) = split('[,/]',$opt_B);
@@ -158,7 +159,7 @@ sub dumpBin($$$)						# write time series of single bin
 			"{xmit_current} {xmit_voltage} " .
 			"{temp} " .
 			($opt_b ? "{v1} {v2} {v3} {v4} " : "{u} {v} {w} {err_vel} ") .
-			($opt_w ? "{v12} {w12} {v34} {w34} " : "" ) .
+			"{v12} {w12} {v34} {w34} " .
 			"{corr1} {corr2} {corr3} {corr4} " .
 			"{amp1} {amp2} {amp3} {amp4} " .
 			($opt_b ? "{pcg1} {pcg2} {pcg3} {pcg4}" : "{3_beam} {min_pcg}")
@@ -194,19 +195,17 @@ sub dumpBin($$$)						# write time series of single bin
 			} else {
 				printf(P "%g ",$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3] * $ssCorr);
 			}
-			if ($opt_w) {
-				printf(P defined($dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][0]) ? "%g " : "nan ",
-							$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][0]);
-				printf(P defined($dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][1]) ? "%g " : "nan ",
-							$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][1]);
-				printf(P defined($dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][2]) ? "%g " : "nan ",
-							$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][2]);
-				printf(P defined($dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][3]) ? "%g " : "nan ",
-							$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][3]);
-			}
+			printf(P defined($dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][0]) ? "%g " : "nan ",
+						$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][0]);
+			printf(P defined($dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][1]) ? "%g " : "nan ",
+						$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][1]);
+			printf(P defined($dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][2]) ? "%g " : "nan ",
+						$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][2]);
+			printf(P defined($dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][3]) ? "%g " : "nan ",
+						$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][3]);
 		} else {
 			print(P "nan nan nan nan ");
-			print(P "nan nan nan nan ") if ($opt_w);
+			print(P "nan nan nan nan ");
 		}
 		print(P "@{$dta{ENSEMBLE}[$e]->{CORRELATION}[$b]} ");
 		print(P "@{$dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b]} ");
@@ -280,10 +279,8 @@ for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {				# check/transform velocities
 			undef($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][$opt_d-1]);
 			undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][$opt_d-1]);
 		}
-		if ($opt_w) {
-			@{$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b]} =
-				velBeamToBPEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
-		}
+		@{$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b]} =
+			velBeamToBPEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
 		for (my($i)=0; $i<4; $i++) {
 			if ($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][$i] < $opt_p) {
 				undef($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][$i]);
