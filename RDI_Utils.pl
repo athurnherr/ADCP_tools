@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Thu May 29 09:23:46 2014
+#                    dlm: Sun Mar 22 10:19:08 2015
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 302 0 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 494 98 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -50,6 +50,7 @@
 #	Feb 22, 2014: - changed gap heuristic
 #			      - Earth coord beam-pair warning removed
 #	May 29, 2014: - removed unused code (disabled warning) from ref_lr_w
+#	Mar 22, 2015: - BUG: mk_prof could bomb because of division-by-zero in return statement
 
 use strict;
 
@@ -489,7 +490,8 @@ sub mk_prof(...)											# make profile
 	
 	filterEnsembleStats() if defined($filter);
 
-	return ($firstgood,$lastgood,$atbottom,$w_gap_time,$zErr,$maxz,sqrt($rms_heave_accel_ssq/$rms_heave_accel_nsamp));
+	return ($firstgood,$lastgood,$atbottom,$w_gap_time,$zErr,$maxz,
+			($rms_heave_accel_nsamp>0) ? sqrt($rms_heave_accel_ssq/$rms_heave_accel_nsamp) : 'nan');
 }
 
 #----------------------------------------------------------------------

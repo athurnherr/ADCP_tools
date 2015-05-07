@@ -1,9 +1,9 @@
 ======================================================================
                     H I S T O R Y 
                     doc: Tue May 15 18:04:39 2012
-                    dlm: Fri Jul 12 12:46:50 2013
+                    dlm: Thu May  7 13:08:32 2015
                     (c) 2012 A.M. Thurnherr
-                    uE-Info: 17 30 NIL 0 0 72 3 2 8 NIL ofnI
+                    uE-Info: 21 64 NIL 0 0 72 3 2 8 NIL ofnI
 ======================================================================
 
 May 15, 2012:
@@ -15,4 +15,8 @@ May 15, 2012:
 Jul 11, 2013:
   - V1.1 [.hg/hgrc]
   - various minor improvements
+
+May  7, 2015:
+  - V1.2 [.hg/hgrc]
+  - version used for LADCPproc V1.3 (Explorer/Slocum processing)
 

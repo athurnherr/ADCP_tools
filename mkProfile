@@ -2,9 +2,9 @@
 #======================================================================
 #                    M K P R O F I L E 
 #                    doc: Sun Jan 19 18:55:26 2003
-#                    dlm: Wed Nov  5 13:02:59 2014
+#                    dlm: Sun Mar 22 10:22:46 2015
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 255 17 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 91 63 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Make an LADCP Profile by Integrating W (similar to Firing's scan*).
@@ -88,6 +88,7 @@
 #	Mar  4, 2014: - added support to allow missing PITCH/ROLL/HEADING values
 #	May 24, 2014: - finally added (gimbal-)pitch & roll to default output
 #				  - renamed heading to hdg and pitchroll to tilt
+#	Mar 22, 2015: - made it work for moored time series as well
 
 # NOTES:
 #	- the battery values are based on transmission voltages (different
@@ -255,6 +256,9 @@ if ($lastgood == $atbottom) {
 	print(STDERR "$ARGV[0]: truncated file (ends at max depth)\n")
 } elsif (($atbottom > $firstgood) && ($lastgood > $atbottom)) {
 	# all good
+} elsif ($lastgood > $firstgood) {
+	print(STDERR "$ARGV[0]: no bottom depth found\n")
+		unless ($atbottom > 0);
 } else {
 	if ($opt_Q) {
 		print(STDERR "$ARGV[0]: no valid cast data found\n");

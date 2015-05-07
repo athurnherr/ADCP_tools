@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B I N S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Mon Nov 24 19:46:05 2014
+#                    dlm: Sun Mar 22 12:22:47 2015
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 284 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 63 63 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -49,10 +49,18 @@
 #   Mar  4, 2014: - added support for missing PITCH/ROLL/HEADING
 #	Apr 22, 2014: - BUG: extraneous semicolon
 #	Nov 24, 2014: - enabled -w always
+#	Mar 22, 2015: - replaced -f by -o (allowing for pipes)
 
 # General Notes:
 #	- everything (e.g. beams) is numbered from 1
 #	- no support for BT data
+
+# Post-Processing:
+#	- e.g. in a Makefile,
+#		BFILT = | list -Lconv ensemble elapsed dn12='str2dec_time(\$$date,\$$time,2012)' heading pitch roll temp u v w err_vel w12 w34 corr1 corr2 corr3 corr4 amp1 amp2 amp3 amp4 > `basename $@ .b1`.b%d
+#	- used as follows
+#		listBins -o "${BFILT}"
+#	- this writes only the interesting fields and calculates a 2012-referenced decimal day field
 
 # Soundspeed Correction:
 #	- applied as described in the RDI coord-trans manual
@@ -76,8 +84,8 @@ require "$1RDI_Coords.pl";
 require "$1RDI_Utils.pl";
 
 die("Usage: $0 [-r)ange <first_ens,last_ens>] [-R)enumber ensembles] " .
-			  "[output -f)ile <pat[bin%d.raw]>] " .
-			  "[-a)ll ens (not just those with good vels)] " .
+			  "[-o)utput <redirection[>bin%d.raw]>] " .
+			  "[output -a)ll ens (not just those with good vels)] " .
 			  "[-M)agnetic <declination>] " .
 			  "[-S)oundspeed correction <salin|*,temp|*,depth|*> " .
 			  "[-P)itch/Roll <bias/bias>] [-B)eamvel <bias/bias/bias/bias>] " .
@@ -85,7 +93,7 @@ die("Usage: $0 [-r)ange <first_ens,last_ens>] [-R)enumber ensembles] " .
 		 	  "[-p)ct-good <min>] " .
 		 	  "[output -b)eam coordinates] " .
 			  "<RDI file>\n")
-	unless (&Getopts("4abB:d:f:M:p:r:P:RS:") && @ARGV == 1);
+	unless (&Getopts("4abB:d:M:o:p:r:P:RS:") && @ARGV == 1);
 
 ($P{pitch_bias},$P{roll_bias}) = split('[,/]',$opt_P);
 ($P{velbias_b1},$P{velbias_b2},$P{velbias_b3},$P{velbias_b4}) = split('[,/]',$opt_B);
@@ -103,7 +111,7 @@ $RDI_Coords::minValidVels = 4 if ($opt_4);			# no 3-beam solutions
 print(STDERR "WARNING: magnetic declination not set!\n")
 	unless defined($opt_M) || defined($opt_b);
 
-$opt_f = 'bin%d.raw' unless defined($opt_f);
+$opt_o = '>bin%d.raw' unless defined($opt_o);
 $ifn = $ARGV[0];
 
 ($first_ens,$last_ens) = split(',',$opt_r)
@@ -130,9 +138,9 @@ sub min(@)								# return minimum
 sub dumpBin($$$)						# write time series of single bin
 {
 	my($b,$fe,$le) = @_;
-	my($file) = sprintf($opt_f,$b+1);
+	my($out) = sprintf($opt_o,$b+1);
 
-	open(P,">$file") || die("$file: $!\n");
+	open(P,"$out") || die("$out: $!\n");
 	print(P "#ANTS#PARAMS# ");
 	foreach my $k (keys(%P)) {
 		print(P "$k\{$P{$k}\} ");
@@ -176,7 +184,7 @@ sub dumpBin($$$)						# write time series of single bin
 		print(P "$dta{ENSEMBLE}[$e]->{NUMBER} ");
 		print(P "$dta{ENSEMBLE}[$e]->{DATE} ");
 		print(P "$dta{ENSEMBLE}[$e]->{TIME} ");
-		printf(P "%d ",$dta{ENSEMBLE}[$e]->{UNIX_TIME}-$t0);
+		printf(P "%d ",$dta{ENSEMBLE}[$e]->{UNIX_TIME}-$t0);		# elapsed time
 		print(P defined($dta{ENSEMBLE}[$e]->{HEADING}) ? "$dta{ENSEMBLE}[$e]->{HEADING} " : 'nan ');
 		print(P defined($dta{ENSEMBLE}[$e]->{PITCH}) ? "$dta{ENSEMBLE}[$e]->{PITCH} " : 'nan ');
 		print(P defined($dta{ENSEMBLE}[$e]->{ROLL}) ? "$dta{ENSEMBLE}[$e]->{ROLL} " : 'nan ');
