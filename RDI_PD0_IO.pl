@@ -1,9 +1,9 @@
 #======================================================================
-#                    R D I _ B B _ R E A D . P L 
+#                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Wed Oct 15 21:50:07 2014
+#                    dlm: Tue Jun 16 09:01:26 2015
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 65 77 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 354 0 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Read RDI BroadBand Binary Data Files (*.[0-9][0-9][0-9])

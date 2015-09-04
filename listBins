@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B I N S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Sun Mar 22 12:22:47 2015
+#                    dlm: Tue Jun 16 09:28:17 2015
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 63 63 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 53 74 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -50,6 +50,7 @@
 #	Apr 22, 2014: - BUG: extraneous semicolon
 #	Nov 24, 2014: - enabled -w always
 #	Mar 22, 2015: - replaced -f by -o (allowing for pipes)
+#	Jun 16, 2015: - BUG: velocity bias code did not respect bad velocities
 
 # General Notes:
 #	- everything (e.g. beams) is numbered from 1
@@ -279,10 +280,10 @@ for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {				# check/transform velocities
         if ($dta{ENSEMBLE}[$e]->{LOW_GAIN});
 
 	for (my($b)=0; $b<$dta{N_BINS}; $b++) {
-		$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0] -= $P{velbias_b1};
-		$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1] -= $P{velbias_b2};
-		$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2] -= $P{velbias_b3};
-		$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3] -= $P{velbias_b4};
+		$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0] -= $P{velbias_b1} if defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0]);
+		$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1] -= $P{velbias_b2} if defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1]);
+		$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2] -= $P{velbias_b3} if defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2]);
+		$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3] -= $P{velbias_b4} if defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3]);
 		if (defined($opt_d)) {
 			undef($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][$opt_d-1]);
 			undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][$opt_d-1]);
