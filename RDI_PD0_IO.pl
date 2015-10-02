@@ -1,9 +1,9 @@
 #======================================================================
-#                    R D I _ P D 0 _ I O . P L 
+#                    R D I _ B B _ R E A D . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Tue Jun 16 09:01:26 2015
+#                    dlm: Fri Oct  2 19:17:15 2015
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 354 0 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 66 47 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Read RDI BroadBand Binary Data Files (*.[0-9][0-9][0-9])
@@ -63,6 +63,7 @@
 #	Oct 15, 2014: - implemented work-around for readData() not recognizing
 #					incomplete ensemble at the end, which seems to imply that there is
 #				    a garbage final ensemble that passes the checksum test???
+#	Oct  2, 2015: - added &skip_initial_trash()
 
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -308,6 +309,36 @@ my($BIT_errors) = 0;									# built-in-test errors
 my($FmtErr) = "%s: illegal %s Id 0x%04x at ensemble %d";
 
 #----------------------------------------------------------------------
+# skip to first valid ensemble (skip over initial garbage)
+#----------------------------------------------------------------------
+
+sub skip_initial_trash(@)
+{
+	my($quiet) = @_;
+	my($buf,$dta);
+
+	my($found) = 0;										# zero consecutive 0x7f found
+	my($skipped) = 0;
+	while ($found < 2) {
+		sysread(WBRF,$buf,1) == 1 || last;
+		($dta) = unpack('C',$buf);
+		if ($dta == 0x7f) {
+			$found++;
+		} elsif ($found == 0) {
+			$skipped++;
+		} else {
+			$skipped += $found;
+			$found = 0;
+		}
+	}
+	die("$WBRcfn: no valid ensemble header found [$!]\n")
+		if ($found < 2);
+	printf(STDERR "WARNING: %d bytes of initial garbage\n",$skipped)
+		if ($skipped > 0 && !$quiet);
+	return sysseek(WBRF,-2,1);
+}
+
+#----------------------------------------------------------------------
 # readHeader(file_name,^dta) WBRhdr(^data)
 #	- read header data
 #	- also includes some data from 1st ens
@@ -324,18 +355,19 @@ sub readHeader(@)
 sub WBRhdr($)
 {
 	my($dta) = @_;
-	my($buf,$hid,$did,$Ndt,$B,$W,$i,$dummy,$id,@WBRofs);
+	my($start_ens,$buf,$hid,$did,$Ndt,$B,$W,$i,$dummy,$id,@WBRofs);
 	my($B1,$B2,$B3,$B4,$B5,$B6,$B7,$W1,$W2,$W3,$W4,$W5);
 	
 	#--------------------
 	# HEADER
 	#--------------------
 
+	$start_ens = skip_initial_trash();
 	sysread(WBRF,$buf,6) == 6 || die("$WBRcfn: $!");
 	($hid,$did,$dta->{ENSEMBLE_BYTES},$dummy,$dta->{NUMBER_OF_DATA_TYPES})
 		= unpack('CCvCC',$buf);
 	$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header",$hid,0));
-##	$did == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Data Source",$did,0));
+##	$did == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Data Source",$did,0));		# IMP uses this
 	printf(STDERR "WARNING: unexpected number of data types (%d)\n",
 		$dta->{NUMBER_OF_DATA_TYPES})
 			unless ($dta->{NUMBER_OF_DATA_TYPES} == 6 ||
@@ -379,35 +411,35 @@ sub WBRhdr($)
 	# Check Data Format of 1st Ensemble
 	#----------------------------------
 
-	sysseek(WBRF,$WBRofs[1],0) || die("$WBRcfn: $!");
+	sysseek(WBRF,$start_ens+$WBRofs[1],0) || die("$WBRcfn: $!");
 	sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 	$id = unpack('v',$buf);
-	$id == 0x0080 || die(sprintf($FmtErr,$WBRcfn,"Variable Leader",$id,1));
+	$id == 0x0080 || printf(STDERR $FmtErr."\n",$WBRcfn,"Variable Leader",$id,1);
 
-	sysseek(WBRF,$WBRofs[2],0) || die("$WBRcfn: $!");
+	sysseek(WBRF,$start_ens+$WBRofs[2],0) || die("$WBRcfn: $!");
 	sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 	$id = unpack('v',$buf);
-	$id == 0x0100 || die(sprintf($FmtErr,$WBRcfn,"Velocity Data",$id,1));
+	$id == 0x0100 || printf(STDERR $FmtErr."\n",$WBRcfn,"Velocity Data",$id,1);
 
-	sysseek(WBRF,$WBRofs[3],0) || die("$WBRcfn: $!");
+	sysseek(WBRF,$start_ens+$WBRofs[3],0) || die("$WBRcfn: $!");
 	sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 	$id = unpack('v',$buf);
-	$id == 0x0200 || die(sprintf($FmtErr,$WBRcfn,"Correlation Data",$id,1));
+	$id == 0x0200 || printf(STDERR $FmtErr."\n",$WBRcfn,"Correlation Data",$id,1);
     
-	sysseek(WBRF,$WBRofs[4],0) || die("$WBRcfn: $!");
+	sysseek(WBRF,$start_ens+$WBRofs[4],0) || die("$WBRcfn: $!");
 	sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 	$id = unpack('v',$buf);
-	$id == 0x0300 || die(sprintf($FmtErr,$WBRcfn,"Echo Intensity",$id,1));
+	$id == 0x0300 || printf(STDERR $FmtErr."\n",$WBRcfn,"Echo Intensity",$id,1);
 
-	sysseek(WBRF,$WBRofs[5],0) || die("$WBRcfn: $!");
+	sysseek(WBRF,$start_ens+$WBRofs[5],0) || die("$WBRcfn: $!");
 	sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 	$id = unpack('v',$buf);
-	$id == 0x0400 || die(sprintf($FmtErr,$WBRcfn,"Percent-Good Data",$id,1));
+	$id == 0x0400 || printf(STDERR $FmtErr."\n",$WBRcfn,"Percent-Good Data",$id,1);
 
 	my($BT_dt);
 	if ($dta->{BT_PRESENT}) {
 		for ($BT_dt=6; $BT_dt<$dta->{NUMBER_OF_DATA_TYPES}; $BT_dt++) {										# scan until BT found
-			sysseek(WBRF,$WBRofs[$BT_dt],0) || die("$WBRcfn: $!");
+			sysseek(WBRF,$start_ens+$WBRofs[$BT_dt],0) || die("$WBRcfn: $!");
 			sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 			$id = unpack('v',$buf);
 			last if ($id == 0x0600);
@@ -423,7 +455,7 @@ sub WBRhdr($)
 	# FIXED LEADER
 	#--------------------
 
-	sysseek(WBRF,$WBRofs[0],0) || die("$WBRcfn: $!");
+	sysseek(WBRF,$start_ens+$WBRofs[0],0) || die("$WBRcfn: $!");
 	sysread(WBRF,$buf,42) == 42 || die("$WBRcfn: $!");
 	($id,$dta->{CPU_FW_VER},$dta->{CPU_FW_REV},$B1,$B2,$dummy,$dummy,$dummy,
 	 $dta->{N_BINS},$dta->{PINGS_PER_ENSEMBLE},$dta->{BIN_LENGTH},
@@ -437,7 +469,7 @@ sub WBRhdr($)
 	 $dta->{TRANSMIT_LAG_DISTANCE}) =
 		unpack('vCCCCC3CvvvCCCCvCCCCvvCCvvCCCCv',$buf);
 
-	$id == 0x0000 || die(sprintf($FmtErr,$WBRcfn,"Fixed Leader",$id,0));
+	$id == 0x0000 || printf(STDERR $FmtErr."\n",$WBRcfn,"Fixed Leader",$id,0);
 
     $dta->{BEAM_FREQUENCY} = 2**($B1 & 0x07) * 75;
     $dta->{CONVEX_BEAM_PATTERN} = 1 if ($B1 & 0x08);
@@ -528,7 +560,7 @@ sub WBRhdr($)
 	#-----------------------
 
 	if ($dta->{BT_PRESENT}) {
-		sysseek(WBRF,$WBRofs[$BT_dt],0) || die("$WBRcfn: $!");
+		sysseek(WBRF,$start_ens+$WBRofs[$BT_dt],0) || die("$WBRcfn: $!");
 		sysread(WBRF,$buf,12) == 12 || die("$WBRcfn: $!");
 		($id,$dta->{BT_PINGS_PER_ENSEMBLE},$dta->{BT_DELAY_BEFORE_REACQUIRE},
 		 $dta->{BT_MIN_CORRELATION},$dta->{BT_MIN_EVAL_AMPLITUDE},
@@ -536,7 +568,7 @@ sub WBRhdr($)
 		 $dta->{BT_MAX_ERROR_VELOCITY}) = unpack('vvvCCCCv',$buf);
 		 
 		$id == 0x0600 ||
-			die(sprintf($FmtErr,$WBRcfn,"Bottom Track",$id,0,tell(WBRF)));
+			printf(STDERR $FmtErr."\n",$WBRcfn,"Bottom Track",$id,0,tell(WBRF));
 	
 		$dta->{BT_MAX_ERROR_VELOCITY} =
 			$dta->{BT_MAX_ERROR_VELOCITY} ? $dta->{BT_MAX_ERROR_VELOCITY} / 1000
@@ -582,7 +614,9 @@ sub WBRens($$$)
 	my($start_ens,$B1,$B2,$B3,$B4,$I,$id,$bin,$beam,$buf,$dummy,@dta,$i,$cs,@WBRofs);
 	my($ens,$ensNo,$dayStart,$ens_length,$hid,$did,$ndt);
 
-	for ($ens=$start_ens=0; 1; $ens++,$start_ens+=$ens_length+2) {
+    sysseek(WBRF,0,0) || die("$WBRcfn: $!");
+	$start_ens = skip_initial_trash(1);
+	for ($ens=0; 1; $ens++,$start_ens+=$ens_length+2) {
 #		print(STDERR "ens = $ens\n");
 #		print(STDERR "start_ens = $start_ens\n");
 
