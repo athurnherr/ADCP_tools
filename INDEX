@@ -1,9 +1,9 @@
 #======================================================================
 #                    I N D E X 
 #                    doc: Thu Feb  7 14:21:21 2008
-#                    dlm: Tue Nov 26 21:55:56 2013
+#                    dlm: Sun Sep 27 12:18:28 2015
 #                    (c) 2008 A.M. Thurnherr
-#                    uE-Info: 12 0 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 31 0 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 =General Utilities=
@@ -14,6 +14,7 @@
 [listBT]	list bottom-track data
 [listW]		list vertical velocities; BROKEN
 [scanBins]	list per-bin stats; BROKEN
+[splitPD0]	split PD0 file using list of ensemble numbers
 
 
 =Moored-ADCP Utilities=
@@ -27,3 +28,4 @@
 
 [mkProfile]		make depth-vs-time profile by integrating vertical velocities
 [checkIX]		check LDEO_IX output
+[splitYYPD0]	split LADCP yoyo or tow-yo file; requires ANTS utilities
