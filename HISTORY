@@ -1,9 +1,9 @@
 ======================================================================
                     H I S T O R Y 
                     doc: Tue May 15 18:04:39 2012
-                    dlm: Thu May  7 13:08:32 2015
+                    dlm: Wed Nov  4 11:33:11 2015
                     (c) 2012 A.M. Thurnherr
-                    uE-Info: 21 64 NIL 0 0 72 3 2 8 NIL ofnI
+                    uE-Info: 29 32 NIL 0 0 72 3 2 8 NIL ofnI
 ======================================================================
 
 May 15, 2012:
@@ -20,3 +20,10 @@ May  7, 2015:
   - V1.2 [.hg/hgrc]
   - version used for LADCPproc V1.3 (Explorer/Slocum processing)
 
+Oct 12, 2015:
+  - V1.3 [.hg/hgrc]  
+  - version published for LADCP_w V1.0
+
+Nov  4, 2015:
+  - merged with Oct 2 version on Studio desktop, which ignores
+    initial garbage in PD0 files  

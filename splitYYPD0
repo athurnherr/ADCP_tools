@@ -1,0 +1,20 @@
+#!/bin/sh
+#======================================================================
+#                    S P L I T Y Y P D 0 
+#                    doc: Sun Sep 27 12:18:05 2015
+#                    dlm: Sun Sep 27 12:18:57 2015
+#                    (c) 2015 A.M. Thurnherr
+#                    uE-Info: 10 29 NIL 0 0 72 2 2 4 NIL ofnI
+#======================================================================
+
+2>/dev/null >/dev/null which yoyo || {
+	echo "required ANTS utilities not installed" >&2
+	exit 1
+}
+
+[ -f "$1" ] || {
+	echo "Usage: $0 <PD0 file>" >&2
+	exit 1
+}
+
+splitPD0 "$1" `mkProfile "$1" | yoyo -QFens -ut`
