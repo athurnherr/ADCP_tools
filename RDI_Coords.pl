@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ C O O R D S . P L 
 #                    doc: Sun Jan 19 17:57:53 2003
-#                    dlm: Thu May 29 09:19:54 2014
+#                    dlm: Tue Jan  5 13:56:55 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 282 0 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 185 37 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # RDI Workhorse Coordinate Transformations
@@ -39,6 +39,7 @@
 #						 heading
 #				  - removed some old debug statements
 #				  - removed unused code from &velBeamToBPInstrument
+#	Jan  5, 2016: - added &velEarthToInstrument(@), &velInstrumentToBeam(@)
 
 use strict;
 use POSIX;
@@ -152,6 +153,79 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 			   : (undef,undef,
 				  $v1*$I2E[2][0]+$v2*$I2E[2][1]+$v3*$I2E[2][2],
 				  $v4);
+	}
+} # STATIC SCOPE
+
+#----------------------------------------------------------------------
+# velEarthToInstrument() transforms earth to instrument coordinates
+#	- based on manually inverted rotation matrix M (Sec 5.6 in coord-trans manual)
+#	- missing heading data (IMP) causes undef beam velocities
+#----------------------------------------------------------------------
+
+{ # STATIC SCOPE
+	my($hdg,$pitch,$roll,@E2I);
+
+	sub velEarthToInstrument(@)
+	{
+		my($dta,$ens,$u,$v,$w,$ev) = @_;
+
+		unless (@E2I) {
+			$hdg   = $dta->{ENSEMBLE}[$ens]->{HEADING} - $dta->{HEADING_BIAS} if defined($dta->{ENSEMBLE}[$ens]->{HEADING});
+			$pitch = $dta->{ENSEMBLE}[$ens]->{PITCH};
+			$roll  = $dta->{ENSEMBLE}[$ens]->{ROLL};
+			my($rad_gimbal_pitch) = atan(tan(rad($pitch)) * cos(rad($roll)));
+			my($sh,$ch) = (sin(rad($hdg)),cos(rad($hdg)))
+				if defined($hdg);				
+			my($sp,$cp) = (sin($rad_gimbal_pitch),cos($rad_gimbal_pitch));
+			my($sr,$cr) = (sin(rad($roll)),	cos(rad($roll)));
+			@E2I = $dta->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP}
+				 ? ([$ch*-$cr+$sh*$sp*-$sr,	 $ch*$sp*-$sr-$sh*-$cr,	$cp*-$sr],
+				    [$sh*$cp,				 $ch*$cp,				$sp		],
+				    [$ch*-$sr-$sh*$sp*-$cr,	-$sh*-$sr-$ch*$sp*-$cr,	$cp*-$cr])
+				 : ([$ch*$cr+$sh*$sp*$sr,	 $ch*$sp*$sr-$sh*$cr,	$cp*$sr	],
+				    [$sh*$cp,				 $ch*$cp,				$sp		],
+				    [$ch*$sr-$sh*$sp*$cr,	-$sh*$sr-$ch*$sp*$cr,	$cp*$cr	]);
+		}
+
+		return defined($dta->{ENSEMBLE}[$ens]->{HEADING})
+			   ? ($u*$E2I[0][0]+$v*$E2I[0][1]+$w*$E2I[0][2],
+				  $u*$E2I[1][0]+$v*$E2I[1][1]+$w*$E2I[1][2],
+				  $u*$E2I[2][0]+$v*$E2I[2][1]+$w*$E2I[2][2],
+				  $ev)
+			   : (undef,undef,undef,undef);
+
+	}
+} # STATIC SCOPE
+
+#----------------------------------------------------------------------
+# velInstrumentToBeam() transforms instrument to beam coordinates
+#	- based on manually solved eq system in sec 5.3 of coord manual
+#	- does not implement bin-remapping
+#	- does not work for 3-beam solutions, as it is not known which
+#	  beam was bad
+#----------------------------------------------------------------------
+
+{ # STATIC SCOPE
+	my($a,$b,$c,$d);
+
+	sub velInstrumentToBeam(@)
+	{
+		my($dta,$x,$y,$z,$ev) = @_;
+		return undef unless (defined($x) + defined($y) +
+					   		 defined($z) + defined($ev) == 4);
+
+		unless (defined($a)) {
+			$a = 1 / (2 * sin(rad($dta->{BEAM_ANGLE})));
+			$b = 1 / (4 * cos(rad($dta->{BEAM_ANGLE})));
+			$c = $dta->{CONVEX_BEAM_PATTERN} ? 1 : -1;
+			$d = $a / sqrt(2);
+		}
+
+		return ( $x/(2*$a*$c) + $z/(4*$b) + $ev/(4*$d),
+				-$x/(2*$a*$c) + $z/(4*$b) + $ev/(4*$d),
+				-$y/(2*$a*$c) + $z/(4*$b) - $ev/(4*$d),
+				 $y/(2*$a*$c) + $z/(4*$b) - $ev/(4*$d));
+
 	}
 } # STATIC SCOPE
 

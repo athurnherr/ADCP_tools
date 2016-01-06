@@ -1,9 +1,9 @@
 ======================================================================
                     H I S T O R Y 
                     doc: Tue May 15 18:04:39 2012
-                    dlm: Wed Nov  4 11:33:11 2015
+                    dlm: Tue Jan  5 13:22:10 2016
                     (c) 2012 A.M. Thurnherr
-                    uE-Info: 29 32 NIL 0 0 72 3 2 8 NIL ofnI
+                    uE-Info: 35 46 NIL 0 0 72 3 2 8 NIL ofnI
 ======================================================================
 
 May 15, 2012:
@@ -26,4 +26,10 @@ Oct 12, 2015:
 
 Nov  4, 2015:
   - merged with Oct 2 version on Studio desktop, which ignores
-    initial garbage in PD0 files  
+    initial garbage in PD0 files
+
+Jan  5, 2015: V1.4
+	- added [ADCP_tools_lib.pl] with compile-time version control
+	- [RDI_Coords.pl] added &velEarthToBeam()
+	- updated [listBins] to use versioned libs and calc w12 & w34
+	  from earth-coordinate data correctly

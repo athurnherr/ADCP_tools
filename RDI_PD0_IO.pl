@@ -1,9 +1,9 @@
 #======================================================================
-#                    R D I _ B B _ R E A D . P L 
+#                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Fri Oct  2 19:17:15 2015
+#                    dlm: Fri Dec 18 18:01:45 2015
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 66 47 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 1106 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Read RDI BroadBand Binary Data Files (*.[0-9][0-9][0-9])
@@ -64,6 +64,8 @@
 #					incomplete ensemble at the end, which seems to imply that there is
 #				    a garbage final ensemble that passes the checksum test???
 #	Oct  2, 2015: - added &skip_initial_trash()
+#	Dec 18, 2015: - added most data types to WBPofs()
+#				  - BUG: WBPens() requires round() for scaled values
 
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -942,10 +944,15 @@ sub WBRens($$$)
 }
 
 #----------------------------------------------------------------------
-# WBPens(nbins,fixed_leader_bytes,^data)
-# 	- patch PD0 file with new data
-#	- file must already exist and have correct structure
-#	- currently only does part of variable leader data, esp. attitude
+# writeData(output_file_name,^data) WBPens(nbins,fixed_leader_bytes,^data)
+#	- writeData() copies file previously read with readData() to output_file_name
+# 	- WBPens() patches new PD0 file with ^data
+#		- ^data is modified!!!!
+#		- output file must already exist and have correct structure
+#		- only subset of data structure is patched:
+#			- Header: Data Source Id
+#			- Var Ldr: Soundspeed, Depth, Heading, Pitch, Roll, Temp, Salin
+#			- Data: Velocity, Correlation, Echo Amp, %-Good, 
 #----------------------------------------------------------------------
 
 sub writeData(@)
@@ -961,6 +968,13 @@ sub writeData(@)
     WBPens($dta->{N_BINS},$dta->{FIXED_LEADER_BYTES},
 	                   \@{$dta->{ENSEMBLE}});
 }
+
+sub round(@)
+{
+	return $_[0] >= 0 ? int($_[0] + 0.5)
+					  : int($_[0] - 0.5);
+}
+
 
 sub WBPens($$$)
 {
@@ -998,22 +1012,24 @@ sub WBPens($$$)
 	
 		sysseek(WBPF,$start_ens+$WBPofs[1]+12,0) || die("$WBPcfn: $!");
 		
-		${$E}[$ens]->{XDUCER_DEPTH} *= 10;
+		${$E}[$ens]->{XDUCER_DEPTH} = round(${$E}[$ens]->{XDUCER_DEPTH}*10);
 
-		# IMP EXTENSIONS
-		#---------------
+		#-----------------------------
+		# IMP allows for missing value
+		#-----------------------------
+
 		${$E}[$ens]->{HEADING} = defined(${$E}[$ens]->{HEADING})
-							   ? ${$E}[$ens]->{HEADING} * 100
+							   ? round(${$E}[$ens]->{HEADING}*100)
 							   : 0xF000;
 		${$E}[$ens]->{PITCH} = defined(${$E}[$ens]->{PITCH})
-							 ? unpack('S',pack('s',${$E}[$ens]->{PITCH}*100))
+							 ? unpack('S',pack('s',round(${$E}[$ens]->{PITCH}*100)))
 							 : 0x8000;
 		${$E}[$ens]->{ROLL} = defined(${$E}[$ens]->{ROLL})
-						    ? unpack('S',pack('s',${$E}[$ens]->{ROLL}*100))
+						    ? unpack('S',pack('s',round(${$E}[$ens]->{ROLL}*100)))
 						    : 0x8000;
 
 		${$E}[$ens]->{TEMPERATURE} =
-			unpack('S',pack('s',${$E}[$ens]->{TEMPERATURE}*100));
+			unpack('S',pack('s',round(${$E}[$ens]->{TEMPERATURE}*100)));
 
 		sysseek(WBPF,2,1);			# skip built-in test which reads as 0 but is usually undef		
 									# this was found not to matter, but there is no reason to edit
@@ -1030,6 +1046,83 @@ sub WBPens($$$)
 
 		my($nw) = syswrite(WBPF,$buf,14);
 		$nw == 14 || die("$WBPcfn: $nw bytes written ($!)");
+
+
+		#--------------------
+		# Velocity Data
+		#--------------------
+
+		sysseek(WBPF,$start_ens+$WBPofs[2]+2,0) || die("$WBRcfn: $!");	# skip velocity data id (assume it is correct)
+		for ($bin=0; $bin<$nbins; $bin++) {
+			for ($beam=0; $beam<4; $beam++) {
+				${$E}[$ens]->{VELOCITY}[$bin][$beam] = defined(${$E}[$ens]->{VELOCITY}[$bin][$beam])
+							   						 ? round(${$E}[$ens]->{VELOCITY}[$bin][$beam]*1000)
+							   						 : 0x8000;
+				$buf = pack('v',unpack('S',pack('s',${$E}[$ens]->{VELOCITY}[$bin][$beam])));
+				my($nw) = syswrite(WBPF,$buf,2);
+				$nw == 2 || die("$WBPcfn: $nw bytes written ($!)");
+			}
+		}
+
+		#--------------------
+		# Correlation Data
+		#--------------------
+
+		sysseek(WBPF,$start_ens+$WBPofs[3]+2,0) || die("$WBRcfn: $!");
+		for ($bin=0; $bin<$nbins; $bin++) {
+			for ($beam=0; $beam<4; $beam++) {
+				$buf = pack('C',${$E}[$ens]->{CORRELATION}[$bin][$beam]);
+				my($nw) = syswrite(WBPF,$buf,1);
+				$nw == 1 || die("$WBPcfn: $nw bytes written ($!)");
+			}
+		}
+
+		#--------------------
+		# Echo Intensity Data
+		#--------------------
+
+		sysseek(WBPF,$start_ens+$WBPofs[4]+2,0) || die("$WBRcfn: $!");
+
+		for ($bin=0; $bin<$nbins; $bin++) {
+			for ($beam=0; $beam<4; $beam++) {
+				$buf = pack('C',${$E}[$ens]->{ECHO_AMPLITUDE}[$bin][$beam]);
+				my($nw) = syswrite(WBPF,$buf,1);
+				$nw == 1 || die("$WBPcfn: $nw bytes written ($!)");
+			}
+		}
+
+		#--------------------
+		# Percent Good Data
+		#--------------------
+
+		sysseek(WBPF,$start_ens+$WBPofs[5]+2,0) || die("$WBRcfn: $!");
+
+		for ($i=0,$bin=0; $bin<$nbins; $bin++) {
+			for ($beam=0; $beam<4; $beam++,$i++) {
+				$buf = pack('C',${$E}[$ens]->{PERCENT_GOOD}[$bin][$beam]);
+				my($nw) = syswrite(WBPF,$buf,1);
+				$nw == 1 || die("$WBPcfn: $nw bytes written ($!)");
+			}
+		}
+
+		#-----------------------------------------
+		# Bottom-Track Data
+		#	- scan through remaining data types
+		#-----------------------------------------
+
+		my($nxt);
+		for ($nxt=6; $nxt<$ndt; $nxt++) {										# scan until BT found
+			sysseek(WBPF,$start_ens+$WBPofs[$nxt],0) || die("$WBRcfn: $!");
+			sysread(WBPF,$buf,2) == 2 || die("$WBRcfn: $!");
+			$id = unpack('v',$buf);
+			last if ($id == 0x0600);
+		}
+
+		unless ($nxt == $ndt) {													# BT found
+			sysseek(WBPF,14,1) || die("$WBRcfn: $!");							# skip BT config
+			# NOT YET IMPLEMENTED
+		}
+
 
 		#----------------
 		# Update Checksum
