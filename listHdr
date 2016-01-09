@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T H D R 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Sat Jan  9 13:24:54 2016
+#                    dlm: Sat Jan  9 17:03:16 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 47 31 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 41 0 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the RDI BB header
@@ -35,9 +35,9 @@
 #                 - added -s)ummary option
 #	Sep  9, 2014: - adapted to files with >7 data types
 #				  - BUG: usage message was not produced on empty arglist
+#	Jan  9, 2016: - added support for PRODUCER data field
 #				  - updated getopts to current perl version
 #				  - updated IO library name
-#	Jan  9, 2016: - added support for PRODUCER data field
 
 use Getopt::Std;
 
