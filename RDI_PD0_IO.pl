@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Fri Dec 18 18:01:45 2015
+#                    dlm: Sat Jan  9 13:22:46 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 1106 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 70 34 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Read RDI BroadBand Binary Data Files (*.[0-9][0-9][0-9])
@@ -66,6 +66,8 @@
 #	Oct  2, 2015: - added &skip_initial_trash()
 #	Dec 18, 2015: - added most data types to WBPofs()
 #				  - BUG: WBPens() requires round() for scaled values
+#	Jan  9, 2016: - BUG: WBRhdr() did not set DATA_SOURCE_ID
+#				  - added PRODUCER
 
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -79,13 +81,18 @@
 #	16.21	WH300 (1)				LDEO 	NBP0402		53
 #	16.27	WH300 (2)				Nash 	?			59
 
-# PD0 IMP FILE FORMAT EXTENSIONS:
-#	- DATA_SOURCE_ID = 0xA0 | PATCHED_MASK (vs. 0x7F for TRDI PD0 files)
-#		PATCHED_MASK & 0x04:	pitch value has been patched
-#		PATCHED_MASK & 0x02:	roll value has been patched
-#		PATCHED_MASK & 0x01:	heading value has been patched
-#	- PITCH & ROLL can be missing (0x8000 badval as in velocities)
-#	- HEADING can be missing (0xF000 badval, as 0x8000 is valid 327.68 heading)
+# PD0 FILE FORMAT EXTENSIONS:
+#
+#	- DATA_SOURCE_ID = 0x7F						original TRDI PD0 file
+#
+#	- DATA_SOURCE_ID = 0xA0 | PATCHED_MASK		produced by IMP+LADP 
+#		PATCHED_MASK & 0x04:						pitch value has been patched
+#		PATCHED_MASK & 0x02:						roll value has been patched
+#		PATCHED_MASK & 0x01:						heading value has been patched
+#			- PITCH & ROLL can be missing (0x8000 badval as in velocities)
+#			- HEADING can be missing (0xF000 badval, as 0x8000 is valid 327.68 heading)
+#
+#	- DATA_SOURCE_ID = 0xB0 					produced by editPD0
 
 # NOTES:
 #	- RDI stores data in VAX/Intel byte order (little endian)
@@ -369,7 +376,17 @@ sub WBRhdr($)
 	($hid,$did,$dta->{ENSEMBLE_BYTES},$dummy,$dta->{NUMBER_OF_DATA_TYPES})
 		= unpack('CCvCC',$buf);
 	$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header",$hid,0));
-##	$did == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Data Source",$did,0));		# IMP uses this
+	$dta->{DATA_SOURCE_ID} = $did;
+	if ($did == 0x7f) {
+		$dta->{PRODUCER} = 'TRDI ADCP';
+	} elsif ($did&0xF0 == 0xA0) {
+		$dta->{PRODUCER} = 'IMP+LADCP';
+	} elsif ($did&0xF0 == 0xB0) {
+		$dta->{PRODUCER} = 'editPD0';
+	} else {
+		$dta->{PRODUCER} = 'unknown';
+	}
+
 	printf(STDERR "WARNING: unexpected number of data types (%d)\n",
 		$dta->{NUMBER_OF_DATA_TYPES})
 			unless ($dta->{NUMBER_OF_DATA_TYPES} == 6 ||
@@ -630,7 +647,17 @@ sub WBRens($$$)
 		sysread(WBRF,$buf,6) == 6 || last;
 		($hid,$did,$ens_length,$dummy,$ndt) = unpack('CCvCC',$buf);
 		$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header",$hid,0));
-##		$did == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Data Source",$did,0));
+		${$E}[$ens]->{DATA_SOURCE_ID} = $did;
+		if ($did == 0x7f) {
+			${$E}[$ens]->{PRODUCER} = 'TRDI ADCP';
+		} elsif ($did&0xF0 == 0xA0) {
+			${$E}[$ens]->{PRODUCER} = 'IMP+LADCP (Thurnherr software)';
+		} elsif ($did&0xF0 == 0xB0) {
+			${$E}[$ens]->{PRODUCER} = 'editPD0 (Thurnherr software)';
+		} else {
+			${$E}[$ens]->{PRODUCER} = 'unknown';
+	    }
+
 ##		printf(STDERR "\n$WBRcfn: WARNING: unexpected number of data types (%d, ens=$ens)\n",$ndt),last
 ##				unless ($ndt == 6 || $ndt == 7);
 		sysread(WBRF,$buf,2*$ndt) == 2*$ndt || die("$WBRcfn: $!");
@@ -656,8 +683,6 @@ sub WBRens($$$)
 		# Variable Leader
 		#------------------------------
 	
-		${$E}[$ens]->{DATA_SOURCE_ID} = $did;								# IMP extension
-
 		sysseek(WBRF,$start_ens+$WBRofs[1],0) || die("$WBRcfn: $!");
 		sysread(WBRF,$buf,4) == 4 || die("$WBRcfn: $!");
 		($id,$ensNo) = unpack("vv",$buf);

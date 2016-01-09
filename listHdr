@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T H D R 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Mon Feb 23 10:44:27 2015
+#                    dlm: Sat Jan  9 13:24:54 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 37 0 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 47 31 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the RDI BB header
@@ -34,13 +34,18 @@
 #   Jul 12, 2014: - BUG: did not work with multiple input files
 #                 - added -s)ummary option
 #	Sep  9, 2014: - adapted to files with >7 data types
+#				  - BUG: usage message was not produced on empty arglist
+#				  - updated getopts to current perl version
+#				  - updated IO library name
+#	Jan  9, 2016: - added support for PRODUCER data field
 
-require 'getopts.pl';
+use Getopt::Std;
+
 $0 =~ m{(.*/)[^/]+};
-require "$1RDI_BB_Read.pl";
+require "$1RDI_PD0_IO.pl";
 
-die("Usage: $0 [-s)ummary] <RDI file[...]>\n")
-    unless (&Getopts('s' && @ARGV));
+die("Usage: $0 [-s)ummary] <PD0 file[...]>\n")
+    unless (&getopts('s') && @ARGV);
 
 if ($opt_s) {
 	print("#!/usr/bin/perl -S list\n");     
@@ -67,6 +72,7 @@ while (-f $ARGV[0]) {
 	shift;
 	print("    Instrument Characteristics:\n");
 
+	printf("\tPRODUCER\t\t= %s\n",$hdr{PRODUCER});
 	if (defined($hdr{SERIAL_NUMBER})) {
 		printf("\tINSTRUMENT\t\t\t= %s #%d\n",$hdr{INSTRUMENT_TYPE},$hdr{SERIAL_NUMBER});
     } else {
