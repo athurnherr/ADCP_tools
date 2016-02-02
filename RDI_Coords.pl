@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ C O O R D S . P L 
 #                    doc: Sun Jan 19 17:57:53 2003
-#                    dlm: Tue Jan  5 13:56:55 2016
+#                    dlm: Sun Jan 31 12:42:43 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 185 37 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 185 0 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # RDI Workhorse Coordinate Transformations
@@ -40,6 +40,7 @@
 #				  - removed some old debug statements
 #				  - removed unused code from &velBeamToBPInstrument
 #	Jan  5, 2016: - added &velEarthToInstrument(@), &velInstrumentToBeam(@)
+#	Jan  9, 2016: - added &velEarthToBeam(), &velBeamToEarth()
 
 use strict;
 use POSIX;
@@ -170,7 +171,8 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 		my($dta,$ens,$u,$v,$w,$ev) = @_;
 
 		unless (@E2I) {
-			$hdg   = $dta->{ENSEMBLE}[$ens]->{HEADING} - $dta->{HEADING_BIAS} if defined($dta->{ENSEMBLE}[$ens]->{HEADING});
+			$hdg = $dta->{ENSEMBLE}[$ens]->{HEADING} - $dta->{HEADING_BIAS} 
+				if defined($dta->{ENSEMBLE}[$ens]->{HEADING});
 			$pitch = $dta->{ENSEMBLE}[$ens]->{PITCH};
 			$roll  = $dta->{ENSEMBLE}[$ens]->{ROLL};
 			my($rad_gimbal_pitch) = atan(tan(rad($pitch)) * cos(rad($roll)));
@@ -179,12 +181,15 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 			my($sp,$cp) = (sin($rad_gimbal_pitch),cos($rad_gimbal_pitch));
 			my($sr,$cr) = (sin(rad($roll)),	cos(rad($roll)));
 			@E2I = $dta->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP}
-				 ? ([$ch*-$cr+$sh*$sp*-$sr,	 $ch*$sp*-$sr-$sh*-$cr,	$cp*-$sr],
+				 ? (
+					[$ch*-$cr+$sh*$sp*-$sr,	 $ch*$sp*-$sr-$sh*-$cr,	$cp*-$sr],
 				    [$sh*$cp,				 $ch*$cp,				$sp		],
-				    [$ch*-$sr-$sh*$sp*-$cr,	-$sh*-$sr-$ch*$sp*-$cr,	$cp*-$cr])
-				 : ([$ch*$cr+$sh*$sp*$sr,	 $ch*$sp*$sr-$sh*$cr,	$cp*$sr	],
+				    [$ch*-$sr-$sh*$sp*-$cr,	-$sh*-$sr-$ch*$sp*-$cr,	$cp*-$cr]
+				 ) : (
+					[$ch*$cr+$sh*$sp*$sr,	 $ch*$sp*$sr-$sh*$cr,	$cp*$sr	],
 				    [$sh*$cp,				 $ch*$cp,				$sp		],
-				    [$ch*$sr-$sh*$sp*$cr,	-$sh*$sr-$ch*$sp*$cr,	$cp*$cr	]);
+				    [$ch*$sr-$sh*$sp*$cr,	-$sh*$sr-$ch*$sp*$cr,	$cp*$cr	]
+				 );
 		}
 
 		return defined($dta->{ENSEMBLE}[$ens]->{HEADING})
@@ -228,6 +233,17 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 
 	}
 } # STATIC SCOPE
+
+#----------------------------------------------------------------------
+# velEarthToBeam() combines velEarthToInstrument and velInstrumentToBeam
+#----------------------------------------------------------------------
+
+sub velEarthToBeam(@)
+{
+	my($dta,$ens,$u,$v,$w,$ev) = @_;
+	return velInstrumentToBeam($dta,
+				velEarthToInstrument($dta,$ens,$u,$v,$w,$ev));
+}
 
 #======================================================================
 # velBeamToBPEarth(@) calculates the vertical- and horizontal vels

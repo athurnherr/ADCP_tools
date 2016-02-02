@@ -2,56 +2,91 @@
 #======================================================================
 #                    E D I T P D 0 
 #                    doc: Mon Nov 25 20:24:31 2013
-#                    dlm: Fri Dec 18 20:56:45 2015
+#                    dlm: Sat Jan  9 20:07:59 2016
 #                    (c) 2013 A.M. Thurnherr
-#                    uE-Info: 104 1 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 128 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # edit RDI PD0 file, e.g. to replace pitch/roll/heading with external values
 
-# HISTORY:
-#	Nov 25, 2013: - created
-#	Dec 18, 2015: - added switch_beams()
-#				  - added -x
+# NOTES:
+#
+#	- editing instructions can be provided either in an editing file (primarily
+#	  for ensemble-specific editing), or with the -x option on the command line
+#	  (only or editing applied to all ensembles)
+#
+#	- Data-Editing Library:
+#		p(<pitch>)				set pitch value (RDI not gimbal pitch) of current ensemble
+#		r(<roll>)				set roll alue value of current ensemble
+#		h(<heading>)			set heading alue value of current ensemble
+#
+#		swap_beams(<b1>,<b2>)	swap data from beams b1 and b2
+#								input in beam coords required
+#								beam rotation is equivalent to 3 consecutive beam swaps
+#
+#		earth2beam()			transform beam to earth coordinates
+#								does not handle bin-remapping
+#								input in beam coords required
+#
+#	- -x notes:
+#		- multiple perl expressions can be combined with ,
+#
+#	- Edit File Syntax:
+#		- # comments ignored
+#		- empty lines ignored
+#       - [space] <ensemble-number|*> <space> <perl-expr>
+#		- Examples:
+#       	162     p(3), r(4), h(3.14)
 
-$0 =~ m{(.*)/[^/]+}; 
-require "$1/RDI_PD0_IO.pl";
-require "getopts.pl";
+# HISTORY:
+#   Nov 25, 2013: - created
+#   Dec 18, 2015: - added switch_beams()
+#                 - added -x
+#	Jan  9, 2016: - renamed switch_beams() to swap_beams()
+#				  - wrote documentation
+#				  - change output data-source ID from 0x7F to 0xE0
+#				  - updated getopts to current perl version
+#				  - adapted to [ADCP_tools_lib.pl]
+
+use Getopt::Std;
+
+($ADCP_TOOLS) = ($0 =~ m{(.*/)[^/]+});
+$ADCP_tools_minVersion = 1.4; 
+require "$ADCP_TOOLS/ADCP_tools_lib.pl";
 
 $USAGE = "$0 @ARGV";
 die("Usage: $0 " .
-	'-e) <edit-file> | -x) <expr> ' .
-	"<input file> <output file>\n")
-		unless (&Getopts('e:x:') && @ARGV == 2);
+    '-e) <edit-file> | -x) <expr> ' .
+    "<input file> <output file>\n")
+        unless (&getopts('e:x:') && @ARGV == 2);
 
 die("$0: -e <edit-file> or -x <expr> required\n")
-	unless (defined($opt_x) || -r $opt_e);
+    unless (defined($opt_x) || -r $opt_e);
 
-print(STDERR "Reading $ARGV[0]...");				# read data
+print(STDERR "Reading $ARGV[0]...");                # read data
 readData($ARGV[0],\%dta);
 print(STDERR "done\n");
 
 #----------------------------------------------------------------------
 
-print(STDERR "Editing Data...");				
+print(STDERR "Editing Data...");                
 
 #--------------------------------------------------
-# INTERFACE
-#	- example <edit_file> entry for external attitude data
-#		162     p(3), r(4), h(3.14)
-#	- example <edit_file> entry for beam switching
-#		*		switch_beams(3,4)
+# Data Editing Library
 #--------------------------------------------------
 
-sub p($) { $dta{ENSEMBLE}[$e]->{PITCH} = $_[0]; }
-sub r($) { $dta{ENSEMBLE}[$e]->{ROLL} = $_[0]; }
-sub h($) { $dta{ENSEMBLE}[$e]->{HEADING} = $_[0]; }
+sub p($) { $dta{ENSEMBLE}[$e]->{PITCH} = $_[0]; return 1; }
+sub r($) { $dta{ENSEMBLE}[$e]->{ROLL} = $_[0]; return 1; }
+sub h($) { $dta{ENSEMBLE}[$e]->{HEADING} = $_[0]; return 1;}
 
-sub switch_beams($$)
+sub swap_beams($$)
 {
 	my($b1,$b2) = @_;
 
-#	print(STDERR "\n entering switch_beams($b1,$b2) for ens = $e...");
+#	print(STDERR "\n entering swap_beams($b1,$b2) for ens = $e...");
+
+	die("$ARGV[0]: beam-coordinate data required\n")
+		unless ($dta{BEAM_COORDINATES});
 
 	for (my($bin)=0; $bin<$dta{N_BINS}; $bin++) {
 		my($tmp) = $dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$b1-1];
@@ -70,15 +105,36 @@ sub switch_beams($$)
 		$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$bin][$b1-1] = $dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$bin][$b2-1];
 		$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$bin][$b2-1] = $tmp;
 	}
-
 	return 1;
+}
+
+
+{ my($checked);
+
+	sub earth2beam()
+	{
+		unless ($checked) {
+			die("$ARGV[0]: earth-coordinate data required\n")
+				unless ($dta{EARTH_COORDINATES});
+			$dta{BEAM_COORDINATES} = 1; undef($dta{EARTH_COORDINATES});
+			$checked = 1;
+		}
+	    
+		for (my($bin)=0; $bin<$dta{N_BINS}; $bin++) {
+			@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin]} =
+				velEarthToBeam(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin]});
+		}
+	
+		return 1;
+	}
+
 }
 
 #--------------------------------------------------
 # Main Routine
 #--------------------------------------------------
 
-if (defined($opt_x)) {
+if (defined($opt_x)) {															# edit instructions on the command line
 	push(@EE,'*');
 	my($id) = ($opt_x =~ m/^([A-Z]+)\s/);										# e.g. PITCH, ROLL, HEADING
 	$opt_x = sprintf('$dta{ENSEMBLE}[$e]->{%s}',$id)
@@ -86,7 +142,7 @@ if (defined($opt_x)) {
 	push(@EX,$opt_x);
 }		
 
-if (defined($opt_e)) {
+if (defined($opt_e)) {															# edit instructions in edit file
 	open(EF,$opt_e) || die("$opt_e: $!\n");
 	while (<EF>) {
 		s/\#.*//;
@@ -104,9 +160,8 @@ if (defined($opt_e)) {
 }
 
 for (local($e)=my($eei)=0; $e<@{$dta{ENSEMBLE}}; $e++) {						# local() needed for p(), r(), h()
-#	print(STDERR "\n\@ens=$EE[$eei]: $EX[$eei]\n");
+	$dta{ENSEMBLE}[$e]->{DATA_SOURCE_ID} = 0xE0;								# mark all ensembles
 	if ($EE[$eei] eq '*' || $EE[$eei] == $dta{ENSEMBLE}[$e]->{NUMBER}) {		# match => edit
-#		print(STDERR "\n\@ens=$EE[$eei]: $EX[$eei]");
 		eval($EX[$eei]) || die("$@ while executing <$EX[$eei]>\n");
 	} elsif ($EE[$eei] > $dta{ENSEMBLE}[$e]->{NUMBER}) {						# next edit later in file => skip
 		next;

@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Sun Mar 22 10:19:08 2015
+#                    dlm: Sat Jan  9 16:36:52 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 494 98 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 55 41 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -51,6 +51,8 @@
 #			      - Earth coord beam-pair warning removed
 #	May 29, 2014: - removed unused code (disabled warning) from ref_lr_w
 #	Mar 22, 2015: - BUG: mk_prof could bomb because of division-by-zero in return statement
+#	Jan  9, 2016: - renamed ref_lr_w to mk_prof_ref_lr_w because the old name conflicts
+#				    with a sub in LADCP_w
 
 use strict;
 
@@ -263,7 +265,7 @@ sub soundSpeed($$$)
 
 # calculate reference-layer vertical and incident velocities
 
-sub ref_lr_w($$$$$$$)
+sub mk_prof_ref_lr_w($$$$$$$)
 {
 	my($dta,$ens,$rl_b0,$rl_b1,$min_corr,$max_e,$min_pctg) = @_;
 	my($i,@n,@bn,@v,@vi,@vel,@veli,@bv,@w);
@@ -422,7 +424,7 @@ sub mk_prof(...)											# make profile
 		filterEnsemble($dta,$e)
 			if (defined($filter) &&
 				$dta->{ENSEMBLE}[$e]->{PERCENT_GOOD}[0][0] > 0);
-		ref_lr_w($dta,$e,$lr_b0,$lr_b1,$min_corr,$max_e,$min_pctg);	# ref. layer w
+		mk_prof_ref_lr_w($dta,$e,$lr_b0,$lr_b1,$min_corr,$max_e,$min_pctg);	# ref. layer w
 	
 		if (defined($firstgood)) {
 			$dta->{ENSEMBLE}[$e]->{ELAPSED_TIME} =			# time since start

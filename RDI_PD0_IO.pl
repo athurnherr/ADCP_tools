@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Sat Jan  9 13:22:46 2016
+#                    dlm: Sat Jan  9 17:57:01 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 70 34 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 73 64 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Read RDI BroadBand Binary Data Files (*.[0-9][0-9][0-9])
@@ -66,8 +66,11 @@
 #	Oct  2, 2015: - added &skip_initial_trash()
 #	Dec 18, 2015: - added most data types to WBPofs()
 #				  - BUG: WBPens() requires round() for scaled values
-#	Jan  9, 2016: - BUG: WBRhdr() did not set DATA_SOURCE_ID
+#	Jan  9, 2016: - removed system() from writeData()
+#				  - BUG: WBRhdr() did not set DATA_SOURCE_ID
 #				  - added PRODUCER
+#				  - BUG: writeData() did not work correctly for ECOGIG OC26 moored data (spaces in filename?)
+#				  - added support for patching coordinate system
 
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -92,7 +95,7 @@
 #			- PITCH & ROLL can be missing (0x8000 badval as in velocities)
 #			- HEADING can be missing (0xF000 badval, as 0x8000 is valid 327.68 heading)
 #
-#	- DATA_SOURCE_ID = 0xB0 					produced by editPD0
+#	- DATA_SOURCE_ID = 0xE0 					produced by editPD0
 
 # NOTES:
 #	- RDI stores data in VAX/Intel byte order (little endian)
@@ -333,6 +336,8 @@ sub skip_initial_trash(@)
 		($dta) = unpack('C',$buf);
 		if ($dta == 0x7f) {
 			$found++;
+		} elsif ($found==1 && ($dta==0xE0 || ($dta&0xF0==0xA0 && $dta&0x0F<8))) {
+			$found++;
 		} elsif ($found == 0) {
 			$skipped++;
 		} else {
@@ -379,12 +384,12 @@ sub WBRhdr($)
 	$dta->{DATA_SOURCE_ID} = $did;
 	if ($did == 0x7f) {
 		$dta->{PRODUCER} = 'TRDI ADCP';
-	} elsif ($did&0xF0 == 0xA0) {
-		$dta->{PRODUCER} = 'IMP+LADCP';
-	} elsif ($did&0xF0 == 0xB0) {
-		$dta->{PRODUCER} = 'editPD0';
+	} elsif (($did&0xF0) == 0xA0) {
+		$dta->{PRODUCER} = 'IMP+LADCP (Thurnherr software)';
+	} elsif (($did&0xF0) == 0xE0) {
+		$dta->{PRODUCER} = 'editPD0 (Thurnherr software)';
 	} else {
-		$dta->{PRODUCER} = 'unknown';
+		$dta->{PRODUCER} = sprintf('unknown (0x%02X)');
 	}
 
 	printf(STDERR "WARNING: unexpected number of data types (%d)\n",
@@ -652,7 +657,7 @@ sub WBRens($$$)
 			${$E}[$ens]->{PRODUCER} = 'TRDI ADCP';
 		} elsif ($did&0xF0 == 0xA0) {
 			${$E}[$ens]->{PRODUCER} = 'IMP+LADCP (Thurnherr software)';
-		} elsif ($did&0xF0 == 0xB0) {
+		} elsif ($did&0xF0 == 0xE0) {
 			${$E}[$ens]->{PRODUCER} = 'editPD0 (Thurnherr software)';
 		} else {
 			${$E}[$ens]->{PRODUCER} = 'unknown';
@@ -985,13 +990,24 @@ sub writeData(@)
 	my($fn,$dta) = @_;
 
 	die("writeData() needs \$WBRcfn from previous readData()")
-		unless (-r $WBRcfn);
-	$WBPcfn = $fn;
-	system("cp $WBRcfn $WBPcfn");
+		unless (length($WBRcfn) > 0);
 
-	open(WBPF,"+<$WBPcfn") || die("$WBPcfn: $!");
-    WBPens($dta->{N_BINS},$dta->{FIXED_LEADER_BYTES},
-	                   \@{$dta->{ENSEMBLE}});
+    sysseek(WBRF,0,0) || die("$WBRcfn: $!");						# rewind input file
+	$WBPcfn = $fn;													# set patch file name for error messages
+	open(WBPF,"+>$WBPcfn") || die("$WBPcfn: $!");					# open patch file for r/w
+
+	while (1) {														# copy input file to patch file
+		my($buf);
+		my($nread) = sysread(WBRF,$buf,100*1024);
+		die("$WBRcfn: $!\n") if ($nread < 0);
+		last if ($nread == 0);
+		my($nwritten) = syswrite(WBPF,$buf,100*1024);
+		die("$WBPcfn: $! ($nwritten of $nread written)\n")
+			unless ($nwritten = $nread);
+	}
+    sysseek(WBPF,0,0) || die("$WBPcfn: $!");						# rewind patch file
+
+    WBPens($dta->{N_BINS},$dta->{FIXED_LEADER_BYTES},$dta);
 }
 
 sub round(@)
@@ -1003,11 +1019,11 @@ sub round(@)
 
 sub WBPens($$$)
 {
-	my($nbins,$fixed_leader_bytes,$E) = @_;
+	my($nbins,$fixed_leader_bytes,$dta) = @_;
 	my($start_ens,$B1,$B2,$B3,$B4,$I,$id,$bin,$beam,$buf,$dummy,@dta,$i,$cs,@WBPofs);
 	my($ens,$ensNo,$dayStart,$ens_length,$hid,$ndt);
 
-	for ($ens=$start_ens=0; $ens<=$#{$E}; $ens++,$start_ens+=$ens_length+2) {
+	for ($ens=$start_ens=0; $ens<=$#{$dta->{ENSEMBLE}}; $ens++,$start_ens+=$ens_length+2) {
 
 		#------------------------------
 		# Patch Header (Data Source Id)
@@ -1018,7 +1034,7 @@ sub WBPens($$$)
 		($hid) = unpack('C',$buf);
 		$hid == 0x7f || die(sprintf($FmtErr,$WBPcfn,"Header",$hid,$ens));
 
-		$buf = pack('C',${$E}[$ens]->{DATA_SOURCE_ID});
+		$buf = pack('C',$dta->{ENSEMBLE}[$ens]->{DATA_SOURCE_ID});
 		my($nw) = syswrite(WBPF,$buf,1);
 		$nw == 1 || die("$WBPcfn: $nw bytes written ($!)");
 
@@ -1030,44 +1046,55 @@ sub WBPens($$$)
 		sysread(WBPF,$buf,2*$ndt) == 2*$ndt || die("$WBPcfn: $!");
 		@WBPofs = unpack("v$ndt",$buf);
 		$fixed_leader_bytes = $WBPofs[1] - $WBPofs[0];
+
+		#--------------------
+		# Fixed Leader
+		#--------------------
 	
+		sysseek(WBPF,$start_ens+$WBPofs[0]+25,0) || die("$WBPcfn: $!");		# jump to EX/Coord-Transform
+		sysread(WBPF,$buf,1) == 1 || die("$WBPcfn: $!");
+		my($EX) = unpack('C',$buf);
+		if ($dta->{BEAM_COORDINATES}) {
+			$EX &= ~0x18;
+		} elsif ($dta->{EARTH_COORDINATES}) {
+			$EX |= 0x18;
+		} else {
+			die("$WBPcfn: only beam- and earth coordinates are supported (implementation restriction)\n");
+		}
+		$buf = pack('C',$EX);		
+		sysseek(WBPF,$start_ens+$WBPofs[0]+25,0) || die("$WBPcfn: $!");
+		syswrite(WBPF,$buf,1) == 1 || die("$WBPcfn: $!");
+
 		#------------------------------
 		# Variable Leader
 		#------------------------------
-	
-		sysseek(WBPF,$start_ens+$WBPofs[1]+12,0) || die("$WBPcfn: $!");
+
+		sysseek(WBPF,$start_ens+$WBPofs[1]+14,0) || die("$WBPcfn: $!");		# jump to SPEED_OF_SOUND
 		
-		${$E}[$ens]->{XDUCER_DEPTH} = round(${$E}[$ens]->{XDUCER_DEPTH}*10);
+		$dta->{ENSEMBLE}[$ens]->{XDUCER_DEPTH} = round($dta->{ENSEMBLE}[$ens]->{XDUCER_DEPTH}*10);
 
 		#-----------------------------
 		# IMP allows for missing value
 		#-----------------------------
 
-		${$E}[$ens]->{HEADING} = defined(${$E}[$ens]->{HEADING})
-							   ? round(${$E}[$ens]->{HEADING}*100)
+		$dta->{ENSEMBLE}[$ens]->{HEADING} = defined($dta->{ENSEMBLE}[$ens]->{HEADING})
+							   ? round($dta->{ENSEMBLE}[$ens]->{HEADING}*100)
 							   : 0xF000;
-		${$E}[$ens]->{PITCH} = defined(${$E}[$ens]->{PITCH})
-							 ? unpack('S',pack('s',round(${$E}[$ens]->{PITCH}*100)))
+		$dta->{ENSEMBLE}[$ens]->{PITCH} = defined($dta->{ENSEMBLE}[$ens]->{PITCH})
+							 ? unpack('S',pack('s',round($dta->{ENSEMBLE}[$ens]->{PITCH}*100)))
 							 : 0x8000;
-		${$E}[$ens]->{ROLL} = defined(${$E}[$ens]->{ROLL})
-						    ? unpack('S',pack('s',round(${$E}[$ens]->{ROLL}*100)))
+		$dta->{ENSEMBLE}[$ens]->{ROLL} = defined($dta->{ENSEMBLE}[$ens]->{ROLL})
+						    ? unpack('S',pack('s',round($dta->{ENSEMBLE}[$ens]->{ROLL}*100)))
 						    : 0x8000;
 
-		${$E}[$ens]->{TEMPERATURE} =
-			unpack('S',pack('s',round(${$E}[$ens]->{TEMPERATURE}*100)));
-
-		sysseek(WBPF,2,1);			# skip built-in test which reads as 0 but is usually undef		
-									# this was found not to matter, but there is no reason to edit
-#		my($b1);					# this field
-#		sysread(WBPF,$b1,14);
-#		sysseek(WBPF,-14,1);
-#		my($sos,$xd,$hdg,$pit,$rol,$sal,$tem) = unpack('vvvvvvv',$b1);
+		$dta->{ENSEMBLE}[$ens]->{TEMPERATURE} =
+			unpack('S',pack('s',round($dta->{ENSEMBLE}[$ens]->{TEMPERATURE}*100)));
 
 		$buf = pack('vvvvvvv',
-			 ${$E}[$ens]->{SPEED_OF_SOUND},
-			 ${$E}[$ens]->{XDUCER_DEPTH},${$E}[$ens]->{HEADING},
-			 ${$E}[$ens]->{PITCH},${$E}[$ens]->{ROLL},
-			 ${$E}[$ens]->{SALINITY},${$E}[$ens]->{TEMPERATURE});
+			 $dta->{ENSEMBLE}[$ens]->{SPEED_OF_SOUND},
+			 $dta->{ENSEMBLE}[$ens]->{XDUCER_DEPTH},$dta->{ENSEMBLE}[$ens]->{HEADING},
+			 $dta->{ENSEMBLE}[$ens]->{PITCH},$dta->{ENSEMBLE}[$ens]->{ROLL},
+			 $dta->{ENSEMBLE}[$ens]->{SALINITY},$dta->{ENSEMBLE}[$ens]->{TEMPERATURE});
 
 		my($nw) = syswrite(WBPF,$buf,14);
 		$nw == 14 || die("$WBPcfn: $nw bytes written ($!)");
@@ -1080,10 +1107,10 @@ sub WBPens($$$)
 		sysseek(WBPF,$start_ens+$WBPofs[2]+2,0) || die("$WBRcfn: $!");	# skip velocity data id (assume it is correct)
 		for ($bin=0; $bin<$nbins; $bin++) {
 			for ($beam=0; $beam<4; $beam++) {
-				${$E}[$ens]->{VELOCITY}[$bin][$beam] = defined(${$E}[$ens]->{VELOCITY}[$bin][$beam])
-							   						 ? round(${$E}[$ens]->{VELOCITY}[$bin][$beam]*1000)
+				$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$bin][$beam] = defined($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$bin][$beam])
+							   						 ? round($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$bin][$beam]*1000)
 							   						 : 0x8000;
-				$buf = pack('v',unpack('S',pack('s',${$E}[$ens]->{VELOCITY}[$bin][$beam])));
+				$buf = pack('v',unpack('S',pack('s',$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$bin][$beam])));
 				my($nw) = syswrite(WBPF,$buf,2);
 				$nw == 2 || die("$WBPcfn: $nw bytes written ($!)");
 			}
@@ -1096,7 +1123,7 @@ sub WBPens($$$)
 		sysseek(WBPF,$start_ens+$WBPofs[3]+2,0) || die("$WBRcfn: $!");
 		for ($bin=0; $bin<$nbins; $bin++) {
 			for ($beam=0; $beam<4; $beam++) {
-				$buf = pack('C',${$E}[$ens]->{CORRELATION}[$bin][$beam]);
+				$buf = pack('C',$dta->{ENSEMBLE}[$ens]->{CORRELATION}[$bin][$beam]);
 				my($nw) = syswrite(WBPF,$buf,1);
 				$nw == 1 || die("$WBPcfn: $nw bytes written ($!)");
 			}
@@ -1110,7 +1137,7 @@ sub WBPens($$$)
 
 		for ($bin=0; $bin<$nbins; $bin++) {
 			for ($beam=0; $beam<4; $beam++) {
-				$buf = pack('C',${$E}[$ens]->{ECHO_AMPLITUDE}[$bin][$beam]);
+				$buf = pack('C',$dta->{ENSEMBLE}[$ens]->{ECHO_AMPLITUDE}[$bin][$beam]);
 				my($nw) = syswrite(WBPF,$buf,1);
 				$nw == 1 || die("$WBPcfn: $nw bytes written ($!)");
 			}
@@ -1124,7 +1151,7 @@ sub WBPens($$$)
 
 		for ($i=0,$bin=0; $bin<$nbins; $bin++) {
 			for ($beam=0; $beam<4; $beam++,$i++) {
-				$buf = pack('C',${$E}[$ens]->{PERCENT_GOOD}[$bin][$beam]);
+				$buf = pack('C',$dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$bin][$beam]);
 				my($nw) = syswrite(WBPF,$buf,1);
 				$nw == 1 || die("$WBPcfn: $nw bytes written ($!)");
 			}

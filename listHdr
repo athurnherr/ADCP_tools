@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T H D R 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Sat Jan  9 17:03:16 2016
+#                    dlm: Sat Jan  9 17:16:01 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 41 0 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 41 32 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the RDI BB header
@@ -38,11 +38,13 @@
 #	Jan  9, 2016: - added support for PRODUCER data field
 #				  - updated getopts to current perl version
 #				  - updated IO library name
+#				  - adapted to [ADCP_tools_lib.pl]
 
 use Getopt::Std;
 
-$0 =~ m{(.*/)[^/]+};
-require "$1RDI_PD0_IO.pl";
+($ADCP_TOOLS) = ($0 =~ m{(.*/)[^/]+});
+$ADCP_tools_minVersion = 1.4; 
+require "$ADCP_TOOLS/ADCP_tools_lib.pl";
 
 die("Usage: $0 [-s)ummary] <PD0 file[...]>\n")
     unless (&getopts('s') && @ARGV);
@@ -72,7 +74,7 @@ while (-f $ARGV[0]) {
 	shift;
 	print("    Instrument Characteristics:\n");
 
-	printf("\tPRODUCER\t\t= %s\n",$hdr{PRODUCER});
+	printf("\tPRODUCER\t\t\t= %s\n",$hdr{PRODUCER});
 	if (defined($hdr{SERIAL_NUMBER})) {
 		printf("\tINSTRUMENT\t\t\t= %s #%d\n",$hdr{INSTRUMENT_TYPE},$hdr{SERIAL_NUMBER});
     } else {

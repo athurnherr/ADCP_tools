@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B I N S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Wed Jan  6 16:08:54 2016
+#                    dlm: Sun Jan 31 12:43:28 2016
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 153 28 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 340 0 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -329,6 +329,15 @@ for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {				# check/transform velocities
 				next;
 			}
 		} else { 															# Earth coordinates
+
+			my(@iVels) = &velEarthToInstrument(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
+			my(@eVels) = &velInstrumentToEarth(\%dta,$e,@iVels);
+#			printf(STDERR "err($e,$b) = %g,%g/%g,%g/%g,%g/%g,%g\n",
+#												$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0],$iVels[0],
+#												$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1],$iVels[1],
+#												$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2],$iVels[2],
+#												$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3],$iVels[3]);
+
 			@{$dta{ENSEMBLE}[$e]->{BEAM_VELOCITY}[$b]} =					# calculate beam velocities
 				velInstrumentToBeam(\%dta,
 					&velEarthToInstrument(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]}));
