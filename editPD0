@@ -2,9 +2,9 @@
 #======================================================================
 #                    E D I T P D 0 
 #                    doc: Mon Nov 25 20:24:31 2013
-#                    dlm: Sat Jan  9 20:07:59 2016
+#                    dlm: Fri Feb 26 17:24:55 2016
 #                    (c) 2013 A.M. Thurnherr
-#                    uE-Info: 128 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 26 98 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # edit RDI PD0 file, e.g. to replace pitch/roll/heading with external values
@@ -23,10 +23,14 @@
 #		swap_beams(<b1>,<b2>)	swap data from beams b1 and b2
 #								input in beam coords required
 #								beam rotation is equivalent to 3 consecutive beam swaps
+#								basic BT data are swapped as well (not RL and not SIGNAL_STRENGTH)
 #
 #		earth2beam()			transform beam to earth coordinates
 #								does not handle bin-remapping
 #								input in beam coords required
+#
+#		ensure_UL()				overwrite transducer-orientation flag in data file
+#		ensure_DL()
 #
 #	- -x notes:
 #		- multiple perl expressions can be combined with ,
@@ -47,6 +51,9 @@
 #				  - change output data-source ID from 0x7F to 0xE0
 #				  - updated getopts to current perl version
 #				  - adapted to [ADCP_tools_lib.pl]
+#	Feb 15, 2016: - added ensure_UL() ensure_DL()
+#	Feb 23, 2016: - added -k
+#	Feb 26, 2016: - added basic BT data to swap_beams()
 
 use Getopt::Std;
 
@@ -57,8 +64,9 @@ require "$ADCP_TOOLS/ADCP_tools_lib.pl";
 $USAGE = "$0 @ARGV";
 die("Usage: $0 " .
     '-e) <edit-file> | -x) <expr> ' .
+    '-k)eep original data-source id' .
     "<input file> <output file>\n")
-        unless (&getopts('e:x:') && @ARGV == 2);
+        unless (&getopts('ke:x:') && @ARGV == 2);
 
 die("$0: -e <edit-file> or -x <expr> required\n")
     unless (defined($opt_x) || -r $opt_e);
@@ -75,21 +83,66 @@ print(STDERR "Editing Data...");
 # Data Editing Library
 #--------------------------------------------------
 
+#
+# override pitch/roll/heading
+#
 sub p($) { $dta{ENSEMBLE}[$e]->{PITCH} = $_[0]; return 1; }
 sub r($) { $dta{ENSEMBLE}[$e]->{ROLL} = $_[0]; return 1; }
 sub h($) { $dta{ENSEMBLE}[$e]->{HEADING} = $_[0]; return 1;}
 
+#
+# override transducer orientation
+#
+sub ensure_DL()
+{
+	$dta{ENSEMBLE}[$e]->{XDUCER_FACING_DOWN} = 1;
+	$dta{ENSEMBLE}[$e]->{XDUCER_FACING_UP} = undef;
+	return 1;
+}
+sub ensure_UL()
+{
+	$dta{ENSEMBLE}[$e]->{XDUCER_FACING_DOWN} = undef;
+	$dta{ENSEMBLE}[$e]->{XDUCER_FACING_UP} = 1;
+	return 1;
+}
+
+#
+# swap data from two mis-connected beams
+#
 sub swap_beams($$)
 {
 	my($b1,$b2) = @_;
+	my($tmp);
 
 #	print(STDERR "\n entering swap_beams($b1,$b2) for ens = $e...");
 
 	die("$ARGV[0]: beam-coordinate data required\n")
 		unless ($dta{BEAM_COORDINATES});
 
+	if ($dta{BT_PRESENT}) {
+		$tmp = $dta{ENSEMBLE}[$e]->{BT_RANGE}[$b1-1];
+		$dta{ENSEMBLE}[$e]->{BT_RANGE}[$b1-1] = $dta{ENSEMBLE}[$e]->{BT_RANGE}[$b2-1];
+		$dta{ENSEMBLE}[$e]->{BT_RANGE}[$b2-1] = $tmp;
+		                
+		$tmp = $dta{ENSEMBLE}[$e]->{BT_VELOCITY}[$b1-1];
+		$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[$b1-1] = $dta{ENSEMBLE}[$e]->{BT_VELOCITY}[$b2-1];
+		$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[$b2-1] = $tmp;
+		                
+		$tmp = $dta{ENSEMBLE}[$e]->{BT_CORRELATION}[$b1-1];
+		$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[$b1-1] = $dta{ENSEMBLE}[$e]->{BT_CORRELATION}[$b2-1];
+		$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[$b2-1] = $tmp;
+		                
+		$tmp = $dta{ENSEMBLE}[$e]->{BT_EVAL_AMPLITUDE}[$b1-1];
+		$dta{ENSEMBLE}[$e]->{BT_EVAL_AMPLITUDE}[$b1-1] = $dta{ENSEMBLE}[$e]->{BT_EVAL_AMPLITUDE}[$b2-1];
+		$dta{ENSEMBLE}[$e]->{BT_EVAL_AMPLITUDE}[$b2-1] = $tmp;
+		                
+		$tmp = $dta{ENSEMBLE}[$e]->{BT_PERCENT_GOOD}[$b1-1];
+		$dta{ENSEMBLE}[$e]->{BT_PERCENT_GOOD}[$b1-1] = $dta{ENSEMBLE}[$e]->{BT_PERCENT_GOOD}[$b2-1];
+		$dta{ENSEMBLE}[$e]->{BT_PERCENT_GOOD}[$b2-1] = $tmp;
+    }		                
+
 	for (my($bin)=0; $bin<$dta{N_BINS}; $bin++) {
-		my($tmp) = $dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$b1-1];
+		$tmp = $dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$b1-1];
 		$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$b1-1] = $dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$b2-1];
 		$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$b2-1] = $tmp;
 
@@ -109,6 +162,9 @@ sub swap_beams($$)
 }
 
 
+#
+# transform earth to beam coordinates
+#
 { my($checked);
 
 	sub earth2beam()
@@ -160,7 +216,8 @@ if (defined($opt_e)) {															# edit instructions in edit file
 }
 
 for (local($e)=my($eei)=0; $e<@{$dta{ENSEMBLE}}; $e++) {						# local() needed for p(), r(), h()
-	$dta{ENSEMBLE}[$e]->{DATA_SOURCE_ID} = 0xE0;								# mark all ensembles
+	$dta{ENSEMBLE}[$e]->{DATA_SOURCE_ID} = 0xE0									# mark all ensembles except first
+		unless ($opt_k || $e==0);
 	if ($EE[$eei] eq '*' || $EE[$eei] == $dta{ENSEMBLE}[$e]->{NUMBER}) {		# match => edit
 		eval($EX[$eei]) || die("$@ while executing <$EX[$eei]>\n");
 	} elsif ($EE[$eei] > $dta{ENSEMBLE}[$e]->{NUMBER}) {						# next edit later in file => skip

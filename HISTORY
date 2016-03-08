@@ -1,9 +1,9 @@
 ======================================================================
                     H I S T O R Y 
                     doc: Tue May 15 18:04:39 2012
-                    dlm: Tue Jan  5 13:22:10 2016
+                    dlm: Tue Mar  8 15:41:38 2016
                     (c) 2012 A.M. Thurnherr
-                    uE-Info: 35 46 NIL 0 0 72 3 2 8 NIL ofnI
+                    uE-Info: 55 28 NIL 0 0 72 3 2 8 NIL ofnI
 ======================================================================
 
 May 15, 2012:
@@ -28,8 +28,30 @@ Nov  4, 2015:
   - merged with Oct 2 version on Studio desktop, which ignores
     initial garbage in PD0 files
 
-Jan  5, 2015: V1.4
-	- added [ADCP_tools_lib.pl] with compile-time version control
-	- [RDI_Coords.pl] added &velEarthToBeam()
-	- updated [listBins] to use versioned libs and calc w12 & w34
-	  from earth-coordinate data correctly
+Jan  5, 2016: V1.4
+  - added [ADCP_tools_lib.pl] with compile-time version control
+  - [RDI_Coords.pl] added &velEarthToBeam()
+  - updated [listBins] to use versioned libs and calc w12 & w34
+    from earth-coordinate data correctly
+
+Jan 6, 2016:
+  - minor change to [listBins]
+
+Jan 9, 2016:
+  - added &velEarthToBeam(), &velBeamToEarth() to [RDI_Coords.pl]
+  - improvements to [RDI_PD0_IO.pl]
+  - adapted [listHdr] to producer-id in PD0 files & other minor changes
+  - renamed function to solve name conflic in [RDI_Utils.pl]
+
+Jan 9 - Feb 26:
+  - added swap_beams() to [editPD0]
+
+Feb 29, 2016:
+  - improvements to [RDI_PD0_IO.pl]
+  - finished debugging [RDI_Coords.pl]
+
+Mar 8, 2016: V1.4
+  - verified/updated version in [ADCP_tools_lib.pl] [.hg/hgrc]
+  - published V1.4 on server
+
+	  

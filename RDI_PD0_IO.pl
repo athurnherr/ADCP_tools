@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Sat Jan  9 17:57:01 2016
+#                    dlm: Mon Feb 29 12:30:04 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 73 64 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 1232 63 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Read RDI BroadBand Binary Data Files (*.[0-9][0-9][0-9])
@@ -71,6 +71,11 @@
 #				  - added PRODUCER
 #				  - BUG: writeData() did not work correctly for ECOGIG OC26 moored data (spaces in filename?)
 #				  - added support for patching coordinate system
+#	Feb 16, 2016: - added transducer orientation to WBPens()
+#				  - BUG: most WBPens() error messages used wrong file name
+#	Feb 23, 2016: - changed WBRhdr() to use 2nd ensemble (with correct data-source id)
+#	Feb 26, 2016: - added basic BT data to WBPens(); not BT_RL_* and BT_SIGNAL_STRENGTH
+#	Feb 29, 2016: - LEAP DAY: actually got BT data to work
 
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -85,6 +90,11 @@
 #	16.27	WH300 (2)				Nash 	?			59
 
 # PD0 FILE FORMAT EXTENSIONS:
+#
+#	- file creator encoded in DATA_SOURCE_ID
+#
+#	- first ensemble uses default RDI DATA_SOURCE_ID because the LDEO_IX
+#	  software assumes this
 #
 #	- DATA_SOURCE_ID = 0x7F						original TRDI PD0 file
 #
@@ -376,7 +386,14 @@ sub WBRhdr($)
 	# HEADER
 	#--------------------
 
-	$start_ens = skip_initial_trash();
+	skip_initial_trash();
+	sysread(WBRF,$buf,6) == 6 || die("$WBRcfn: $!");
+	($hid,$did,$dta->{ENSEMBLE_BYTES},$dummy,$dta->{NUMBER_OF_DATA_TYPES})
+		= unpack('CCvCC',$buf);
+	$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header",$hid,0));
+	$did == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header",$did,0));
+
+	$start_ens = sysseek(WBRF,$dta->{ENSEMBLE_BYTES}-6+2,1) || die("$WBRcfn: $!");
 	sysread(WBRF,$buf,6) == 6 || die("$WBRcfn: $!");
 	($hid,$did,$dta->{ENSEMBLE_BYTES},$dummy,$dta->{NUMBER_OF_DATA_TYPES})
 		= unpack('CCvCC',$buf);
@@ -910,14 +927,12 @@ sub WBRens($$$)
 
 		next if ($nxt == $ndt);													# no BT found => next ens
 
-		sysseek(WBRF,14,1) || die("$WBRcfn: $!");								# BT config
-
+		sysseek(WBRF,14,1) || die("$WBRcfn: $!");								# BT range, velocity, corr, %-good, ...
 		sysread(WBRF,$buf,28) == 28 || die("$WBRcfn: $!");
 		@dta = unpack('v4v4C4C4C4',$buf);
-	    
 		for ($beam=0; $beam<4; $beam++) {
-			${$E}[$ens]->{BT_RANGE}[$beam] = $dta[$beam] / 100
-					if ($dta[$beam]);
+			${$E}[$ens]->{BT_RANGE}[$beam] = $dta[$beam] / 100					# lower 2 bytes only! 
+					if ($dta[$beam]);											# (see below for high bytes)
 		}
 		for ($beam=0; $beam<4; $beam++) {
 			${$E}[$ens]->{BT_VELOCITY}[$beam] =
@@ -928,18 +943,16 @@ sub WBRens($$$)
 			${$E}[$ens]->{BT_CORRELATION}[$beam] = $dta[8+$beam]
 				if ($dta[8+$beam]);
 		}
-		for ($beam=0; $beam<4; $beam++) {
+		for ($beam=0; $beam<4; $beam++) {										# BT filter parameter
 			${$E}[$ens]->{BT_EVAL_AMPLITUDE}[$beam] = $dta[12+$beam];
 		}
 		for ($beam=0; $beam<4; $beam++) {
 			${$E}[$ens]->{BT_PERCENT_GOOD}[$beam] = $dta[16+$beam];
 		}
 
-		sysseek(WBRF,6,1) || die("$WBRcfn: $!");		# BT config
-
+		sysseek(WBRF,6,1) || die("$WBRcfn: $!");								# BT ref level stuff
 		sysread(WBRF,$buf,20) == 20 || die("$WBRcfn: $!");
 		@dta = unpack('v4C4C4C4',$buf);
-
 		for ($beam=0; $beam<4; $beam++) {
 			${$E}[$ens]->{BT_RL_VELOCITY}[$beam] =
 				unpack('s',pack('S',$dta[$beam])) / 1000
@@ -956,17 +969,15 @@ sub WBRens($$$)
 			${$E}[$ens]->{BT_RL_PERCENT_GOOD}[$beam] = $dta[12+$beam];
 		}
 
-		sysseek(WBRF,2,1) || die("$WBRcfn: $!");		# BT config
-
+		sysseek(WBRF,2,1) || die("$WBRcfn: $!");								# BT signal strength & BT range high bytes
 		sysread(WBRF,$buf,9) == 9 || die("$WBRcfn: $!");
 		@dta = unpack('C4CC4',$buf);
-
 		for ($beam=0; $beam<4; $beam++) {
 			${$E}[$ens]->{BT_SIGNAL_STRENGTH}[$beam] = $dta[$beam];
 		}
 		${$E}[$ens]->{HIGH_GAIN} if    ($dta[4]);
 		${$E}[$ens]->{LOW_GAIN} unless ($dta[4]);
-		for ($beam=0; $beam<4; $beam++) {
+		for ($beam=0; $beam<4; $beam++) {										# high bytes (1 byte per beam)
 			${$E}[$ens]->{BT_RANGE}[$beam] += $dta[5+$beam] * 655.36
 				if ($dta[5+$beam]);
 		}
@@ -1051,7 +1062,18 @@ sub WBPens($$$)
 		# Fixed Leader
 		#--------------------
 	
-		sysseek(WBPF,$start_ens+$WBPofs[0]+25,0) || die("$WBPcfn: $!");		# jump to EX/Coord-Transform
+		sysseek(WBPF,$start_ens+$WBPofs[0]+4,0)								# system config (transducer orientation)
+			|| die("$WBPcfn: $!");
+		sysread(WBPF,$buf,1) == 1 || die("$WBPcfn: $!");
+		$B1 = unpack('C',$buf);
+		$B1 |= 0x80 if ($dta->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP});
+		$B1 &= 0x7F if ($dta->{ENSEMBLE}[$ens]->{XDUCER_FACING_DOWN});
+		$buf = pack('C',$B1);
+		sysseek(WBPF,$start_ens+$WBPofs[0]+4,0)
+			|| die("$WBPcfn: $!");
+		syswrite(WBPF,$buf,1) == 1 || die("$WBPcfn: $!");
+
+		sysseek(WBPF,$start_ens+$WBPofs[0]+25,0) || die("$WBPcfn: $!");		# EX / coord-transformation
 		sysread(WBPF,$buf,1) == 1 || die("$WBPcfn: $!");
 		my($EX) = unpack('C',$buf);
 		if ($dta->{BEAM_COORDINATES}) {
@@ -1073,9 +1095,9 @@ sub WBPens($$$)
 		
 		$dta->{ENSEMBLE}[$ens]->{XDUCER_DEPTH} = round($dta->{ENSEMBLE}[$ens]->{XDUCER_DEPTH}*10);
 
-		#-----------------------------
-		# IMP allows for missing value
-		#-----------------------------
+		#---------------------------------
+		# NB: IMP allows for missing value
+		#---------------------------------
 
 		$dta->{ENSEMBLE}[$ens]->{HEADING} = defined($dta->{ENSEMBLE}[$ens]->{HEADING})
 							   ? round($dta->{ENSEMBLE}[$ens]->{HEADING}*100)
@@ -1104,7 +1126,7 @@ sub WBPens($$$)
 		# Velocity Data
 		#--------------------
 
-		sysseek(WBPF,$start_ens+$WBPofs[2]+2,0) || die("$WBRcfn: $!");	# skip velocity data id (assume it is correct)
+		sysseek(WBPF,$start_ens+$WBPofs[2]+2,0) || die("$WBPcfn: $!");	# skip velocity data id (assume it is correct)
 		for ($bin=0; $bin<$nbins; $bin++) {
 			for ($beam=0; $beam<4; $beam++) {
 				$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$bin][$beam] = defined($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$bin][$beam])
@@ -1120,7 +1142,7 @@ sub WBPens($$$)
 		# Correlation Data
 		#--------------------
 
-		sysseek(WBPF,$start_ens+$WBPofs[3]+2,0) || die("$WBRcfn: $!");
+		sysseek(WBPF,$start_ens+$WBPofs[3]+2,0) || die("$WBPcfn: $!");
 		for ($bin=0; $bin<$nbins; $bin++) {
 			for ($beam=0; $beam<4; $beam++) {
 				$buf = pack('C',$dta->{ENSEMBLE}[$ens]->{CORRELATION}[$bin][$beam]);
@@ -1133,7 +1155,7 @@ sub WBPens($$$)
 		# Echo Intensity Data
 		#--------------------
 
-		sysseek(WBPF,$start_ens+$WBPofs[4]+2,0) || die("$WBRcfn: $!");
+		sysseek(WBPF,$start_ens+$WBPofs[4]+2,0) || die("$WBPcfn: $!");
 
 		for ($bin=0; $bin<$nbins; $bin++) {
 			for ($beam=0; $beam<4; $beam++) {
@@ -1147,7 +1169,7 @@ sub WBPens($$$)
 		# Percent Good Data
 		#--------------------
 
-		sysseek(WBPF,$start_ens+$WBPofs[5]+2,0) || die("$WBRcfn: $!");
+		sysseek(WBPF,$start_ens+$WBPofs[5]+2,0) || die("$WBPcfn: $!");
 
 		for ($i=0,$bin=0; $bin<$nbins; $bin++) {
 			for ($beam=0; $beam<4; $beam++,$i++) {
@@ -1164,17 +1186,55 @@ sub WBPens($$$)
 
 		my($nxt);
 		for ($nxt=6; $nxt<$ndt; $nxt++) {										# scan until BT found
-			sysseek(WBPF,$start_ens+$WBPofs[$nxt],0) || die("$WBRcfn: $!");
-			sysread(WBPF,$buf,2) == 2 || die("$WBRcfn: $!");
+			sysseek(WBPF,$start_ens+$WBPofs[$nxt],0) || die("$WBPcfn: $!");
+			sysread(WBPF,$buf,2) == 2 || die("$WBPcfn: $!");
 			$id = unpack('v',$buf);
 			last if ($id == 0x0600);
 		}
 
 		unless ($nxt == $ndt) {													# BT found
-			sysseek(WBPF,14,1) || die("$WBRcfn: $!");							# skip BT config
-			# NOT YET IMPLEMENTED
-		}
+			sysseek(WBPF,14,1) || die("$WBPcfn: $!");							# skip BT config
+			for ($beam=0; $beam<4; $beam++) {									# BT range low bytes (2 per beam)
+				$buf = pack('v',round($dta->{ENSEMBLE}[$ens]->{BT_RANGE}[$beam] * 100) & 0xFFFF);
+				my($nw) = syswrite(WBPF,$buf,2);
+				$nw == 2 || die("$WBPcfn: $nw bytes written ($!)");
+			}
+			
+			for ($beam=0; $beam<4; $beam++) {									# BT velocities
+				$buf = pack('v',unpack('S',pack('s',
+						defined($dta->{ENSEMBLE}[$ens]->{BT_VELOCITY}[$beam])
+							? round($dta->{ENSEMBLE}[$ens]->{BT_VELOCITY}[$beam]*1000)
+							: 0x8000)));
+				my($nw) = syswrite(WBPF,$buf,2);
+				$nw == 2 || die("$WBPcfn: $nw bytes written ($!)");
+			}
+			
+			for ($beam=0; $beam<4; $beam++) {									# BT correlation
+				$buf = pack('C',$dta->{ENSEMBLE}[$ens]->{BT_CORRELATION}[$beam]);
+				my($nw) = syswrite(WBPF,$buf,1);
+				$nw == 1 || die("$WBPcfn: $nw bytes written ($!)");
+			}
+			
+			for ($beam=0; $beam<4; $beam++) {									# BT evaluation amp of matching filter
+                $buf = pack('C',$dta->{ENSEMBLE}[$ens]->{BT_EVAL_AMPLITUDE}[$beam]);
+                my($nw) = syswrite(WBPF,$buf,1);
+                $nw == 1 || die("$WBPcfn: $nw bytes written ($!)");
+            }
+            
+            for ($beam=0; $beam<4; $beam++) {									# BT percent good
+                $buf = pack('C',$dta->{ENSEMBLE}[$ens]->{BT_PERCENT_GOOD}[$beam]);
+                my($nw) = syswrite(WBPF,$buf,1);
+                $nw == 1 || die("$WBPcfn: $nw bytes written ($!)");
+            }
 
+			sysseek(WBPF,33,1) || die("$WBPcfn: $!");							# BT range high bytes (1 per beam)
+			for ($beam=0; $beam<4; $beam++) {
+				$buf = pack('C',(round($dta->{ENSEMBLE}[$ens]->{BT_RANGE}[$beam]*100) & 0xFF0000) >> 16);
+				my($nw) = syswrite(WBPF,$buf,1);
+				$nw == 1 || die("$WBPcfn: $nw bytes written ($!)");
+			}
+
+        } # if BT found
 
 		#----------------
 		# Update Checksum

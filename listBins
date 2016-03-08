@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B I N S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Sun Jan 31 12:43:28 2016
+#                    dlm: Mon Feb 29 18:10:25 2016
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 340 0 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 59 63 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -54,7 +54,9 @@
 #	Jan  5, 2016: - adapted to [ANTS_tools_lib.pl]
 #				  - adapted to calculation of w12, w34 from earth-coordinate data
 #				  - several other changes to the code that should not affect the results
-#	Jan  6, 2015: - -b removed (always output beamvels)
+#	Jan  6, 2016: - -b removed (always output beamvels)
+#	Jan 31, 2016: - started debugging the obviously wrong Earth2Beam() transformation
+#	Feb 29, 2016: - continued debugging; removed debugging code
 
 # General Notes:
 #	- everything (e.g. beams) is numbered from 1
@@ -318,9 +320,7 @@ for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {				# check/transform velocities
 				velBeamToBPEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{BEAM_VELOCITY}[$b]});
 
 			@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]} = 						# calculate earth velocities
-				velInstrumentToEarth(\%dta,$e,
-					velBeamToInstrument(\%dta,@{$dta{ENSEMBLE}[$e]->{BEAM_VELOCITY}[$b]})
-			  	);
+				velBeamToEarth(\%dta,@{$dta{ENSEMBLE}[$e]->{BEAM_VELOCITY}[$b]});
 			$dta{ENSEMBLE}[$e]->{THREE_BEAM}[$b] = $RDI_Coords::threeBeamFlag;
 			$three_beam[$b] += $RDI_Coords::threeBeamFlag;
 
@@ -329,18 +329,8 @@ for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {				# check/transform velocities
 				next;
 			}
 		} else { 															# Earth coordinates
-
-			my(@iVels) = &velEarthToInstrument(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
-			my(@eVels) = &velInstrumentToEarth(\%dta,$e,@iVels);
-#			printf(STDERR "err($e,$b) = %g,%g/%g,%g/%g,%g/%g,%g\n",
-#												$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0],$iVels[0],
-#												$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1],$iVels[1],
-#												$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2],$iVels[2],
-#												$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3],$iVels[3]);
-
 			@{$dta{ENSEMBLE}[$e]->{BEAM_VELOCITY}[$b]} =					# calculate beam velocities
-				velInstrumentToBeam(\%dta,
-					&velEarthToInstrument(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]}));
+				velEarthToBeam(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
 				                                            
 			@{$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b]} =				# calculate w12, w34
 				velBeamToBPEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{BEAM_VELOCITY}[$b]});

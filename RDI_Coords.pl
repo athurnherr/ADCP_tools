@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ C O O R D S . P L 
 #                    doc: Sun Jan 19 17:57:53 2003
-#                    dlm: Sun Jan 31 12:42:43 2016
+#                    dlm: Mon Feb 29 18:03:31 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 185 0 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 44 85 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # RDI Workhorse Coordinate Transformations
@@ -41,6 +41,8 @@
 #				  - removed unused code from &velBeamToBPInstrument
 #	Jan  5, 2016: - added &velEarthToInstrument(@), &velInstrumentToBeam(@)
 #	Jan  9, 2016: - added &velEarthToBeam(), &velBeamToEarth()
+#	Feb 29, 2016: - debugged & verified velEarthToInstrument(), velInstrumentToBeam()
+#				  - added velBeamToEarth()
 
 use strict;
 use POSIX;
@@ -157,9 +159,17 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 	}
 } # STATIC SCOPE
 
+
+sub velBeamToEarth(@)
+{
+	my($dtaR,$e,@v) = @_;
+	return velInstrumentToEarth($dtaR,$e,velBeamToInstrument($dtaR,@v));
+}
+
 #----------------------------------------------------------------------
 # velEarthToInstrument() transforms earth to instrument coordinates
 #	- based on manually inverted rotation matrix M (Sec 5.6 in coord-trans manual)
+#	- code was verified for both down- and uplookers
 #	- missing heading data (IMP) causes undef beam velocities
 #----------------------------------------------------------------------
 
@@ -170,26 +180,22 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 	{
 		my($dta,$ens,$u,$v,$w,$ev) = @_;
 
-		unless (@E2I) {
+		unless (@E2I &&
+				$pitch == $dta->{ENSEMBLE}[$ens]->{PITCH} &&
+				$roll  == $dta->{ENSEMBLE}[$ens]->{ROLL}) {
 			$hdg = $dta->{ENSEMBLE}[$ens]->{HEADING} - $dta->{HEADING_BIAS} 
 				if defined($dta->{ENSEMBLE}[$ens]->{HEADING});
 			$pitch = $dta->{ENSEMBLE}[$ens]->{PITCH};
 			$roll  = $dta->{ENSEMBLE}[$ens]->{ROLL};
 			my($rad_gimbal_pitch) = atan(tan(rad($pitch)) * cos(rad($roll)));
+			my($useRoll) = ($dta->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP}) ? $roll+180 : $roll;
 			my($sh,$ch) = (sin(rad($hdg)),cos(rad($hdg)))
 				if defined($hdg);				
 			my($sp,$cp) = (sin($rad_gimbal_pitch),cos($rad_gimbal_pitch));
-			my($sr,$cr) = (sin(rad($roll)),	cos(rad($roll)));
-			@E2I = $dta->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP}
-				 ? (
-					[$ch*-$cr+$sh*$sp*-$sr,	 $ch*$sp*-$sr-$sh*-$cr,	$cp*-$sr],
-				    [$sh*$cp,				 $ch*$cp,				$sp		],
-				    [$ch*-$sr-$sh*$sp*-$cr,	-$sh*-$sr-$ch*$sp*-$cr,	$cp*-$cr]
-				 ) : (
-					[$ch*$cr+$sh*$sp*$sr,	 $ch*$sp*$sr-$sh*$cr,	$cp*$sr	],
-				    [$sh*$cp,				 $ch*$cp,				$sp		],
-				    [$ch*$sr-$sh*$sp*$cr,	-$sh*$sr-$ch*$sp*$cr,	$cp*$cr	]
-				 );
+			my($sr,$cr) = (sin(rad($useRoll)),	  cos(rad($useRoll)));
+			@E2I = ([$ch*$cr+$sh*$sp*$sr,	 $ch*$sp*$sr-$sh*$cr,	-$cp*$sr],		# M^-1 = R^-1 * P^-1 * R^-1
+				    [$sh*$cp,				 $ch*$cp,				$sp	],
+				    [$ch*$sr-$sh*$sp*$cr,	-$sh*$sr-$ch*$sp*$cr,	$cp*$cr]);
 		}
 
 		return defined($dta->{ENSEMBLE}[$ens]->{HEADING})
