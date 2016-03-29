@@ -2,9 +2,9 @@
 #======================================================================
 #                    S C A N B I N S 
 #                    doc: Mon Jan 27 17:55:34 2003
-#                    dlm: Wed Sep 19 10:02:51 2007
+#                    dlm: Thu Mar 17 07:45:37 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 11 24 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 20 22 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Collect Per-Bin Stats
@@ -13,15 +13,17 @@
 # HISTORY:
 #	Jan 27, 2003: - created
 #	Sep 19, 2007: - adapted to new [RDI_BB_Read.pl] (not tested)
+#   Mar 17, 2016: - adapted to new Getopt library
+#				  - updated ancient library name
 
 $0 =~ m{(.*)/[^/]+}; 
-require "$1/WorkhorseBinRead.pl";
-require "getopts.pl";
+require "$1/RDI_PD0_IO.pl";
+use Getopt::Std;
 
 die("Usage: $0 " .
 	"" .
 	"<RDI file>\n")
-		unless (&Getopts("") && @ARGV == 1);
+		unless (&getopts("") && @ARGV == 1);
 
 print(STDERR "Reading $ARGV[0]...");
 readData($ARGV[0],\%dta);									# read data

@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T E N S 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Mon Sep  8 19:22:44 2014
+#                    dlm: Thu Mar 17 07:39:49 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 244 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 49 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the ensemble list or dump ensembles to
@@ -45,13 +45,14 @@
 #	Mar  4, 2014: - added partial support for DATA_SOURCE_ID
 #				  - added support for missing PITCH/ROLL/HEADING
 #	Sep  8, 2014: - added -B)T  
+#   Mar 17, 2016: - adapted to new Getopt library
 
 # Notes:
 #	- -E outputs data in earth coordinates, unless -b is set also
 #	- -E output is always in ANTS format, ignoring -A
 #	- no soundspeed correction
 
-require "getopts.pl";
+use Getopt::Std;
 $0 =~ m{(.*/)[^/]+};
 require "$1RDI_BB_Read.pl";
 require "$1RDI_Coords.pl";
@@ -62,7 +63,7 @@ die("Usage: $0 [-A)nts] [-Q)uiet (errcheck only)] " .
 			  "[write -E)nsemples <.suff> [use -B)T] [-M)agnetic <declination>] [min -p)ercent-good <#>] [keep -b)eam coords]] " .
 			  "[-r)ange <first_ens,last_ens>] [in-w)ater ensembles only] " .
 			  "<RDI file...>\n")
-	unless (&Getopts("4ABbd:E:f:M:p:Qr:w") && $#ARGV >= 0);
+	unless (&getopts("4ABbd:E:f:M:p:Qr:w") && $#ARGV >= 0);
 
 print(STDERR "WARNING: no soundspeed correction applied!\n");
 

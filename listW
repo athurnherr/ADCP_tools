@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T W 
 #                    doc: Wed Mar 24 06:45:09 2004
-#                    dlm: Mon Nov 25 18:30:33 2013
+#                    dlm: Thu Mar 17 07:45:02 2016
 #                    (c) 2004 A.M. Thurnherr
-#                    uE-Info: 23 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 24 49 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # dump vertical velocities
@@ -20,11 +20,13 @@
 #	Sep 19, 2007: - adapted to new [RDI_BB_Read.pl] (not tested)
 #	Jul 30, 2009: - NaN => nan
 #   Nov 25, 2013: - checkEnsemble() expunged
+#	Mar 17, 2016: - removed warning
+#				  - updated ancient library names
 
 $0 =~ m{(.*)/[^/]+}; 
-require "$1/WorkhorseBinRead.pl";
-require "$1/WorkhorseCoords.pl";
-require "$1/WorkhorseUtils.pl";
+require "$1/RDI_PD0_IO.pl";
+require "$1/RDI_Coords.pl";
+require "$1/RDI_Utils.pl";
 
 use Getopt::Std;
 
@@ -204,7 +206,7 @@ for ($e=$firstgood; $e<=$lastgood; $e++) {
 
 		sub p($) { print(defined($_[0])?"$_[0] ":"nan "); }
 		
-		if (defined(@f)) {
+		if (@f) {
 			foreach $f (@f) {
 				my($fn,$fi) = ($f =~ m{([^[]*)(\[.*)});
 				$fn = $f unless defined($fn);

@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B I N S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Mon Feb 29 18:10:25 2016
+#                    dlm: Thu Mar 17 07:39:43 2016
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 59 63 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 61 0 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -57,6 +57,7 @@
 #	Jan  6, 2016: - -b removed (always output beamvels)
 #	Jan 31, 2016: - started debugging the obviously wrong Earth2Beam() transformation
 #	Feb 29, 2016: - continued debugging; removed debugging code
+#   Mar 17, 2016: - adapted to new Getopt library
 
 # General Notes:
 #	- everything (e.g. beams) is numbered from 1
@@ -84,7 +85,7 @@
 #	- non-monotonic min_pcg is particularly obvious with the DYNAMUCK BM_ADCP
 #	  data, where one of the beams performed much worse than the others
 
-require "getopts.pl";
+use Getopt::Std;
 
 $ADCP_tools_minVersion = 1.4;
 ($ADCP_TOOLS) = ($0 =~ m{(.*/)[^/]+});
@@ -99,7 +100,7 @@ die("Usage: $0 [-r)ange <first_ens,last_ens>] [-R)enumber ensembles] " .
 		 	  "[require -4)-beam solutions] [-d)iscard <beam#>] " .
 		 	  "[-p)ct-good <min>] " .
 			  "<RDI file>\n")
-	unless (&Getopts("4aB:d:M:o:p:r:P:RS:") && @ARGV == 1);
+	unless (&getopts("4aB:d:M:o:p:r:P:RS:") && @ARGV == 1);
 
 ($P{pitch_bias},$P{roll_bias}) = split('[,/]',$opt_P);
 ($P{velbias_b1},$P{velbias_b2},$P{velbias_b3},$P{velbias_b4}) = split('[,/]',$opt_B);

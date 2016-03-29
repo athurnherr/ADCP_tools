@@ -2,9 +2,9 @@
 #======================================================================
 #                    R D I 2 G R D 
 #                    doc: Wed Aug 30 11:51:22 2006
-#                    dlm: Thu Jun 18 07:06:34 2009
+#                    dlm: Thu Mar 17 07:39:24 2016
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 18 54 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 20 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # make GMT grd files from RDI file
@@ -16,6 +16,7 @@
 #	Sep  1, 2006: - fiddled with registration
 #	Sep 19, 2007: - adapted to new [RDI_BB_Read.pl]
 #	Jun 18, 2009: - BUG: xysize had been called xyside
+#   Mar 17, 2016: - adapted to new Getopt library
 
 # NOTES:
 #	- regular grids only => no dimensional time axis for data collected
@@ -25,7 +26,7 @@
 #	- implement soundspeed corretion
 #	- add temporal pre-averaging
 
-require "getopts.pl";
+use Getopt::Std;
 $0 =~ m{(.*/)[^/]+};
 require "$1RDI_BB_Read.pl";
 require "$1RDI_Coords.pl";
@@ -123,7 +124,7 @@ $usage = "$0 @ARGV";
 die("Usage: $0 [-M)agnetic <declination>] [-r)ange <first_ens,last_ens>] " .
 			  "[output -b)ase <name>] [-d)imensional coordinates] " .
 			  "<RDI file>\n")
-	unless (&Getopts("b:dM:r:") && @ARGV == 1);
+	unless (&getopts("b:dM:r:") && @ARGV == 1);
 
 print(STDERR "WARNING: magnetic declination not set!\n")
 	unless defined($opt_M);

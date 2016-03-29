@@ -1,9 +1,9 @@
 ======================================================================
                     H I S T O R Y 
                     doc: Tue May 15 18:04:39 2012
-                    dlm: Tue Mar  8 15:41:38 2016
+                    dlm: Tue Mar 29 15:01:05 2016
                     (c) 2012 A.M. Thurnherr
-                    uE-Info: 55 28 NIL 0 0 72 3 2 8 NIL ofnI
+                    uE-Info: 62 35 NIL 0 0 72 3 2 8 NIL ofnI
 ======================================================================
 
 May 15, 2012:
@@ -54,4 +54,10 @@ Mar 8, 2016: V1.4
   - verified/updated version in [ADCP_tools_lib.pl] [.hg/hgrc]
   - published V1.4 on server
 
-	  
+Mar 17, 2016: V1.5
+  - verified/updated version in [ADCP_tools_lib.pl] [.hg/hgrc]
+  - adapted to new Getopts & removed compile warnings
+
+Mar 29, 2016:
+  - published for LADCP_w V1.2beta6
+
