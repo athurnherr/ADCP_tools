@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T E N S 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Thu Mar 17 07:39:49 2016
+#                    dlm: Tue Apr 19 21:11:12 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 49 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 181 53 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the ensemble list or dump ensembles to
@@ -46,6 +46,7 @@
 #				  - added support for missing PITCH/ROLL/HEADING
 #	Sep  8, 2014: - added -B)T  
 #   Mar 17, 2016: - adapted to new Getopt library
+#	Apr 19, 2016: - added %date, %time to -E output
 
 # Notes:
 #	- -E outputs data in earth coordinates, unless -b is set also
@@ -176,6 +177,8 @@ while (-f $ARGV[0]) {
 			open(P,">$file") || die("$file: $!\n");
 			print(P "#!/usr/bin/perl -S list\n");
 			print(P "#ANTS#PARAMS# " .
+					"date{$dta{ENSEMBLE}[$e]->{DATE}} " .
+					"time{$dta{ENSEMBLE}[$e]->{TIME}} " .
 					"BT_u{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[0]} " .
 					"BT_v{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[1]} " .
 					"BT_w{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[2]} " .

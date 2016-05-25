@@ -1,9 +1,9 @@
 ======================================================================
                     H I S T O R Y 
                     doc: Tue May 15 18:04:39 2012
-                    dlm: Tue Mar 29 15:01:05 2016
+                    dlm: Wed May 25 12:22:14 2016
                     (c) 2012 A.M. Thurnherr
-                    uE-Info: 62 35 NIL 0 0 72 3 2 8 NIL ofnI
+                    uE-Info: 72 20 NIL 0 0 72 3 2 8 NIL ofnI
 ======================================================================
 
 May 15, 2012:
@@ -60,4 +60,19 @@ Mar 17, 2016: V1.5
 
 Mar 29, 2016:
   - published for LADCP_w V1.2beta6
+
+Apr 12, 2016: V1.6
+  - updated version in [ADCP_tools_lib.pl]
+  - [editPD0]: added instrument2beam()
+
+Apr 19, 2016:
+  - added time/date to -E output [listEns]
+
+Apr 25, 2016:
+  - added [listVels]  
+
+May 19, 2016:
+  - began implemeting bin-interpolation in [RDI_Coords.pl], which requires
+    changes to velBeamToInstrument() arguments
+  - adapted several routines to velBeamToEarth()
 

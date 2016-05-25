@@ -2,9 +2,9 @@
 #======================================================================
 #                    R D I 2 G R D 
 #                    doc: Wed Aug 30 11:51:22 2006
-#                    dlm: Thu Mar 17 07:39:24 2016
+#                    dlm: Thu May 19 10:21:25 2016
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 20 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 186 33 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # make GMT grd files from RDI file
@@ -17,6 +17,7 @@
 #	Sep 19, 2007: - adapted to new [RDI_BB_Read.pl]
 #	Jun 18, 2009: - BUG: xysize had been called xyside
 #   Mar 17, 2016: - adapted to new Getopt library
+#	May 19, 2016: - adapted to velBeamToEarth()
 
 # NOTES:
 #	- regular grids only => no dimensional time axis for data collected
@@ -181,11 +182,9 @@ for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {			# check/transform velocities
 					 defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1]) &&
 					 defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2]) &&
 					 defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3]));
-		@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]} = $beamCoords
-			? velInstrumentToEarth(\%dta,$e,
-				  velBeamToInstrument(\%dta,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]})
-			  )
-			: velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
+		@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]} =
+			$beamCoords ? velBeamToEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]})
+					    : velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
 		$dta{ENSEMBLE}[$e]->{GOOD_VEL}[$b] = 1;
 		$good_vels[$b]++;
 		$lastGoodBin = $b if ($b > $lastGoodBin);

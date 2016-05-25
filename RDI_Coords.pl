@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ C O O R D S . P L 
 #                    doc: Sun Jan 19 17:57:53 2003
-#                    dlm: Mon Feb 29 18:03:31 2016
+#                    dlm: Thu May 19 10:18:44 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 44 85 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 167 0 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # RDI Workhorse Coordinate Transformations
@@ -43,6 +43,7 @@
 #	Jan  9, 2016: - added &velEarthToBeam(), &velBeamToEarth()
 #	Feb 29, 2016: - debugged & verified velEarthToInstrument(), velInstrumentToBeam()
 #				  - added velBeamToEarth()
+#	May 19, 2016: - begin implemeting bin interpolation
 
 use strict;
 use POSIX;
@@ -67,7 +68,7 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 
 	sub velBeamToInstrument(@)
 	{
-		my($dta,$v1,$v2,$v3,$v4) = @_;
+		my($dta,$ens,$v1,$v2,$v3,$v4) = @_;
 		return undef unless (defined($v1) + defined($v2) +
 					   		 defined($v3) + defined($v4)
 								>= $RDI_Coords::minValidVels);
@@ -163,7 +164,7 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 sub velBeamToEarth(@)
 {
 	my($dtaR,$e,@v) = @_;
-	return velInstrumentToEarth($dtaR,$e,velBeamToInstrument($dtaR,@v));
+	return velInstrumentToEarth($dtaR,$e,velBeamToInstrument($dtaR,$e,@v));
 }
 
 #----------------------------------------------------------------------

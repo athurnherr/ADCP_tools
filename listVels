@@ -1,0 +1,248 @@
+#!/usr/bin/perl
+#======================================================================
+#                    L I S T V E L S 
+#                    doc: Mon Apr 25 21:12:54 2016
+#                    dlm: Mon Apr 25 21:48:18 2016
+#                    (c) 2016 A.M. Thurnherr
+#                    uE-Info: 180 0 NIL 0 0 72 10 2 4 NIL ofnI
+#======================================================================
+
+# list water-track velocity samples as ANTS records (PD02ANTS)
+
+# HISTORY:
+#	Apr 25, 2016: - created from [listBins]
+
+# General Notes:
+#	- everything (e.g. beams) is numbered from 1
+#	- no support for BT data
+
+use Getopt::Std;
+
+$ADCP_tools_minVersion = 1.4;
+($ADCP_TOOLS) = ($0 =~ m{(.*/)[^/]+});
+require "$ADCP_TOOLS/ADCP_tools_lib.pl";
+
+die("Usage: $0 [-r)ange <first_ens,last_ens>] [-b)ins <first_bin,last_bin>] " .
+			  "[-M)agnetic <declination>] " .
+			  "[-S)oundspeed correction <salin|*,temp|*,depth|*> " .
+			  "[-P)itch/Roll <bias/bias>] [-B)eamvel <bias/bias/bias/bias>] " .
+		 	  "[require -4)-beam solutions] [-d)iscard <beam#>] " .
+			  "<RDI file>\n")
+	unless (&getopts("4b:B:d:M:r:P:S:") && @ARGV == 1);
+
+($P{pitch_bias},$P{roll_bias}) = split('[,/]',$opt_P);
+($P{velbias_b1},$P{velbias_b2},$P{velbias_b3},$P{velbias_b4}) = split('[,/]',$opt_B);
+
+die("$0: -4 and -d are mutually exclusive\n")
+	if ($opt_4 && defined($opt_d));
+
+$RDI_Coords::minValidVels = 4 if ($opt_4);			# no 3-beam solutions
+
+print(STDERR "WARNING: magnetic declination not set!\n")
+	unless defined($opt_M);
+
+$ifn = $ARGV[0];
+
+($first_ens,$last_ens) = split(',',$opt_r) if defined($opt_r);
+($first_bin,$last_bin) = split(',',$opt_b) if defined($opt_b);
+
+if (defined($opt_S)) {
+	($SS_salin,$SS_temp,$SS_depth) = split(',',$opt_S);
+	$variable_ssCorr = ($SS_salin eq '*' || $SS_temp eq '*' || $SS_depth eq '*');
+} else {
+	print(STDERR "WARNING: no soundspeed correction applied!\n");
+}
+
+#----------------------------------------------------------------------
+# MAIN
+#----------------------------------------------------------------------
+
+$P{RDI_file} = $ifn;
+$P{mag_decl} = $opt_M if defined($opt_M);
+
+readData($ifn,\%dta);
+printf(STDERR "%d complete ensembles...\n",scalar(@{$dta{ENSEMBLE}}));
+$dta{HEADING_BIAS} = -$opt_M;						# magnetic declination
+
+if ($dta{BEAM_COORDINATES}) {						# coords
+	$beamCoords = 1;
+} else {
+	die("$ifn: only beam and earth coordinates supported\n")
+		if (!$dta{EARTH_COORDINATES});
+	die("$ifn: -d requires beam-coordinate data\n")
+		if defined($opt_d);
+	die("$ifn: -B requires beam-coordinate data\n")
+		if defined($opt_B);
+}
+
+$first_bin = 1 				unless ($first_bin > 0);
+$last_bin  = $dta{N_BINS}+1 unless ($last_bin >= $first_bin && $last_bin <= $dta{N_BINS}+1);
+
+$lastGoodBin = 0;
+for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {				# check/transform velocities
+	next if (defined($first_ens) &&
+			 $dta{ENSEMBLE}[$e]->{NUMBER} < $first_ens);
+
+	$dta{ENSEMBLE}[$e]->{PITCH} -= $P{pitch_bias}
+		if defined($dta{ENSEMBLE}[$e]->{PITCH});
+	$dta{ENSEMBLE}[$e]->{ROLL}  -= $P{roll_bias}
+		if defined($dta{ENSEMBLE}[$e]->{ROLL});
+
+	$P{first_ens} = $dta{ENSEMBLE}[$e]->{NUMBER},$fe = $e
+		unless defined($P{first_ens});
+	last if (defined($last_ens) &&
+			 $dta{ENSEMBLE}[$e]->{NUMBER} > $last_ens);
+	$P{last_ens} = $dta{ENSEMBLE}[$e]->{NUMBER};
+	$le = $e;
+
+	die("3-beams used in ensemble #$dta{ENSEMBLE}[$e]->{NUMBER}\n")
+		if ($dta{ENSEMBLE}[$e]->{N_BEAMS_USED} < 4);
+	die("BIT error in ensemble $dta{ENSEMBLE}[$e]->{NUMBER}\n")
+		if defined($dta{ENSEMBLE}[$e]->{BUILT_IN_TEST_ERROR});
+	die("Low gain in ensemble #$dta{ENSEMBLE}[$e]->{NUMBER}\n")
+        if ($dta{ENSEMBLE}[$e]->{LOW_GAIN});
+
+	for (my($b)=0; $b<$dta{N_BINS}; $b++) {
+		if ($beamCoords) {
+			$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0] -= $P{velbias_b1}			# beam-velocity biases (-B)
+				if defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0]);
+			$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1] -= $P{velbias_b2}
+				if defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1]);
+			$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2] -= $P{velbias_b3}
+				if defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2]);
+			$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3] -= $P{velbias_b4}
+				if defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3]);
+
+			if (defined($opt_d)) {											# discard data from given beam (-d)
+				undef($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][$opt_d-1]);
+				undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][$opt_d-1]);
+			}
+
+			@{$dta{ENSEMBLE}[$e]->{BEAM_VELOCITY}[$b]} =					# save beam velocities
+				@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]};
+
+			@{$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b]} =				# calculate w12, w34
+				velBeamToBPEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{BEAM_VELOCITY}[$b]});
+
+			@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]} = 						# calculate earth velocities
+				velBeamToEarth(\%dta,@{$dta{ENSEMBLE}[$e]->{BEAM_VELOCITY}[$b]});
+			$dta{ENSEMBLE}[$e]->{THREE_BEAM}[$b] = $RDI_Coords::threeBeamFlag;
+			$three_beam[$b] += $RDI_Coords::threeBeamFlag;
+
+			unless (defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0])) {
+				undef(@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]});			# not sure when this can happen
+				next;
+			}
+		} else { 															# Earth coordinates
+			@{$dta{ENSEMBLE}[$e]->{BEAM_VELOCITY}[$b]} =					# calculate beam velocities
+				velEarthToBeam(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
+				                                            
+			@{$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b]} =				# calculate w12, w34
+				velBeamToBPEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{BEAM_VELOCITY}[$b]});
+
+			@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]} = 						# correct for heading bias
+				velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
+
+			unless (defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0])) {
+				undef(@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]});			# not sure when/if this can happen
+				next;
+			}
+
+		}
+
+		$dta{ENSEMBLE}[$e]->{GOOD_VEL}[$b] = 1;
+		$good_vels[$b]++; 
+		$lastGoodBin = $b if ($b > $lastGoodBin);
+		$firstGoodEns = $e unless defined($firstGoodEns);
+		$lastGoodEns = $e;
+    }
+}
+
+unless (defined($opt_r)) {
+	$fe = $firstGoodEns;
+	$le = $lastGoodEns;
+}
+
+$P{N_ensembles} = $le - $fe + 1;
+
+$firstBin = 0;
+$lastBin = $lastGoodBin;
+
+print( STDERR "Start      : $dta{ENSEMBLE}[$fe]->{DATE} $dta{ENSEMBLE}[$fe]->{TIME}\n");
+print( STDERR "End        : $dta{ENSEMBLE}[$le]->{DATE} $dta{ENSEMBLE}[$le]->{TIME}\n");
+printf(STDERR "Bins       : %d-%d\n",$firstBin+1,$lastBin+1);
+if ($beamCoords) {
+	printf(STDERR "3-Beam     : %d %d %d %d\n",$RDI_Coords::threeBeam_1,
+											   $RDI_Coords::threeBeam_2,
+											   $RDI_Coords::threeBeam_3,
+											   $RDI_Coords::threeBeam_4);
+	
+}
+
+
+#----------------------------------------------------------------------
+# generate output
+#----------------------------------------------------------------------
+
+print("#ANTS#PARAMS# ");														# %PARAMs
+foreach my $k (keys(%P)) {
+	print(P "$k\{$P{$k}\} ");
+}
+printf(" soundspeed_correction{%s}",defined($opt_S) ? $opt_S : 'NONE!');
+print("\n");
+
+print("#ANTS#FIELDS# " .														# LAYOUT
+		"{ensemble} {heading} {pitch} {roll} {bin} " .
+		"{b1} {b2} {b3} {b4} {u} {v} {w} {err_vel} " .
+		"{v12} {w12} {v34} {w34} " .
+		"{corr1} {corr2} {corr3} {corr4} " .
+		"{amp1} {amp2} {amp3} {amp4} " .
+		"{pcg1} {pcg2} {pcg3} {pcg4}\n"
+);
+
+for (my($e)=$fe; $e<=$le; $e++) {
+	my($ssCorr) = defined($opt_S) ? ssCorr($dta{ENSEMBLE}[$e],$SS_salin,$SS_temp,$SS_depth) : 1;
+	for (my($b)=$first_bin=1; $b<=$last_bin-1; $b++) {
+		print("$dta{ENSEMBLE}[$e]->{NUMBER} ");
+		print(defined($dta{ENSEMBLE}[$e]->{HEADING}) ? "$dta{ENSEMBLE}[$e]->{HEADING} " : 'nan ');
+		print(defined($dta{ENSEMBLE}[$e]->{PITCH}) ? "$dta{ENSEMBLE}[$e]->{PITCH} " : 'nan ');
+		print(defined($dta{ENSEMBLE}[$e]->{ROLL}) ? "$dta{ENSEMBLE}[$e]->{ROLL} " : 'nan ');
+		printf("%d ",$b+1);
+
+		if ($dta{ENSEMBLE}[$e]->{GOOD_VEL}[$b]) {
+			printf("%g %g %g %g ",@{$dta{ENSEMBLE}[$e]->{BEAM_VELOCITY}[$b]});
+			printf("%g ",$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0] * $ssCorr);
+			printf("%g ",$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1] * $ssCorr);
+			printf("%g ",$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2] * $ssCorr);
+			if ($dta{ENSEMBLE}[$e]->{THREE_BEAM}[$b]) {
+				print("nan ");
+			} else {
+				printf("%g ",$dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3] * $ssCorr);
+			}
+			printf(defined($dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][0]) ? "%g " : "nan ",
+						$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][0]);
+			printf(defined($dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][1]) ? "%g " : "nan ",
+						$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][1]);
+			printf(defined($dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][2]) ? "%g " : "nan ",
+						$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][2]);
+			printf(defined($dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][3]) ? "%g " : "nan ",
+						$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b][3]);
+		} else {
+			print("nan nan nan nan ");
+			print("nan nan nan nan ");
+			print("nan nan nan nan ");
+	    }
+	    
+		print("@{$dta{ENSEMBLE}[$e]->{CORRELATION}[$b]} ");
+		print("@{$dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b]} ");
+
+		if ($beamCoords) {
+			print("@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]} ");
+		} else {
+			printf("nan nan nan nan ");
+		}
+		print("\n");
+	}
+}
+
+exit(0);	

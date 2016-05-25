@@ -1,9 +1,9 @@
 #======================================================================
 #                    I N D E X 
 #                    doc: Thu Feb  7 14:21:21 2008
-#                    dlm: Sun Sep 27 12:18:28 2015
+#                    dlm: Wed May 25 12:17:43 2016
 #                    (c) 2008 A.M. Thurnherr
-#                    uE-Info: 31 0 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 15 33 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 =General Utilities=
@@ -12,6 +12,7 @@
 [listHdr]	list header info
 [listEns]	list ensembles
 [listBT]	list bottom-track data
+[listVels]	list water-track data
 [listW]		list vertical velocities; BROKEN
 [scanBins]	list per-bin stats; BROKEN
 [splitPD0]	split PD0 file using list of ensemble numbers

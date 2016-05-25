@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Sat Jan  9 16:36:52 2016
+#                    dlm: Thu May 19 10:23:48 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 55 41 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 56 62 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -53,6 +53,7 @@
 #	Mar 22, 2015: - BUG: mk_prof could bomb because of division-by-zero in return statement
 #	Jan  9, 2016: - renamed ref_lr_w to mk_prof_ref_lr_w because the old name conflicts
 #				    with a sub in LADCP_w
+#   May 19, 2016: - adapted to new velBeamToInstrument() usage
 
 use strict;
 
@@ -133,11 +134,8 @@ sub find_seabed($$$)
 					 defined($d->{ENSEMBLE}[$i]->{BT_RANGE}[1]) &&
 					 defined($d->{ENSEMBLE}[$i]->{BT_RANGE}[2]) &&
 					 defined($d->{ENSEMBLE}[$i]->{BT_RANGE}[3]));
-		my(@BT) = $beamCoords
-				? velInstrumentToEarth($d,$i,
-					velBeamToInstrument($d,
-						@{$d->{ENSEMBLE}[$i]->{BT_VELOCITY}}))
-				: velApplyHdgBias($d,$i,@{$d->{ENSEMBLE}[$i]->{BT_VELOCITY}});
+		my(@BT) = $beamCoords ? velBeamToEarth($d,$i,@{$d->{ENSEMBLE}[$i]->{BT_VELOCITY}})
+							  : velApplyHdgBias($d,$i,@{$d->{ENSEMBLE}[$i]->{BT_VELOCITY}});
 		next unless (abs($BT[3]) < 0.05);
 		$d->{ENSEMBLE}[$i]->{seabed} =
 			 $d->{ENSEMBLE}[$i]->{BT_RANGE}[0]/4 +
@@ -289,7 +287,7 @@ sub mk_prof_ref_lr_w($$$$$$$)
 				if ($dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][2] < $min_pctg);
 			undef($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][3])
 	            if ($dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][3] < $min_pctg);
-	        @vi = velBeamToInstrument($dta,@{$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i]});
+	        @vi = velBeamToInstrument($dta,$ens,@{$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i]});
 			@v = velInstrumentToEarth($dta,$ens,@vi);
 			@vbp = velBeamToBPEarth($dta,$ens,@{$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i]});
 		} else {
@@ -299,7 +297,6 @@ sub mk_prof_ref_lr_w($$$$$$$)
 					 $dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][3] < $min_pctg);
 			@v = @{$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i]};
 		}
-###		next if (!defined($v[3]) || abs($v[3]) > $max_e);		# disallow 3-beam solutions
 		next if (defined($v[3]) && abs($v[3]) > $max_e);		# allow 3-beam solutions
 
 		if (defined($v[2])) {									# valid vertical velocity

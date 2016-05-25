@@ -2,9 +2,9 @@
 #======================================================================
 #                    B E A M S T A T S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Thu Mar 17 07:39:34 2016
+#                    dlm: Thu May 19 10:24:48 2016
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 35 0 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 254 0 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -32,6 +32,7 @@
 #				  - removed missing magdecl warning on -b
 #	Mar  4, 2014: - added support for missing PITCH/ROLL/HEADING
 #   Mar 17, 2016: - adapted to new Getopt library
+#   May 19, 2016: - adapted to velBeamToEarth()
 
 # General Notes:
 #	- everything (e.g. beams) is numbered from 1
@@ -248,11 +249,9 @@ for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {			# check/transform velocities
 				undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][$i]);
 			}
         }
-		@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]} = $beamCoords
-			? velInstrumentToEarth(\%dta,$e,
-				  velBeamToInstrument(\%dta,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]})
-			  )
-			: velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]})
+		@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]} = 
+			$beamCoords ? velBeamToEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]})
+		   			    : velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]})
 				unless ($opt_b);
 		unless (defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0])) {
 			undef(@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]});
