@@ -1,78 +1,124 @@
 ======================================================================
                     H I S T O R Y 
                     doc: Tue May 15 18:04:39 2012
-                    dlm: Wed May 25 12:22:14 2016
+                    dlm: Thu May 26 10:40:58 2016
                     (c) 2012 A.M. Thurnherr
-                    uE-Info: 72 20 NIL 0 0 72 3 2 8 NIL ofnI
+                    uE-Info: 124 44 NIL 0 0 72 3 2 4 NIL ofnI
 ======================================================================
 
+--------------------------------------
+V1.0 (for re-implemented shear method)
+--------------------------------------
+
 May 15, 2012:
-  - V1.0 [.hg/hgrc]
-  - began history
-  - uploaded current version to server for use with first version
-    of re-implemented shear method
+	- V1.0 [.hg/hgrc]
+	- began history
+	- uploaded current version to server for use with first version
+      of re-implemented shear method
+
+----
+V1.1
+----
 
 Jul 11, 2013:
-  - V1.1 [.hg/hgrc]
-  - various minor improvements
+	- V1.1 [.hg/hgrc]
+	- various minor improvements
+
+
+---------------------------------------------------	
+V1.2 (for Glider-ADCP processing with shear method)
+---------------------------------------------------	
 
 May  7, 2015:
-  - V1.2 [.hg/hgrc]
-  - version used for LADCPproc V1.3 (Explorer/Slocum processing)
+	- V1.2 [.hg/hgrc]
+	- version used for LADCPproc V1.3 (Explorer/Slocum processing)
+
+
+-----------------------
+V1.3 (for LADCP_w V1.0)	
+-----------------------
 
 Oct 12, 2015:
-  - V1.3 [.hg/hgrc]  
-  - version published for LADCP_w V1.0
+	- V1.3 [.hg/hgrc]  
+	- version published for LADCP_w V1.0
 
-Nov  4, 2015:
-  - merged with Oct 2 version on Studio desktop, which ignores
-    initial garbage in PD0 files
 
-Jan  5, 2016: V1.4
-  - added [ADCP_tools_lib.pl] with compile-time version control
-  - [RDI_Coords.pl] added &velEarthToBeam()
-  - updated [listBins] to use versioned libs and calc w12 & w34
-    from earth-coordinate data correctly
+-----------------------
+V1.4 (for LADCP_1 V1.2)
+-----------------------
+
+Nov  4, 2015: V1.4
+	- merged with Oct 2 version on Studio desktop, which ignores
+      initial garbage in PD0 files
+
+Jan  5, 2016: 
+	- added [ADCP_tools_lib.pl] with compile-time version control
+	- [RDI_Coords.pl] added &velEarthToBeam()
+	- updated [listBins] to use versioned libs and calc w12 & w34
+      from earth-coordinate data correctly
 
 Jan 6, 2016:
-  - minor change to [listBins]
+	- minor change to [listBins]
 
 Jan 9, 2016:
-  - added &velEarthToBeam(), &velBeamToEarth() to [RDI_Coords.pl]
-  - improvements to [RDI_PD0_IO.pl]
-  - adapted [listHdr] to producer-id in PD0 files & other minor changes
-  - renamed function to solve name conflic in [RDI_Utils.pl]
+	- added &velEarthToBeam(), &velBeamToEarth() to [RDI_Coords.pl]
+	- improvements to [RDI_PD0_IO.pl]
+	- adapted [listHdr] to producer-id in PD0 files & other minor changes
+	- renamed function to solve name conflic in [RDI_Utils.pl]
 
 Jan 9 - Feb 26:
-  - added swap_beams() to [editPD0]
+	- added swap_beams() to [editPD0]
 
 Feb 29, 2016:
-  - improvements to [RDI_PD0_IO.pl]
-  - finished debugging [RDI_Coords.pl]
+	- improvements to [RDI_PD0_IO.pl]
+	- finished debugging [RDI_Coords.pl]
 
-Mar 8, 2016: V1.4
-  - verified/updated version in [ADCP_tools_lib.pl] [.hg/hgrc]
-  - published V1.4 on server
+Mar 8, 2016:
+	- verified/updated version in [ADCP_tools_lib.pl] [.hg/hgrc]
+	- published V1.4 on server
+
+
+----------------------------------
+V1.5 (adapted to more modern perl)
+----------------------------------
 
 Mar 17, 2016: V1.5
-  - verified/updated version in [ADCP_tools_lib.pl] [.hg/hgrc]
-  - adapted to new Getopts & removed compile warnings
+	- verified/updated version in [ADCP_tools_lib.pl] [.hg/hgrc]
+	- adapted to new Getopts & removed compile warnings
 
 Mar 29, 2016:
-  - published for LADCP_w V1.2beta6
+	- published for LADCP_w V1.2beta6
 
+
+---------------------------------------------------------------------
+V1.6 (bin interpolation; prematurely published for LADCP_w V1.3beta1)
+---------------------------------------------------------------------
+	
 Apr 12, 2016: V1.6
-  - updated version in [ADCP_tools_lib.pl]
-  - [editPD0]: added instrument2beam()
+	- updated version in [ADCP_tools_lib.pl]
+	- [editPD0]: added instrument2beam()
 
 Apr 19, 2016:
-  - added time/date to -E output [listEns]
+	- added time/date to -E output [listEns]
 
 Apr 25, 2016:
-  - added [listVels]  
+	- added [listVels] utility
 
 May 19, 2016:
-  - began implemeting bin-interpolation in [RDI_Coords.pl], which requires
-    changes to velBeamToInstrument() arguments
-  - adapted several routines to velBeamToEarth()
+	- began implemeting bin-interpolation in [RDI_Coords.pl], which requires
+      changes to velBeamToInstrument() arguments
+	- adapted several routines to velBeamToEarth()
 
+May 25, 2016:
+	- published for LADCP_w V1.3beta1
+
+------------------------
+V1.7 (bin interpolation)
+------------------------
+
+May 25, 2016:
+	- continue working on bin interpolation [RDI_Coords.pl]
+
+May 26, 2016:
+	- made it work
+	- updated version in [ADCP_tools_lib.pl]

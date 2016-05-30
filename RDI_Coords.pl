@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ C O O R D S . P L 
 #                    doc: Sun Jan 19 17:57:53 2003
-#                    dlm: Thu May 19 10:18:44 2016
+#                    dlm: Thu May 26 17:40:20 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 167 0 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 530 14 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # RDI Workhorse Coordinate Transformations
@@ -44,6 +44,8 @@
 #	Feb 29, 2016: - debugged & verified velEarthToInstrument(), velInstrumentToBeam()
 #				  - added velBeamToEarth()
 #	May 19, 2016: - begin implemeting bin interpolation
+#	May 25, 2016: - continued
+#	May 26, 2016: - made it work
 
 use strict;
 use POSIX;
@@ -53,9 +55,18 @@ my($PI) = 3.14159265358979;
 sub rad(@) { return $_[0]/180 * $PI; }
 sub deg(@) { return $_[0]/$PI * 180; }
 
-$RDI_Coords::minValidVels = 3;			# 3-beam solutions ok
+#----------------------------------------------------------------------
+# Tweakables
+#----------------------------------------------------------------------
 
-$RDI_Coords::threeBeam_1 = 0;			# stats
+$RDI_Coords::minValidVels = 3;			# 3-beam solutions ok (velBeamToInstrument)
+$RDI_Coords::binMapping = 'linterp';	# 'linterp' or 'none' (earthVels, BPearthVels)
+
+#----------------------------------------------------------------------
+# beam to earth transformation (from RDI coord trans manual)
+#----------------------------------------------------------------------
+
+$RDI_Coords::threeBeam_1 = 0;			# stats from velBeamToInstrument
 $RDI_Coords::threeBeam_2 = 0;
 $RDI_Coords::threeBeam_3 = 0;
 $RDI_Coords::threeBeam_4 = 0;
@@ -68,15 +79,15 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 
 	sub velBeamToInstrument(@)
 	{
-		my($dta,$ens,$v1,$v2,$v3,$v4) = @_;
+		my($ADCP,$ens,$v1,$v2,$v3,$v4) = @_;
 		return undef unless (defined($v1) + defined($v2) +
 					   		 defined($v3) + defined($v4)
 								>= $RDI_Coords::minValidVels);
 
 		unless (@B2I) {
-			my($a) = 1 / (2 * sin(rad($dta->{BEAM_ANGLE})));
-			my($b) = 1 / (4 * cos(rad($dta->{BEAM_ANGLE})));
-			my($c) = $dta->{CONVEX_BEAM_PATTERN} ? 1 : -1;
+			my($a) = 1 / (2 * sin(rad($ADCP->{BEAM_ANGLE})));
+			my($b) = 1 / (4 * cos(rad($ADCP->{BEAM_ANGLE})));
+			my($c) = $ADCP->{CONVEX_BEAM_PATTERN} ? 1 : -1;
 			my($d) = $a / sqrt(2);
 			@B2I = ([$c*$a,	-$c*$a,	0,		0	 ],
 				    [0,		0,		-$c*$a,	$c*$a],
@@ -117,28 +128,28 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 
 	sub velInstrumentToEarth(@)
 	{
-		my($dta,$ens,$v1,$v2,$v3,$v4) = @_;
+		my($ADCP,$ens,$v1,$v2,$v3,$v4) = @_;
 		return undef unless (defined($v1) && defined($v2) &&
 					   		 defined($v3) && defined($v4) &&
-							 defined($dta->{ENSEMBLE}[$ens]->{PITCH}) &&
-							 defined($dta->{ENSEMBLE}[$ens]->{ROLL}));
+							 defined($ADCP->{ENSEMBLE}[$ens]->{PITCH}) &&
+							 defined($ADCP->{ENSEMBLE}[$ens]->{ROLL}));
 	
 		unless (@I2E &&
-				$pitch == $dta->{ENSEMBLE}[$ens]->{PITCH} &&
-				$roll  == $dta->{ENSEMBLE}[$ens]->{ROLL}) {
+				$pitch == $ADCP->{ENSEMBLE}[$ens]->{PITCH} &&
+				$roll  == $ADCP->{ENSEMBLE}[$ens]->{ROLL}) {
 			printf(STDERR "$0: warning HEADING_ALIGNMENT == %g ignored\n",
-						  $dta->{HEADING_ALIGNMENT})
-				if ($dta->{HEADING_ALIGNMENT});
-			$hdg   = $dta->{ENSEMBLE}[$ens]->{HEADING} - $dta->{HEADING_BIAS}
-				if defined($dta->{ENSEMBLE}[$ens]->{HEADING});
-			$pitch = $dta->{ENSEMBLE}[$ens]->{PITCH};
-			$roll  = $dta->{ENSEMBLE}[$ens]->{ROLL};
+						  $ADCP->{HEADING_ALIGNMENT})
+				if ($ADCP->{HEADING_ALIGNMENT});
+			$hdg   = $ADCP->{ENSEMBLE}[$ens]->{HEADING} - $ADCP->{HEADING_BIAS}
+				if defined($ADCP->{ENSEMBLE}[$ens]->{HEADING});
+			$pitch = $ADCP->{ENSEMBLE}[$ens]->{PITCH};
+			$roll  = $ADCP->{ENSEMBLE}[$ens]->{ROLL};
 			my($rad_gimbal_pitch) = atan(tan(rad($pitch)) * cos(rad($roll)));
 			my($sh,$ch) = (sin(rad($hdg)),cos(rad($hdg)))
 				if defined($hdg);				
 			my($sp,$cp) = (sin($rad_gimbal_pitch),cos($rad_gimbal_pitch));
 			my($sr,$cr) = (sin(rad($roll)),	cos(rad($roll)));
-			@I2E = $dta->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP}
+			@I2E = $ADCP->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP}
 				 ? (
 					[-$ch*$cr-$sh*$sp*$sr,	$sh*$cp,-$ch*$sr+$sh*$sp*$cr],
 					[-$ch*$sp*$sr+$sh*$cr,	$ch*$cp, $sh*$sr+$ch*$sp*$cr],
@@ -149,7 +160,7 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 					[-$cp*$sr,				$sp,	 $cp*$cr,			],
 				 );
 		}
-		return defined($dta->{ENSEMBLE}[$ens]->{HEADING})
+		return defined($ADCP->{ENSEMBLE}[$ens]->{HEADING})
 			   ? ($v1*$I2E[0][0]+$v2*$I2E[0][1]+$v3*$I2E[0][2],
 				  $v1*$I2E[1][0]+$v2*$I2E[1][1]+$v3*$I2E[1][2],
 				  $v1*$I2E[2][0]+$v2*$I2E[2][1]+$v3*$I2E[2][2],
@@ -163,9 +174,10 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 
 sub velBeamToEarth(@)
 {
-	my($dtaR,$e,@v) = @_;
-	return velInstrumentToEarth($dtaR,$e,velBeamToInstrument($dtaR,$e,@v));
+	my($ADCP,$e,@v) = @_;
+	return velInstrumentToEarth($ADCP,$e,velBeamToInstrument($ADCP,$e,@v));
 }
+
 
 #----------------------------------------------------------------------
 # velEarthToInstrument() transforms earth to instrument coordinates
@@ -179,17 +191,17 @@ sub velBeamToEarth(@)
 
 	sub velEarthToInstrument(@)
 	{
-		my($dta,$ens,$u,$v,$w,$ev) = @_;
+		my($ADCP,$ens,$u,$v,$w,$ev) = @_;
 
 		unless (@E2I &&
-				$pitch == $dta->{ENSEMBLE}[$ens]->{PITCH} &&
-				$roll  == $dta->{ENSEMBLE}[$ens]->{ROLL}) {
-			$hdg = $dta->{ENSEMBLE}[$ens]->{HEADING} - $dta->{HEADING_BIAS} 
-				if defined($dta->{ENSEMBLE}[$ens]->{HEADING});
-			$pitch = $dta->{ENSEMBLE}[$ens]->{PITCH};
-			$roll  = $dta->{ENSEMBLE}[$ens]->{ROLL};
+				$pitch == $ADCP->{ENSEMBLE}[$ens]->{PITCH} &&
+				$roll  == $ADCP->{ENSEMBLE}[$ens]->{ROLL}) {
+			$hdg = $ADCP->{ENSEMBLE}[$ens]->{HEADING} - $ADCP->{HEADING_BIAS} 
+				if defined($ADCP->{ENSEMBLE}[$ens]->{HEADING});
+			$pitch = $ADCP->{ENSEMBLE}[$ens]->{PITCH};
+			$roll  = $ADCP->{ENSEMBLE}[$ens]->{ROLL};
 			my($rad_gimbal_pitch) = atan(tan(rad($pitch)) * cos(rad($roll)));
-			my($useRoll) = ($dta->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP}) ? $roll+180 : $roll;
+			my($useRoll) = ($ADCP->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP}) ? $roll+180 : $roll;
 			my($sh,$ch) = (sin(rad($hdg)),cos(rad($hdg)))
 				if defined($hdg);				
 			my($sp,$cp) = (sin($rad_gimbal_pitch),cos($rad_gimbal_pitch));
@@ -199,7 +211,7 @@ sub velBeamToEarth(@)
 				    [$ch*$sr-$sh*$sp*$cr,	-$sh*$sr-$ch*$sp*$cr,	$cp*$cr]);
 		}
 
-		return defined($dta->{ENSEMBLE}[$ens]->{HEADING})
+		return defined($ADCP->{ENSEMBLE}[$ens]->{HEADING})
 			   ? ($u*$E2I[0][0]+$v*$E2I[0][1]+$w*$E2I[0][2],
 				  $u*$E2I[1][0]+$v*$E2I[1][1]+$w*$E2I[1][2],
 				  $u*$E2I[2][0]+$v*$E2I[2][1]+$w*$E2I[2][2],
@@ -222,14 +234,14 @@ sub velBeamToEarth(@)
 
 	sub velInstrumentToBeam(@)
 	{
-		my($dta,$x,$y,$z,$ev) = @_;
+		my($ADCP,$x,$y,$z,$ev) = @_;
 		return undef unless (defined($x) + defined($y) +
 					   		 defined($z) + defined($ev) == 4);
 
 		unless (defined($a)) {
-			$a = 1 / (2 * sin(rad($dta->{BEAM_ANGLE})));
-			$b = 1 / (4 * cos(rad($dta->{BEAM_ANGLE})));
-			$c = $dta->{CONVEX_BEAM_PATTERN} ? 1 : -1;
+			$a = 1 / (2 * sin(rad($ADCP->{BEAM_ANGLE})));
+			$b = 1 / (4 * cos(rad($ADCP->{BEAM_ANGLE})));
+			$c = $ADCP->{CONVEX_BEAM_PATTERN} ? 1 : -1;
 			$d = $a / sqrt(2);
 		}
 
@@ -247,9 +259,9 @@ sub velBeamToEarth(@)
 
 sub velEarthToBeam(@)
 {
-	my($dta,$ens,$u,$v,$w,$ev) = @_;
-	return velInstrumentToBeam($dta,
-				velEarthToInstrument($dta,$ens,$u,$v,$w,$ev));
+	my($ADCP,$ens,$u,$v,$w,$ev) = @_;
+	return velInstrumentToBeam($ADCP,
+				velEarthToInstrument($ADCP,$ens,$u,$v,$w,$ev));
 }
 
 #======================================================================
@@ -264,20 +276,20 @@ sub velEarthToBeam(@)
 
 	sub velBeamToBPEarth(@)
 	{
-		my($dta,$ens,$b1,$b2,$b3,$b4) = @_;
+		my($ADCP,$ens,$b1,$b2,$b3,$b4) = @_;
 		my($v12,$w12,$v34,$w34);
 
 		return (undef,undef,undef,undef) 
-			unless (defined($dta->{ENSEMBLE}[$ens]->{PITCH}) &&
-                    defined($dta->{ENSEMBLE}[$ens]->{ROLL}));
+			unless (defined($ADCP->{ENSEMBLE}[$ens]->{PITCH}) &&
+                    defined($ADCP->{ENSEMBLE}[$ens]->{ROLL}));
 
 		unless (defined($TwoCosBAngle)) {
-			$TwoCosBAngle = 2 * cos(rad($dta->{BEAM_ANGLE}));
-			$TwoSinBAngle = 2 * sin(rad($dta->{BEAM_ANGLE}));
+			$TwoCosBAngle = 2 * cos(rad($ADCP->{BEAM_ANGLE}));
+			$TwoSinBAngle = 2 * sin(rad($ADCP->{BEAM_ANGLE}));
 		}
-		my($roll)  = rad($dta->{ENSEMBLE}[$ens]->{ROLL});							
+		my($roll)  = rad($ADCP->{ENSEMBLE}[$ens]->{ROLL});							
 		my($sr) = sin($roll); my($cr) = cos($roll);
-		my($pitch) = atan(tan(rad($dta->{ENSEMBLE}[$ens]->{PITCH})) * $cr);	# gimbal pitch
+		my($pitch) = atan(tan(rad($ADCP->{ENSEMBLE}[$ens]->{PITCH})) * $cr);	# gimbal pitch
 		my($sp) = sin($pitch); my($cp) = cos($pitch);
 
 		# Sign convention:
@@ -288,12 +300,12 @@ sub velEarthToBeam(@)
 
 		my($v12_ic) = ($b1-$b2)/$TwoSinBAngle;							# instrument coords with w vertical up
 		my($w12_ic) = ($b1+$b2)/$TwoCosBAngle;
-		$w12_ic *= -1 if ($dta->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP});
+		$w12_ic *= -1 if ($ADCP->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP});
 		my($v34_ic) = ($b3-$b4)/$TwoSinBAngle;
 		my($w34_ic) = ($b3+$b4)/$TwoCosBAngle;
-		$w34_ic *= -1 if ($dta->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP});
+		$w34_ic *= -1 if ($ADCP->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP});
 	    
-		if ($dta->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP}) {				# beampair Earth coords
+		if ($ADCP->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP}) {				# beampair Earth coords
 			$w12 = $w12_ic*$cr + $v12_ic*$sr - $v34_ic*$sp;
 			$v12 = $v12_ic*$cr - $w12_ic*$sr + $w34_ic*$sp;
 			$w34 = $w34_ic*$cp - $v34_ic*$sp + $v12_ic*$sr;
@@ -322,16 +334,16 @@ sub velEarthToBeam(@)
 
 	sub velBeamToBPInstrument(@)
 	{
-		my($dta,$ens,$b1,$b2,$b3,$b4) = @_;
+		my($ADCP,$ens,$b1,$b2,$b3,$b4) = @_;
 		my($v12,$w12,$v34,$w34);
 
 		return (undef,undef,undef,undef) 
-			unless (defined($dta->{ENSEMBLE}[$ens]->{PITCH}) &&
-                    defined($dta->{ENSEMBLE}[$ens]->{ROLL}));
+			unless (defined($ADCP->{ENSEMBLE}[$ens]->{PITCH}) &&
+                    defined($ADCP->{ENSEMBLE}[$ens]->{ROLL}));
 
 		unless (defined($TwoCosBAngle)) {
-			$TwoCosBAngle = 2 * cos(rad($dta->{BEAM_ANGLE}));
-			$TwoSinBAngle = 2 * sin(rad($dta->{BEAM_ANGLE}));
+			$TwoCosBAngle = 2 * cos(rad($ADCP->{BEAM_ANGLE}));
+			$TwoSinBAngle = 2 * sin(rad($ADCP->{BEAM_ANGLE}));
 		}
 
 		# Sign convention:
@@ -342,12 +354,12 @@ sub velEarthToBeam(@)
 		if (defined($b1) && defined($b2)) {
 			$v12 = ($b1-$b2)/$TwoSinBAngle;
 			$w12 = ($b1+$b2)/$TwoCosBAngle;
-			$w12 *= -1 if ($dta->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP});
+			$w12 *= -1 if ($ADCP->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP});
 		}
 		if (defined($b3) && defined($b4)) {
 			$v34 = ($b3-$b4)/$TwoSinBAngle;
 			$w34 = ($b3+$b4)/$TwoCosBAngle;
-			$w34 *= -1 if ($dta->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP});
+			$w34 *= -1 if ($ADCP->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP});
 		}
 
 		return ($v12,$w12,$v34,$w34);
@@ -362,13 +374,13 @@ sub velEarthToBeam(@)
 
 sub velApplyHdgBias(@)
 {
-	my($dta,$ens,$v1,$v2,$v3,$v4) = @_;
+	my($ADCP,$ens,$v1,$v2,$v3,$v4) = @_;
 	return (undef,undef,undef,undef) 
 		unless (defined($v1) && defined($v2) &&
-				defined($dta->{ENSEMBLE}[$ens]->{HEADING}));
+				defined($ADCP->{ENSEMBLE}[$ens]->{HEADING}));
 
-	my($sh) = sin(rad(-$dta->{HEADING_BIAS}));
-	my($ch) = cos(rad(-$dta->{HEADING_BIAS}));
+	my($sh) = sin(rad(-$ADCP->{HEADING_BIAS}));
+	my($ch) = cos(rad(-$ADCP->{HEADING_BIAS}));
 
 	return ( $v1*$ch + $v2*$sh,
 			-$v1*$sh + $v2*$ch,
@@ -419,5 +431,118 @@ sub angle_from_vertical($$)
 	my($rad_pitch) = atan(tan(rad($RDI_pitch)) * cos(rad($RDI_roll)));
 	return deg(acos(cos($rad_pitch) * cos(rad($RDI_roll))));
 }
+
+#----------------------------------------------------------------------
+# alongBeamDZ(ADCP_dta,ens,beam) => (dz_to_bin1_center,bin_dz)
+#	- calculate vertical distances:
+#		- between transducer and bin1
+#		- between adjacent bins
+#	- no soundspeed correction
+#	- for UL (Fig. 3 Coord Manual):
+#		b1 = phi + roll		b2 = phi - roll
+#		b3 = phi - pitch	b4 = phi + pitch
+#	- for DL:
+#		b1 = phi + roll		b2 = phi - roll
+#		b3 = phi + pitch	b4 = phi - pitch
+#----------------------------------------------------------------------
+
+sub alongBeamDZ($$$)
+{
+	my($ADCP,$ens,$beam) = @_;
+
+	my($tilt);																# determine tilt of given beam
+	my($pitch) = $ADCP->{ENSEMBLE}[$ens]->{PITCH};
+	my($roll)  = $ADCP->{ENSEMBLE}[$ens]->{ROLL};
+	if ($beam == 0) {														# beam 1
+		$tilt = &angle_from_vertical($pitch,$ADCP->{BEAM_ANGLE}+$roll);
+	} elsif ($beam == 1) {													# beam 2
+		$tilt = &angle_from_vertical($pitch,$ADCP->{BEAM_ANGLE}-$roll);
+	} elsif ($beam == 2) {													# beam 3
+		$tilt = $ADCP->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP}
+			  ? &angle_from_vertical($ADCP->{BEAM_ANGLE}-$pitch,$roll)
+			  : &angle_from_vertical($ADCP->{BEAM_ANGLE}+$pitch,$roll);
+	} else {																# beam 4
+		$tilt = $ADCP->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP}
+			  ? &angle_from_vertical($ADCP->{BEAM_ANGLE}+$pitch,$roll)
+			  : &angle_from_vertical($ADCP->{BEAM_ANGLE}-$pitch,$roll);
+	}
+	return ($ADCP->{DISTANCE_TO_BIN1_CENTER}*cos(rad($tilt)),
+			$ADCP->{BIN_LENGTH}*cos(rad($tilt)));
+}
+	
+#----------------------------------------------------------------------
+# binterp(ADCP_dta,ens,bin,ADCP_field) => @interpolated_vals
+#	- interpolate beam velocities to nominal bin center
+#	- field can be VELOCITY, ECHO_AMPLITUDE, ... 
+#
+# earthVels(ADCP_dta,ens,bin) 	=> (u,v,w,err_vel)
+# BPEarthVels(ADCP_dta,ens,bin) => (v12,w12,v34,w34)
+#	- new interface (V1.7)
+#----------------------------------------------------------------------
+
+sub binterp1($$$$$)														# interpolate along a single beam
+{
+	my($ADCP,$ens,$target_dz,$ADCP_field,$beam) = @_;
+	
+	my($dz2bin1,$bin_dz) = &alongBeamDZ($ADCP,$ens,$beam);
+	my($floor_bin) = int(($target_dz-$dz2bin1) / $bin_dz);
+	$floor_bin-- if ($floor_bin == $ADCP->{N_BINS}-1);
+	
+	my($y1) = $ADCP->{ENSEMBLE}[$ens]->{$ADCP_field}[$floor_bin][$beam];
+	my($y2) = $ADCP->{ENSEMBLE}[$ens]->{$ADCP_field}[$floor_bin+1][$beam];
+	$y2 = $y1 unless defined($y2);
+	$y1 = $y2 unless defined($y1);
+	return undef unless defined($y1);
+	
+	my($dz1) = $dz2bin1 + $floor_bin * $bin_dz;
+	my($dz2) = $dz1 + $bin_dz;
+	my($ifac) = ($target_dz - $dz1) / ($dz2 - $dz1);
+	die("assertion failed\nifac = $ifac (target_dz = $target_dz, dz1 = $dz1, dz2 = $dz2)")
+		unless ($ifac>= -0.5 && $ifac<=2);
+	return $y1 + $ifac*($y2-$y1);
+}
+
+sub binterp($$$$)
+{
+	my($ADCP,$ens,$target_bin,$ADCP_field) = @_;
+
+	my($crt) 	   = cos(rad($ADCP->{ENSEMBLE}[$ens]->{TILT}));			# calc center depth of target bin
+	my($target_dz) = ($ADCP->{DISTANCE_TO_BIN1_CENTER} + $target_bin*$ADCP->{BIN_LENGTH}) * $crt;
+
+	return (&binterp1($ADCP,$ens,$target_dz,$ADCP_field,0),				# interpolate all four beams
+			&binterp1($ADCP,$ens,$target_dz,$ADCP_field,1),
+			&binterp1($ADCP,$ens,$target_dz,$ADCP_field,2),
+			&binterp1($ADCP,$ens,$target_dz,$ADCP_field,3));
+}
+
+sub earthVels($$$)
+{
+	my($ADCP,$ens,$bin) = @_;
+	if ($RDI_Coords::binMapping eq 'linterp') {
+		return velInstrumentToEarth($ADCP,$ens,
+					velBeamToInstrument($ADCP,$ens,
+						binterp($ADCP,$ens,$bin,'VELOCITY')));
+	} elsif ($RDI_Coords::binMapping eq 'none') {
+		return velInstrumentToEarth($ADCP,$ens,
+					velBeamToInstrument($ADCP,$ens,
+						@{$ADCP->{ENSEMBLE}[$ens]->{VELOCITY}[$bin]}));
+    } else {
+		die("earthVels(): unknown bin mapping '$RDI_Coords::binMapping '\n");
+	}
+}
+
+sub BPEarthVels($$$)
+{
+	my($ADCP,$ens,$bin) = @_;
+	if ($RDI_Coords::binMapping eq 'linterp') {
+		return velBeamToBPEarth($ADCP,$ens,binterp($ADCP,$ens,$bin,'VELOCITY'));
+	} elsif ($RDI_Coords::binMapping eq 'none') {
+		return velBeamToBPEarth($ADCP,$ens,@{$ADCP->{ENSEMBLE}[$ens]->{VELOCITY}[$bin]});
+	} else {
+		die("BPEarthVels(): unknown bin mapping '$RDI_Coords::binMapping '\n");
+	}
+}
+
+#----------------------------------------------------------------------
 
 1;
