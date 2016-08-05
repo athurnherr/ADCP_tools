@@ -2,9 +2,9 @@
 #======================================================================
 #                    E D I T P D 0 
 #                    doc: Mon Nov 25 20:24:31 2013
-#                    dlm: Tue Apr 12 21:45:31 2016
+#                    dlm: Tue Jul 12 18:56:55 2016
 #                    (c) 2013 A.M. Thurnherr
-#                    uE-Info: 235 46 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 118 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # edit RDI PD0 file, e.g. to replace pitch/roll/heading with external values
@@ -21,20 +21,24 @@
 #		h(<heading>)			set heading alue value of current ensemble
 #
 #		swap_beams(<b1>,<b2>)	swap data from beams b1 and b2
-#								input in beam coords required
-#								beam rotation is equivalent to 3 consecutive beam swaps
-#								basic BT data are swapped as well (not RL and not SIGNAL_STRENGTH)
+#									- input in beam coords required
+#									- beam rotation is equivalent to 3 consecutive beam swaps
+#									- basic BT data are swapped as well (not RL and not SIGNAL_STRENGTH)
 #
 #		earth2beam()			transform beam to earth coordinates
-#								does not handle bin-remapping
-#								input in beam coords required
+#									- does not handle bin-remapping
+#									- input in earth coords required
+#
+#		beam2earth()			transform earth to beam coordinates
+#									- does not handle bin-remapping
+#									- input in beam coords required
 #
 #		instrument2beam()		transform instrument to earth coordinates
-#								does not handle bin-remapping
-#								input in instrument coords required
+#									- does not handle bin-remapping
+#									- input in instrument coords required
 #
-#		ensure_UL()				overwrite transducer-orientation flag in data file
-#		ensure_DL()
+#		ensure_UL()				correct data for wrong transducer orientation
+#		ensure_DL()					- sets correct flag & negates roll value
 #
 #	- -x notes:
 #		- multiple perl expressions can be combined with ,
@@ -60,6 +64,12 @@
 #	Feb 26, 2016: - added basic BT data to swap_beams()
 #				  - added earth2beam()
 #	Apr 12, 2016: - added instrument2beam()
+#	Jun  3, 2016: - added beam2earth()
+#				  - BUG: instrument2earth() set wrong flag
+#	Jun  8, 2016: - adapted to new interface of velInstrumentToBeam()
+#				  - added %-good to beam2earth and earth2beam
+#				  - made single-ping ensemble requirement for most routines
+#	Jul 12, 2016: - updated ensure_{DL,UL} routines
 
 use Getopt::Std;
 
@@ -99,16 +109,31 @@ sub h($) { $dta{ENSEMBLE}[$e]->{HEADING} = $_[0]; return 1;}
 #
 # override transducer orientation
 #
+#	These routines are intended to correct ADCP data for
+#	erroneous orientation switch readings, primarily because
+#	of a stuck switch. While not fully debugged, negating
+#	the roll value greatly improves the vertical velocity
+#	solutions of 2007 CLIVAR I08S profile #1. (#2-#7 could
+#	also be used for testing)
+#
+
 sub ensure_DL()
 {
-	$dta{ENSEMBLE}[$e]->{XDUCER_FACING_DOWN} = 1;
-	$dta{ENSEMBLE}[$e]->{XDUCER_FACING_UP} = undef;
+	if ($dta{ENSEMBLE}[$e]->{XDUCER_FACING_UP}) {
+		$dta{ENSEMBLE}[$e]->{ROLL} *= -1;
+		$dta{ENSEMBLE}[$e]->{XDUCER_FACING_DOWN} = 1;
+		$dta{ENSEMBLE}[$e]->{XDUCER_FACING_UP} = undef;
+	}
 	return 1;
 }
+
 sub ensure_UL()
 {
-	$dta{ENSEMBLE}[$e]->{XDUCER_FACING_DOWN} = undef;
-	$dta{ENSEMBLE}[$e]->{XDUCER_FACING_UP} = 1;
+	if ($dta{ENSEMBLE}[$e]->{XDUCER_FACING_DOWN}) {
+		$dta{ENSEMBLE}[$e]->{ROLL} *= -1;
+		$dta{ENSEMBLE}[$e]->{XDUCER_FACING_UP} = 1;
+		$dta{ENSEMBLE}[$e]->{XDUCER_FACING_DOWN} = undef;
+	}
 	return 1;
 }
 
@@ -124,6 +149,8 @@ sub swap_beams($$)
 
 	die("$ARGV[0]: beam-coordinate data required\n")
 		unless ($dta{BEAM_COORDINATES});
+	die("$ARGV[0]: single-ping ensembles required\n")
+		unless ($dta{PINGS_PER_ENSEMBLE} == 1);
 
 	if ($dta{BT_PRESENT}) {
 		$tmp = $dta{ENSEMBLE}[$e]->{BT_RANGE}[$b1-1];
@@ -178,13 +205,21 @@ sub swap_beams($$)
 		unless ($checked) {
 			die("$ARGV[0]: earth-coordinate data required\n")
 				unless ($dta{EARTH_COORDINATES});
+			die("$ARGV[0]: single-ping ensembles required\n")
+				unless ($dta{PINGS_PER_ENSEMBLE} == 1);
 			$dta{BEAM_COORDINATES} = 1; undef($dta{EARTH_COORDINATES});
 			$checked = 1;
 		}
 	    
 		for (my($bin)=0; $bin<$dta{N_BINS}; $bin++) {
-			@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin]} =
-				velEarthToBeam(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin]});
+			if ($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$bin][3] == 100) {			# 4-beam solution
+               	@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin]} =
+					velEarthToBeam(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin]});
+				@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$bin]} = (100,100,100,100);
+			} else {															# 3-beam solution or no solution
+				undef(@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin]});
+				@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$bin]} = (0,0,0,0);
+			}
 		}
 	
 		return 1;
@@ -202,13 +237,15 @@ sub swap_beams($$)
 		unless ($checked) {
 			die("$ARGV[0]: instrument-coordinate data required\n")
 				unless ($dta{INSTRUMENT_COORDINATES});
+			die("$ARGV[0]: single-ping ensembles required\n")
+				unless ($dta{PINGS_PER_ENSEMBLE} == 1);
 			$dta{BEAM_COORDINATES} = 1; undef($dta{INSTRUMENT_COORDINATES});
 			$checked = 1;
 		}
 	    
 		for (my($bin)=0; $bin<$dta{N_BINS}; $bin++) {
 			@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin]} =
-				velInstrumentToBeam(\%dta,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin]});
+				velInstrumentToBeam(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin]});
 		}
 	
 		return 1;
@@ -226,13 +263,47 @@ sub swap_beams($$)
 		unless ($checked) {
 			die("$ARGV[0]: instrument-coordinate data required\n")
 				unless ($dta{INSTRUMENT_COORDINATES});
-			$dta{BEAM_COORDINATES} = 1; undef($dta{INSTRUMENT_COORDINATES});
+			die("$ARGV[0]: single-ping ensembles required\n")
+				unless ($dta{PINGS_PER_ENSEMBLE} == 1);
+			$dta{EARTH_COORDINATES} = 1; undef($dta{INSTRUMENT_COORDINATES});
 			$checked = 1;
 		}
 	    
 		for (my($bin)=0; $bin<$dta{N_BINS}; $bin++) {
 			@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin]} =
 				velInstrumentToEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin]});
+		}
+	
+		return 1;
+	}
+
+}
+
+#
+# transform beam to earth coordinates
+#
+{ my($checked);
+
+	sub beam2earth()
+	{
+		unless ($checked) {
+			die("$ARGV[0]: beam-coordinate data required\n")
+				unless ($dta{BEAM_COORDINATES});
+			die("$ARGV[0]: single-ping ensembles required\n")
+				unless ($dta{PINGS_PER_ENSEMBLE} == 1);
+			$dta{EARTH_COORDINATES} = 1; undef($dta{BEAM_COORDINATES});
+			$checked = 1;
+		}
+	    
+		for (my($bin)=0; $bin<$dta{N_BINS}; $bin++) {
+			@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin]} =
+				velBeamToEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin]});
+			$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$bin][0] = 100*$RDI_Coords::threeBeamFlag;	# 3-beam solution
+			$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$bin][1] = 0;								# error velocity not checked
+			$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$bin][2] =									# no solution -> more than 1 bad beam
+								@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin]} ? 0 : 100;
+			$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$bin][2] =									# 4-beam solution
+								100 -  $dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$bin][0];
 		}
 	
 		return 1;

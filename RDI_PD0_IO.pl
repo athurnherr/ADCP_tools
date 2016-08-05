@@ -1,9 +1,9 @@
 #======================================================================
-#                    R D I _ P D 0 _ I O . P L 
+#                    R D I _ B B _ R E A D . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Mon Feb 29 12:30:04 2016
+#                    dlm: Sat Jul 30 18:34:46 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 1232 63 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 402 62 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Read RDI BroadBand Binary Data Files (*.[0-9][0-9][0-9])
@@ -75,7 +75,9 @@
 #				  - BUG: most WBPens() error messages used wrong file name
 #	Feb 23, 2016: - changed WBRhdr() to use 2nd ensemble (with correct data-source id)
 #	Feb 26, 2016: - added basic BT data to WBPens(); not BT_RL_* and BT_SIGNAL_STRENGTH
-#	Feb 29, 2016: - LEAP DAY: actually got BT data to work
+#	Feb 29, 2016: - LEAP DAY: actually got BT data patching to work
+#	Jul 30, 2016: - BUG: incomplete last ensemble with garbage content was returned on reading
+#						 WH300 data
 
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -390,14 +392,14 @@ sub WBRhdr($)
 	sysread(WBRF,$buf,6) == 6 || die("$WBRcfn: $!");
 	($hid,$did,$dta->{ENSEMBLE_BYTES},$dummy,$dta->{NUMBER_OF_DATA_TYPES})
 		= unpack('CCvCC',$buf);
-	$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header",$hid,0));
-	$did == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header",$did,0));
+	$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header (hid)",$hid,0));
+	$did == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header (did)",$did,0));
 
 	$start_ens = sysseek(WBRF,$dta->{ENSEMBLE_BYTES}-6+2,1) || die("$WBRcfn: $!");
 	sysread(WBRF,$buf,6) == 6 || die("$WBRcfn: $!");
 	($hid,$did,$dta->{ENSEMBLE_BYTES},$dummy,$dta->{NUMBER_OF_DATA_TYPES})
 		= unpack('CCvCC',$buf);
-	$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header",$hid,0));
+	$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header (hid2)",$hid,0));
 	$dta->{DATA_SOURCE_ID} = $did;
 	if ($did == 0x7f) {
 		$dta->{PRODUCER} = 'TRDI ADCP';
@@ -696,10 +698,13 @@ sub WBRens($$$)
 		# final ensemble.
 
 		sysseek(WBRF,$start_ens,0) || die("$WBRcfn: $!");
-		sysread(WBRF,$buf,$ens_length) == $ens_length || last;
+		unless ((sysread(WBRF,$buf,$ens_length) == $ens_length) &&
+				(sysread(WBRF,$cs,2) == 2)) {
+			pop(@{$E});
+			last;
+		}
 
-		sysread(WBRF,$cs,2) == 2 || last;
-		last unless (unpack('%16C*',$buf) == unpack('v',$cs));
+		pop(@{$E}),last unless (unpack('%16C*',$buf) == unpack('v',$cs));
 
 		#------------------------------
 		# Variable Leader
@@ -782,7 +787,9 @@ sub WBRens($$$)
 			${$E}[$ens]->{SECONDS} += $B4/100;
 		}
 
-		pop(@{$E}),last if (${$E}[$ens]->{MONTH}>12);						# 10/15/2014; IWISE#145 UL ???
+# 		THE FOLLOWING LINE OF CODE WAS REMOVED 7/30/2016 WHEN I ADDED A POP
+#		TO THE last STATEMENT ABOVE (INCOMPLETE ENSEMBLE)
+#		pop(@{$E}),last if (${$E}[$ens]->{MONTH}>12);						# 10/15/2014; IWISE#145 UL ???
 
 		if ($fixed_leader_bytes == 58) {									# Explorer DVL
 			sysread(WBRF,$buf,14) == 14 || die("$WBRcfn: $!");
@@ -1187,7 +1194,7 @@ sub WBPens($$$)
 		my($nxt);
 		for ($nxt=6; $nxt<$ndt; $nxt++) {										# scan until BT found
 			sysseek(WBPF,$start_ens+$WBPofs[$nxt],0) || die("$WBPcfn: $!");
-			sysread(WBPF,$buf,2) == 2 || die("$WBPcfn: $!");
+			sysread(WBPF,$buf,2) == 2 || die("$WBPcfn: $! [ens=$ens]");
 			$id = unpack('v',$buf);
 			last if ($id == 0x0600);
 		}

@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Thu May 19 10:23:48 2016
+#                    dlm: Sat Jul 30 09:46:59 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 56 62 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 438 0 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities

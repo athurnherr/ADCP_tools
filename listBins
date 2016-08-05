@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B I N S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Thu Mar 17 07:39:43 2016
+#                    dlm: Thu Jun  9 19:09:47 2016
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 61 0 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 332 0 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -58,6 +58,8 @@
 #	Jan 31, 2016: - started debugging the obviously wrong Earth2Beam() transformation
 #	Feb 29, 2016: - continued debugging; removed debugging code
 #   Mar 17, 2016: - adapted to new Getopt library
+#	Jun  9, 2016: - minor improvements
+#				  - BUG: velBeamToEarth() has new interface
 
 # General Notes:
 #	- everything (e.g. beams) is numbered from 1
@@ -149,12 +151,13 @@ sub dumpBin($$$)						# write time series of single bin
 	foreach my $k (keys(%P)) {
 		print(P "$k\{$P{$k}\} ");
 	}
-	if ($beamCoords) {
-		my($pct3b) = ($good_vels[$b] > 0) ? 100*$three_beam[$b]/$good_vels[$b] : nan;
+	my($pct3b);
+#	if ($beamCoords) {
+		$pct3b = ($good_vels[$b] > 0) ? 100*$three_beam[$b]/$good_vels[$b] : nan;
 		printf(STDERR "%02d:%.0f%%/%.0f%% ",$b+1,100*$good_vels[$b]/($le-$fe+1),$pct3b);
-	} else {
-		printf(STDERR "%02d:%.0f%% ",$b+1,100*$good_vels[$b]/($le-$fe+1));
-	}
+#	} else {
+#		printf(STDERR "%02d:%.0f%% ",$b+1,100*$good_vels[$b]/($le-$fe+1));
+#	}
 
 	printf(P "pct_3_beam{%.0f} ",$pct3b);
 	printf(P "pct_good_vels{%.0f} ",100*$good_vels[$b]/($le-$fe+1));
@@ -293,7 +296,7 @@ for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {				# check/transform velocities
 
 	for (my($b)=0; $b<$dta{N_BINS}; $b++) {
 		if ($beamCoords) {
-			for (my($i)=0; $i<4; $i++) {										# percent-good editing (-p)
+			for (my($i)=0; $i<4; $i++) {									# percent-good editing (-p)
 				if ($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][$i] < $opt_p) {
 					undef($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][$i]);
 					undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][$i]);
@@ -321,12 +324,12 @@ for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {				# check/transform velocities
 				velBeamToBPEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{BEAM_VELOCITY}[$b]});
 
 			@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]} = 						# calculate earth velocities
-				velBeamToEarth(\%dta,@{$dta{ENSEMBLE}[$e]->{BEAM_VELOCITY}[$b]});
+				velBeamToEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{BEAM_VELOCITY}[$b]});
 			$dta{ENSEMBLE}[$e]->{THREE_BEAM}[$b] = $RDI_Coords::threeBeamFlag;
 			$three_beam[$b] += $RDI_Coords::threeBeamFlag;
 
-			unless (defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0])) {
-				undef(@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]});			# not sure when this can happen
+			unless (defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0])) {		# not a valid transformation
+				undef(@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]});
 				next;
 			}
 		} else { 															# Earth coordinates
@@ -339,8 +342,9 @@ for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {				# check/transform velocities
 			@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]} = 						# correct for heading bias
 				velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
 
-			unless (defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0])) {
-				undef(@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]});			# not sure when/if this can happen
+			$three_beam[$b] += ($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][0]/100 * $dta{PINGS_PER_ENSEMBLE});
+			unless (defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0])) {		# no valid velocity
+				undef(@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]});
 				next;
 			}
 

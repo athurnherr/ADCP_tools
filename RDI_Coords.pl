@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ C O O R D S . P L 
 #                    doc: Sun Jan 19 17:57:53 2003
-#                    dlm: Thu May 26 17:40:20 2016
+#                    dlm: Sun Jul 31 13:54:26 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 530 14 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 568 0 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # RDI Workhorse Coordinate Transformations
@@ -46,6 +46,13 @@
 #	May 19, 2016: - begin implemeting bin interpolation
 #	May 25, 2016: - continued
 #	May 26, 2016: - made it work
+#	May 30, 2016: - begin implementing 2nd order attitude transformations
+#	Jun  6, 2016: - toEarth transformation in beamToBPEarth was but crude approximation;
+#					updated with transformation taken from Lohrman et al. (JAOT 1990)
+#				  - BUG: v34 sign was inconsistent with RDI coord manual
+#	Jun  8, 2016: - added $ens as arg to velInstrumentToBeam() for consistency
+#	Jul  7, 2016: - added velEarthToBPw() with algorithm debugged and verified
+#					by Paul Wanis from TRDI
 
 use strict;
 use POSIX;
@@ -59,11 +66,12 @@ sub deg(@) { return $_[0]/$PI * 180; }
 # Tweakables
 #----------------------------------------------------------------------
 
-$RDI_Coords::minValidVels = 3;			# 3-beam solutions ok (velBeamToInstrument)
-$RDI_Coords::binMapping = 'linterp';	# 'linterp' or 'none' (earthVels, BPearthVels)
+$RDI_Coords::minValidVels = 3;				# 3-beam solutions ok (velBeamToInstrument)
+$RDI_Coords::binMapping = 'linterp';		# 'linterp' or 'none' (earthVels, BPearthVels)
+$RDI_Coords::beamTransformation = 'LHR90';	# set to 'RDI' to use 1st order transformations from RDI manual
 
 #----------------------------------------------------------------------
-# beam to earth transformation (from RDI coord trans manual)
+# beam to earth transformation 
 #----------------------------------------------------------------------
 
 $RDI_Coords::threeBeam_1 = 0;			# stats from velBeamToInstrument
@@ -123,6 +131,23 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 	}
 } # STATIC SCOPE
 
+#----------------------------------------------------------------------
+# velInstrumentToEarth(\%ADCP,ens,v1,v2,v3,v4) => (u,v,w,e)
+#	- $RDI_Coords::beamTransformation = 'LHR90'
+#		- from Lohrmann, Hackett & Roet (J. Tech., 1990)
+#		- eq A1 maps to RDI matrix M (sec 5.6) with
+#			alpha = roll
+#			beta = gimball_pitch
+#			psi = calculation_pitch
+#			psi = asin{sin(beta) cos(alpha) / sqrt[1- sin(alpha)^2 sin(beta)^2]}
+#		- (I only checked for 0 heading, but this is sufficient)
+#	- $RDI_Coords::beamTransformation = 'RDI'
+#		- default prior to LADCP_w V1.3
+#		- from RDI manual
+#		- 99% accurate for p/r<8deg
+#			=> 1cm/s error for 1m/s winch speed!
+#----------------------------------------------------------------------
+
 { # STATIC SCOPE
 	my($hdg,$pitch,$roll,@I2E);
 
@@ -145,9 +170,12 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 			$pitch = $ADCP->{ENSEMBLE}[$ens]->{PITCH};
 			$roll  = $ADCP->{ENSEMBLE}[$ens]->{ROLL};
 			my($rad_gimbal_pitch) = atan(tan(rad($pitch)) * cos(rad($roll)));
+			my($rad_calc_pitch) = ($RDI_Coords::beamTransformation eq 'RDI') ? $rad_gimbal_pitch : 
+								  asin(sin($rad_gimbal_pitch)*cos(rad($roll)) /
+									   sqrt(1-sin(rad($roll))**2*sin($rad_gimbal_pitch)**2));
 			my($sh,$ch) = (sin(rad($hdg)),cos(rad($hdg)))
 				if defined($hdg);				
-			my($sp,$cp) = (sin($rad_gimbal_pitch),cos($rad_gimbal_pitch));
+			my($sp,$cp) = (sin($rad_calc_pitch),cos($rad_calc_pitch));
 			my($sr,$cr) = (sin(rad($roll)),	cos(rad($roll)));
 			@I2E = $ADCP->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP}
 				 ? (
@@ -182,6 +210,9 @@ sub velBeamToEarth(@)
 #----------------------------------------------------------------------
 # velEarthToInstrument() transforms earth to instrument coordinates
 #	- based on manually inverted rotation matrix M (Sec 5.6 in coord-trans manual)
+#		- Paul Wanis from TRDI pointed out that M is orthonormal, which
+#		  implies that M^-1 = M' (where M' is the transpose), confirming
+#		  the (unnecessary) derivation
 #	- code was verified for both down- and uplookers
 #	- missing heading data (IMP) causes undef beam velocities
 #----------------------------------------------------------------------
@@ -218,7 +249,7 @@ sub velBeamToEarth(@)
 				  $ev)
 			   : (undef,undef,undef,undef);
 
-	}
+	} # velEarthToIntrument()
 } # STATIC SCOPE
 
 #----------------------------------------------------------------------
@@ -234,7 +265,7 @@ sub velBeamToEarth(@)
 
 	sub velInstrumentToBeam(@)
 	{
-		my($ADCP,$x,$y,$z,$ev) = @_;
+		my($ADCP,$ens,$x,$y,$z,$ev) = @_;
 		return undef unless (defined($x) + defined($y) +
 					   		 defined($z) + defined($ev) == 4);
 
@@ -260,15 +291,42 @@ sub velBeamToEarth(@)
 sub velEarthToBeam(@)
 {
 	my($ADCP,$ens,$u,$v,$w,$ev) = @_;
-	return velInstrumentToBeam($ADCP,
+	return velInstrumentToBeam($ADCP,$ens,
 				velEarthToInstrument($ADCP,$ens,$u,$v,$w,$ev));
+}
+
+#----------------------------------------------------------------------
+# velEarthToBPw() returns w12 and w34 for beam-coordinate data
+#	- I am grateful for Paul Wanis from TRDI who corrected a
+#	  bug in my transformation (fixed in V1.3). [The bug did not
+#	  affect the final w profiles significantly, because w12 and w34
+#	  are used only as diagnostics.]
+#	- algorithm:
+#		1) rotate into instrument coordinates
+#		2) w12 = w + e*tan(beam_angle)/sqrt(2)
+#		   w34 = w - e*tan(beam_angle)/sqrt(2)
+#		3) rotate into horizontal coords (earth coords w/o
+#		   considering heading, i.e. same as earth coords
+#		   in case of w
+#----------------------------------------------------------------------
+
+sub velEarthToBPw(@)
+{
+	my($ADCP,$ens,$u,$v,$w,$ev) = @_;
+	my(@iv) = velEarthToInstrument(@_);
+	my(@iv12) = my(@iv34) = @iv;
+	$iv12[2] += $iv[3] * tan(rad($ADCP->{BEAM_ANGLE}))/sqrt(2);
+	$iv34[2] -= $iv[3] * tan(rad($ADCP->{BEAM_ANGLE}))/sqrt(2);
+	my(@ev12) = velInstrumentToEarth($ADCP,$ens,@iv12);
+	my(@ev34) = velInstrumentToEarth($ADCP,$ens,@iv34);
+	return ($ev12[2],$ev34[2]);
 }
 
 #======================================================================
 # velBeamToBPEarth(@) calculates the vertical- and horizontal vels
 # from the two beam pairs separately. Note that (w1+w2)/2 is 
-# identical to the w estimated according to RDI without 3-beam 
-# solutions.
+# identical to the w estimated according to RDI (ignoring 3-beam 
+# solutions).
 #======================================================================
 
 { # STATIC SCOPE
@@ -287,34 +345,35 @@ sub velEarthToBeam(@)
 			$TwoCosBAngle = 2 * cos(rad($ADCP->{BEAM_ANGLE}));
 			$TwoSinBAngle = 2 * sin(rad($ADCP->{BEAM_ANGLE}));
 		}
-		my($roll)  = rad($ADCP->{ENSEMBLE}[$ens]->{ROLL});							
-		my($sr) = sin($roll); my($cr) = cos($roll);
-		my($pitch) = atan(tan(rad($ADCP->{ENSEMBLE}[$ens]->{PITCH})) * $cr);	# gimbal pitch
-		my($sp) = sin($pitch); my($cp) = cos($pitch);
+		my($rad_roll)  = rad($ADCP->{ENSEMBLE}[$ens]->{ROLL});							
+		my($sr) = sin($rad_roll); my($cr) = cos($rad_roll);
+		my($rad_gimbal_pitch) = atan(tan(rad($ADCP->{ENSEMBLE}[$ens]->{PITCH})) * $cr);	# gimbal pitch
+		my($rad_calc_pitch) = ($RDI_Coords::beamTransformation eq 'RDI') ? $rad_gimbal_pitch :
+							  asin(sin($rad_gimbal_pitch)*cos($rad_roll) /
+								   sqrt(1-sin($rad_roll)**2*sin($rad_gimbal_pitch)**2));
+		my($sp) = sin($rad_calc_pitch); my($cp) = cos($rad_calc_pitch);
 
 		# Sign convention:
 		#	- refer to Coord manual Fig. 3
 		#	- v12 is horizontal velocity from beam1 to beam2, i.e. westward for upward-looking ADCP
 		#	  with beam 3 pointing north (heading = 0)
-		#	- w is +ve upward, regardless of instrument orientation
 
-		my($v12_ic) = ($b1-$b2)/$TwoSinBAngle;							# instrument coords with w vertical up
+		my($v12_ic) = ($b1-$b2)/$TwoSinBAngle;									# instrument coords
+		my($v34_ic) = ($b4-$b3)/$TwoSinBAngle;									# consistent with RDI Coords
 		my($w12_ic) = ($b1+$b2)/$TwoCosBAngle;
-		$w12_ic *= -1 if ($ADCP->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP});
-		my($v34_ic) = ($b3-$b4)/$TwoSinBAngle;
 		my($w34_ic) = ($b3+$b4)/$TwoCosBAngle;
-		$w34_ic *= -1 if ($ADCP->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP});
+		my($w_ic) = ($w12_ic+$w34_ic) / 2;
 	    
-		if ($ADCP->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP}) {				# beampair Earth coords
-			$w12 = $w12_ic*$cr + $v12_ic*$sr - $v34_ic*$sp;
-			$v12 = $v12_ic*$cr - $w12_ic*$sr + $w34_ic*$sp;
-			$w34 = $w34_ic*$cp - $v34_ic*$sp + $v12_ic*$sr;
-    	    $v34 = $v34_ic*$cp + $w34_ic*$sp - $w12_ic*$sr;
-		} else {
-			$w12 = $w12_ic*$cr - $v12_ic*$sr - $v34_ic*$sp;
-			$v12 = $v12_ic*$cr + $w12_ic*$sr + $w34_ic*$sp;
-			$w34 = $w34_ic*$cp - $v34_ic*$sp - $v12_ic*$sr;
-        	$v34 = $v34_ic*$cp + $w34_ic*$sp + $w12_ic*$sr;
+		if ($ADCP->{ENSEMBLE}[$ens]->{XDUCER_FACING_DOWN}) {					# beampair Earth coords
+			$v12 = $v12_ic*$cr 		+ $v34_ic*0			+ $w_ic*$sr;			# Lohrman et al. (1990) A1
+			$v34 = $v12_ic*$sp*$sr	+ $v34_ic*$cp		- $w_ic*$sp*$cr;		#	- defined for z upward => DL
+			$w12 =-$v12_ic*$cp*$sr	+ $v34_ic*$sp		+ $w12_ic*$cp*$cr;
+			$w34 =-$v12_ic*$cp*$sr	+ $v34_ic*$sp		+ $w34_ic*$cp*$cr;
+		} else {																# RDI Coord trans manual
+			$v12 =-$v12_ic*$cr 		+ $v34_ic*0			- $w_ic*$sr;			# 	- as above with 1st & 3rd cols negated
+			$v34 =-$v12_ic*$sp*$sr	+ $v34_ic*$cp		+ $w_ic*$sp*$cr;
+			$w12 = $v12_ic*$cp*$sr	+ $v34_ic*$sp		- $w12_ic*$cp*$cr;
+			$w34 = $v12_ic*$cp*$sr	+ $v34_ic*$sp		- $w34_ic*$cp*$cr;
 		}
 
 		$v12=$w12=undef unless (defined($b1) && defined($b2));
@@ -327,6 +386,8 @@ sub velEarthToBeam(@)
 #===================================================================
 # velBeamToBPInstrument(@) calculates the instrument-coordinate vels
 # from the two beam pairs separately.
+#	- in spite of the function name, the output is in ship
+#	  coordinates (instr coords with w up)
 #===================================================================
 
 { # STATIC SCOPE
@@ -357,7 +418,7 @@ sub velEarthToBeam(@)
 			$w12 *= -1 if ($ADCP->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP});
 		}
 		if (defined($b3) && defined($b4)) {
-			$v34 = ($b3-$b4)/$TwoSinBAngle;
+			$v34 = ($b4-$b3)/$TwoSinBAngle;
 			$w34 = ($b3+$b4)/$TwoCosBAngle;
 			$w34 *= -1 if ($ADCP->{ENSEMBLE}[$ens]->{XDUCER_FACING_UP});
 		}
