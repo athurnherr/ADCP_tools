@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T H D R 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Sat Jan  9 17:16:01 2016
+#                    dlm: Wed Nov  9 12:25:36 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 41 32 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 65 0 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the RDI BB header
@@ -39,6 +39,7 @@
 #				  - updated getopts to current perl version
 #				  - updated IO library name
 #				  - adapted to [ADCP_tools_lib.pl]
+#	Nov  9, 2016: - BUG: no error on missing files
 
 use Getopt::Std;
 
@@ -55,9 +56,12 @@ if ($opt_s) {
 	print("#ANTS#FIELDS# {id} {serial_number} {transducer_frequency} {number_of_bins} {blanking_distance} {bin_length} {pulse_length}\n");
 }
 
-while (-f $ARGV[0]) {
-	print("$ARGV[0]:\n") unless ($opt_s);
+while ($ARGV[0] ne '') {
+	die("$ARGV[0]: No such file or directory\n")
+		unless (-f $ARGV[0]);
+	
 	readHeader($ARGV[0],\%hdr);
+	print("$ARGV[0]:\n") unless ($opt_s);
 
 	if ($opt_s) {														# summary ANTS output
 		my($id) = $ARGV[0];

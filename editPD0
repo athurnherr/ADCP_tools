@@ -2,9 +2,9 @@
 #======================================================================
 #                    E D I T P D 0 
 #                    doc: Mon Nov 25 20:24:31 2013
-#                    dlm: Tue Jul 12 18:56:55 2016
+#                    dlm: Tue Nov 15 11:05:46 2016
 #                    (c) 2013 A.M. Thurnherr
-#                    uE-Info: 118 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 73 76 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # edit RDI PD0 file, e.g. to replace pitch/roll/heading with external values
@@ -70,6 +70,7 @@
 #				  - added %-good to beam2earth and earth2beam
 #				  - made single-ping ensemble requirement for most routines
 #	Jul 12, 2016: - updated ensure_{DL,UL} routines
+#	Nov 15, 2016: - BUG: ensure_{DL,UL} routines did not negate heading data
 
 use Getopt::Std;
 
@@ -89,7 +90,8 @@ die("$0: -e <edit-file> or -x <expr> required\n")
 
 print(STDERR "Reading $ARGV[0]...");                # read data
 readData($ARGV[0],\%dta);
-print(STDERR "done\n");
+printf(STDERR "done (%d complete ensembles)\n",
+	scalar(@{$dta{ENSEMBLE}}));
 
 #----------------------------------------------------------------------
 
@@ -111,16 +113,26 @@ sub h($) { $dta{ENSEMBLE}[$e]->{HEADING} = $_[0]; return 1;}
 #
 #	These routines are intended to correct ADCP data for
 #	erroneous orientation switch readings, primarily because
-#	of a stuck switch. While not fully debugged, negating
-#	the roll value greatly improves the vertical velocity
-#	solutions of 2007 CLIVAR I08S profile #1. (#2-#7 could
-#	also be used for testing)
-#
+#	of a stuck switch.
+#		Roll: Based on text from the coord trans manual,
+#			  it seems likely that the roll data need to
+#			  be negated. In case of 2007(?) CLIVAR I08S
+#			  profile #1 w gets much better with negated
+#			  roll. Also, in 2016 CLIVAR P18 profile 003
+#			  the instrument-offset calculation from
+#			  compass and pitch/roll only agree with the
+#			  roll negated.
+#		Hdg: Based on the time-series of headings recorded
+#		     during P18 profile 003 the heading needs
+#			 to be negated. Doing so yields a good profile.
 
 sub ensure_DL()
 {
 	if ($dta{ENSEMBLE}[$e]->{XDUCER_FACING_UP}) {
 		$dta{ENSEMBLE}[$e]->{ROLL} *= -1;
+		$dta{ENSEMBLE}[$e]->{HEADING} *= -1; 
+		$dta{ENSEMBLE}[$e]->{HEADING} += 360
+			if ($dta{ENSEMBLE}[$e]->{HEADING} < 0);
 		$dta{ENSEMBLE}[$e]->{XDUCER_FACING_DOWN} = 1;
 		$dta{ENSEMBLE}[$e]->{XDUCER_FACING_UP} = undef;
 	}
@@ -131,6 +143,9 @@ sub ensure_UL()
 {
 	if ($dta{ENSEMBLE}[$e]->{XDUCER_FACING_DOWN}) {
 		$dta{ENSEMBLE}[$e]->{ROLL} *= -1;
+		$dta{ENSEMBLE}[$e]->{HEADING} *= -1; 
+		$dta{ENSEMBLE}[$e]->{HEADING} += 360
+			if ($dta{ENSEMBLE}[$e]->{HEADING} < 0);
 		$dta{ENSEMBLE}[$e]->{XDUCER_FACING_UP} = 1;
 		$dta{ENSEMBLE}[$e]->{XDUCER_FACING_DOWN} = undef;
 	}

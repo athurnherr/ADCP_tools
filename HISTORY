@@ -1,9 +1,9 @@
 ======================================================================
                     H I S T O R Y 
                     doc: Tue May 15 18:04:39 2012
-                    dlm: Fri Aug  5 10:10:06 2016
+                    dlm: Sun Mar 12 12:09:14 2017
                     (c) 2012 A.M. Thurnherr
-                    uE-Info: 150 32 NIL 0 0 72 3 2 4 NIL ofnI
+                    uE-Info: 171 41 NIL 0 0 72 3 2 4 NIL ofnI
 ======================================================================
 
 --------------------------------------
@@ -148,3 +148,24 @@ Jul 26, 2016:
 Jul 30, 2016:
 	- minor bug in [RDI_PD0_IO.pl]
 	- improvements to [splitPD0]
+
+Aug 23, 2016:
+	- added &clearEns to [RDI_PD0_IO.pl]
+	- updated to V1.8
+
+Sep 12, 2016:
+	- improvement to [mkProfile]	
+
+Nov  9-23, 2016:
+	- improvements to [RDI_PD0_IO.pl]
+	- BUG in [editPD0] [listEns] [listHdr]
+
+Jan 17, 2017:
+	- improvements to [listBins]
+
+Mar 7, 2017:
+	- namespace clash in [RDI_PD0_IO.pl]
+
+Mar 12, 2017:
+	- updated HISTORY
+	- updated to V1.9 [ADCP_tools_lib.pl]

@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B I N S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Thu Jun  9 19:09:47 2016
+#                    dlm: Fri Jan 27 17:41:10 2017
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 332 0 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 68 81 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -60,6 +60,12 @@
 #   Mar 17, 2016: - adapted to new Getopt library
 #	Jun  9, 2016: - minor improvements
 #				  - BUG: velBeamToEarth() has new interface
+#	Jan 27, 2017: - BUG: earth-coordinate label was wrong
+#				  - changed semantics to include all %-good fields of earth-coordinate data
+#					and also report total pcg (3+4 beam) in min_pcg
+#				  - BUG: 3-beam %ages were incorrect: 1) they were based on goodvels instead of the
+#						 entire ensemble range; 2) pings-per-ensemble were not considered
+#				  - BUG: output layout was all messed up for non-valid velocities
 
 # General Notes:
 #	- everything (e.g. beams) is numbered from 1
@@ -86,6 +92,12 @@
 #	  edit the data
 #	- non-monotonic min_pcg is particularly obvious with the DYNAMUCK BM_ADCP
 #	  data, where one of the beams performed much worse than the others
+
+# %-good of earth-coordinate data:
+#	pcg1	3-beam (correlation threshold)
+#	pcg2	bad (errvel threshold)
+#	pcg3	bad (>1 bad beam)
+#	pcg4	4-beam
 
 use Getopt::Std;
 
@@ -151,13 +163,10 @@ sub dumpBin($$$)						# write time series of single bin
 	foreach my $k (keys(%P)) {
 		print(P "$k\{$P{$k}\} ");
 	}
-	my($pct3b);
-#	if ($beamCoords) {
-		$pct3b = ($good_vels[$b] > 0) ? 100*$three_beam[$b]/$good_vels[$b] : nan;
-		printf(STDERR "%02d:%.0f%%/%.0f%% ",$b+1,100*$good_vels[$b]/($le-$fe+1),$pct3b);
-#	} else {
-#		printf(STDERR "%02d:%.0f%% ",$b+1,100*$good_vels[$b]/($le-$fe+1));
-#	}
+	my($pct3b) = 100*$three_beam[$b]/(($le-$fe+1) * $dta{PINGS_PER_ENSEMBLE});
+	die("assertion failed: gv[$b] = $good_vels[$b]; 3b = $three_beam[$b]; ens=$fe..$le; ")
+		if ($pct3b > 100);
+	printf(STDERR "%02d:%.0f%%/%.0f%% ",$b+1,100*$good_vels[$b]/($le-$fe+1),$pct3b);
 
 	printf(P "pct_3_beam{%.0f} ",$pct3b);
 	printf(P "pct_good_vels{%.0f} ",100*$good_vels[$b]/($le-$fe+1));
@@ -223,17 +232,25 @@ sub dumpBin($$$)						# write time series of single bin
 		} else {
 			print(P "nan nan nan nan ");
 			print(P "nan nan nan nan ");
+			print(P "nan nan nan nan ");
 		}
 		print(P "@{$dta{ENSEMBLE}[$e]->{CORRELATION}[$b]} ");
 		print(P "@{$dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b]} ");
-		if ($beamCoords) {
+		if ($dta{ENSEMBLE}[$e]->{GOOD_VEL}[$b]) {
 			print(P "@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]} ");
+		} else {
+			print(P "nan nan nan nan ");
+		}
+		if ($beamCoords) {
 			printf(P "%d ",$dta{ENSEMBLE}[$e]->{THREE_BEAM}[$b]);
 			printf(P "%s ",min(@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]}));
 		} else {
-			print(P "nan nan nan nan ");
-			print(P "$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][0] ");
-			print(P "nan ");
+			if ($dta{ENSEMBLE}[$e]->{GOOD_VEL}[$b]) {
+				print(P "$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][0] ");
+			} else {
+				print(P "nan ");
+			}
+			printf(P "%g ",$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][0]+$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][3]);
 		}
 		printf(P "%g ",$dz[$b]*$ssCorr) if ($variable_ssCorr);
 		print(P "\n");
@@ -377,10 +394,8 @@ if ($beamCoords) {
 											   $RDI_Coords::threeBeam_3,
 											   $RDI_Coords::threeBeam_4);
 	
-	print(STDERR "Good/3-beam: ");
-} else {
-	print(STDERR "Good       : ");
 }
+print(STDERR "Good/3-Beam: ");
 for ($b=$firstBin; $b<=$lastBin; $b++) {				# generate output
 	dumpBin($b,$fe,$le);
 }

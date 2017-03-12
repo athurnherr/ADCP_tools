@@ -1,12 +1,12 @@
 #======================================================================
-#                    R D I _ B B _ R E A D . P L 
+#                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Sat Jul 30 18:34:46 2016
+#                    dlm: Tue Mar  7 12:07:29 2017
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 402 62 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 1250 39 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
-# Read RDI BroadBand Binary Data Files (*.[0-9][0-9][0-9])
+# Read RDI PD0 binary data files (*.[0-9][0-9][0-9])
 
 # HISTORY:
 #	Jan 18, 2003: - incepted aboard the Aurora Australis (KAOS)
@@ -78,6 +78,12 @@
 #	Feb 29, 2016: - LEAP DAY: actually got BT data patching to work
 #	Jul 30, 2016: - BUG: incomplete last ensemble with garbage content was returned on reading
 #						 WH300 data
+#	Aug  5, 2016: - cosmetics
+#	Aug 23, 2016: - added &clearEns()
+#	Nov  9, 2016: - made WBRhdr() return undef on "empty" files
+#	Nov 18, 2016: - BUG: ensNo was not reported correctly in format errors
+#	Nov 23, 2016: - no longer set pitch/roll/heading to undef in clearEns()
+#	Mar  7, 2016: - renamed round() to stop clashing with ANTSLIB
 
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -375,7 +381,7 @@ sub readHeader(@)
 	my($fn,$dta) = @_;
 	$WBRcfn = $fn;
     open(WBRF,$WBRcfn) || die("$WBRcfn: $!");
-    WBRhdr($dta);    
+    WBRhdr($dta) || die("$WBRcfn: Insufficient data\n");
 }
 
 sub WBRhdr($)
@@ -389,14 +395,14 @@ sub WBRhdr($)
 	#--------------------
 
 	skip_initial_trash();
-	sysread(WBRF,$buf,6) == 6 || die("$WBRcfn: $!");
+	sysread(WBRF,$buf,6) == 6 || return undef;
 	($hid,$did,$dta->{ENSEMBLE_BYTES},$dummy,$dta->{NUMBER_OF_DATA_TYPES})
 		= unpack('CCvCC',$buf);
 	$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header (hid)",$hid,0));
 	$did == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header (did)",$did,0));
 
-	$start_ens = sysseek(WBRF,$dta->{ENSEMBLE_BYTES}-6+2,1) || die("$WBRcfn: $!");
-	sysread(WBRF,$buf,6) == 6 || die("$WBRcfn: $!");
+	$start_ens = sysseek(WBRF,$dta->{ENSEMBLE_BYTES}-6+2,1) || return undef;
+	sysread(WBRF,$buf,6) == 6 || return undef;
 	($hid,$did,$dta->{ENSEMBLE_BYTES},$dummy,$dta->{NUMBER_OF_DATA_TYPES})
 		= unpack('CCvCC',$buf);
 	$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header (hid2)",$hid,0));
@@ -643,8 +649,8 @@ sub readData(@)
 {
 	my($fn,$dta) = @_;
 	$WBRcfn = $fn;
-    open(WBRF,$WBRcfn) || die("$WBRcfn: $!");
-    WBRhdr($dta);
+    open(WBRF,$WBRcfn) || die("$WBRcfn: $!\n");
+    WBRhdr($dta) || die("$WBRcfn: Insufficient Data\n");
 	WBRens($dta->{N_BINS},$dta->{FIXED_LEADER_BYTES},
 		   \@{$dta->{ENSEMBLE}});
 	print(STDERR "$WBRcfn: $BIT_errors built-in-test errors\n")
@@ -670,7 +676,7 @@ sub WBRens($$$)
 		sysseek(WBRF,$start_ens,0) || die("$WBRcfn: $!");
 		sysread(WBRF,$buf,6) == 6 || last;
 		($hid,$did,$ens_length,$dummy,$ndt) = unpack('CCvCC',$buf);
-		$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header",$hid,0));
+		$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header",$hid,defined($ensNo)?$ensNo+1:0));
 		${$E}[$ens]->{DATA_SOURCE_ID} = $did;
 		if ($did == 0x7f) {
 			${$E}[$ens]->{PRODUCER} = 'TRDI ADCP';
@@ -698,26 +704,31 @@ sub WBRens($$$)
 		# final ensemble.
 
 		sysseek(WBRF,$start_ens,0) || die("$WBRcfn: $!");
-		unless ((sysread(WBRF,$buf,$ens_length) == $ens_length) &&
+		unless ((sysread(WBRF,$buf,$ens_length) == $ens_length) &&				# incomplete ensemble
 				(sysread(WBRF,$cs,2) == 2)) {
 			pop(@{$E});
 			last;
 		}
 
-		pop(@{$E}),last unless (unpack('%16C*',$buf) == unpack('v',$cs));
+		unless (unpack('%16C*',$buf) == unpack('v',$cs)) {						# bad checksum
+			pop(@{$E});
+			last;
+#			next;																# using this might make the code work
+		}																		# for files with isolated bad ensembles
 
 		#------------------------------
 		# Variable Leader
 		#------------------------------
 	
+		my($lastEns) = $ensNo;
 		sysseek(WBRF,$start_ens+$WBRofs[1],0) || die("$WBRcfn: $!");
 		sysread(WBRF,$buf,4) == 4 || die("$WBRcfn: $!");
-		($id,$ensNo) = unpack("vv",$buf);
+		($id,$ensNo) = unpack("vv",$buf);										# only lower two bytes!!!
 
 		$id == 0x0080 ||
-			die(sprintf($FmtErr,$WBRcfn,"Variable Leader",$id,$ensNo+1));
+			die(sprintf($FmtErr,$WBRcfn,"Variable Leader",$id,$ensNo + ($lastEns - ($lastEns & 0xFFFF))));
 
-		if ($fixed_leader_bytes==42 || $fixed_leader_bytes==58) {			# BB150 & Explorer DVL
+		if ($fixed_leader_bytes==42 || $fixed_leader_bytes==58) {				# BB150 & Explorer DVL
 			sysread(WBRF,$buf,7) == 7 || die("$WBRcfn: $!");
 			(${$E}[$ens]->{YEAR},${$E}[$ens]->{MONTH},
 			 ${$E}[$ens]->{DAY},${$E}[$ens]->{HOUR},${$E}[$ens]->{MINUTE},
@@ -854,7 +865,7 @@ sub WBRens($$$)
 		($id,@dta) = unpack("vv$ndata",$buf);
 
 		$id == 0x0100 ||
-			die(sprintf($FmtErr,$WBRcfn,"Velocity Data",$id,$ens));
+			die(sprintf($FmtErr,$WBRcfn,"Velocity Data",$id,$ensNo));
 		
 		for ($i=0,$bin=0; $bin<$nbins; $bin++) {
 			for ($beam=0; $beam<4; $beam++,$i++) {
@@ -873,7 +884,7 @@ sub WBRens($$$)
 		($id,@dta) = unpack("vC$ndata",$buf);
 
 		$id == 0x0200 ||
-			die(sprintf($FmtErr,$WBRcfn,"Correlation Data",$id,$ens));
+			die(sprintf($FmtErr,$WBRcfn,"Correlation Data",$id,$ensNo));
 		
 		for ($i=0,$bin=0; $bin<$nbins; $bin++) {
 			for ($beam=0; $beam<4; $beam++,$i++) {
@@ -891,7 +902,7 @@ sub WBRens($$$)
 		($id,@dta) = unpack("vC$ndata",$buf);
 
 		$id == 0x0300 ||
-			die(sprintf($FmtErr,$WBRcfn,"Echo Intensity",$id,$ens));
+			die(sprintf($FmtErr,$WBRcfn,"Echo Intensity",$id,$ensNo));
 
 		for ($i=0,$bin=0; $bin<$nbins; $bin++) {
 			for ($beam=0; $beam<4; $beam++,$i++) {
@@ -908,7 +919,7 @@ sub WBRens($$$)
 		($id,@dta) = unpack("vC$ndata",$buf);
 
 		$id == 0x0400 ||
-			die(sprintf($FmtErr,$WBRcfn,"Percent-Good Data",$id,$ens));
+			die(sprintf($FmtErr,$WBRcfn,"Percent-Good Data",$id,$ensNo));
 
 		for ($i=0,$bin=0; $bin<$nbins; $bin++) {
 #			printf(STDERR "%-GOOD($bin): ");
@@ -1028,7 +1039,7 @@ sub writeData(@)
     WBPens($dta->{N_BINS},$dta->{FIXED_LEADER_BYTES},$dta);
 }
 
-sub round(@)
+sub _round(@)
 {
 	return $_[0] >= 0 ? int($_[0] + 0.5)
 					  : int($_[0] - 0.5);
@@ -1039,7 +1050,7 @@ sub WBPens($$$)
 {
 	my($nbins,$fixed_leader_bytes,$dta) = @_;
 	my($start_ens,$B1,$B2,$B3,$B4,$I,$id,$bin,$beam,$buf,$dummy,@dta,$i,$cs,@WBPofs);
-	my($ens,$ensNo,$dayStart,$ens_length,$hid,$ndt);
+	my($ens,$dayStart,$ens_length,$hid,$ndt);
 
 	for ($ens=$start_ens=0; $ens<=$#{$dta->{ENSEMBLE}}; $ens++,$start_ens+=$ens_length+2) {
 
@@ -1100,24 +1111,24 @@ sub WBPens($$$)
 
 		sysseek(WBPF,$start_ens+$WBPofs[1]+14,0) || die("$WBPcfn: $!");		# jump to SPEED_OF_SOUND
 		
-		$dta->{ENSEMBLE}[$ens]->{XDUCER_DEPTH} = round($dta->{ENSEMBLE}[$ens]->{XDUCER_DEPTH}*10);
+		$dta->{ENSEMBLE}[$ens]->{XDUCER_DEPTH} = _round($dta->{ENSEMBLE}[$ens]->{XDUCER_DEPTH}*10);
 
 		#---------------------------------
 		# NB: IMP allows for missing value
 		#---------------------------------
 
 		$dta->{ENSEMBLE}[$ens]->{HEADING} = defined($dta->{ENSEMBLE}[$ens]->{HEADING})
-							   ? round($dta->{ENSEMBLE}[$ens]->{HEADING}*100)
+							   ? _round($dta->{ENSEMBLE}[$ens]->{HEADING}*100)
 							   : 0xF000;
 		$dta->{ENSEMBLE}[$ens]->{PITCH} = defined($dta->{ENSEMBLE}[$ens]->{PITCH})
-							 ? unpack('S',pack('s',round($dta->{ENSEMBLE}[$ens]->{PITCH}*100)))
+							 ? unpack('S',pack('s',_round($dta->{ENSEMBLE}[$ens]->{PITCH}*100)))
 							 : 0x8000;
 		$dta->{ENSEMBLE}[$ens]->{ROLL} = defined($dta->{ENSEMBLE}[$ens]->{ROLL})
-						    ? unpack('S',pack('s',round($dta->{ENSEMBLE}[$ens]->{ROLL}*100)))
+						    ? unpack('S',pack('s',_round($dta->{ENSEMBLE}[$ens]->{ROLL}*100)))
 						    : 0x8000;
 
 		$dta->{ENSEMBLE}[$ens]->{TEMPERATURE} =
-			unpack('S',pack('s',round($dta->{ENSEMBLE}[$ens]->{TEMPERATURE}*100)));
+			unpack('S',pack('s',_round($dta->{ENSEMBLE}[$ens]->{TEMPERATURE}*100)));
 
 		$buf = pack('vvvvvvv',
 			 $dta->{ENSEMBLE}[$ens]->{SPEED_OF_SOUND},
@@ -1137,7 +1148,7 @@ sub WBPens($$$)
 		for ($bin=0; $bin<$nbins; $bin++) {
 			for ($beam=0; $beam<4; $beam++) {
 				$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$bin][$beam] = defined($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$bin][$beam])
-							   						 ? round($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$bin][$beam]*1000)
+							   						 ? _round($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$bin][$beam]*1000)
 							   						 : 0x8000;
 				$buf = pack('v',unpack('S',pack('s',$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$bin][$beam])));
 				my($nw) = syswrite(WBPF,$buf,2);
@@ -1202,7 +1213,7 @@ sub WBPens($$$)
 		unless ($nxt == $ndt) {													# BT found
 			sysseek(WBPF,14,1) || die("$WBPcfn: $!");							# skip BT config
 			for ($beam=0; $beam<4; $beam++) {									# BT range low bytes (2 per beam)
-				$buf = pack('v',round($dta->{ENSEMBLE}[$ens]->{BT_RANGE}[$beam] * 100) & 0xFFFF);
+				$buf = pack('v',_round($dta->{ENSEMBLE}[$ens]->{BT_RANGE}[$beam] * 100) & 0xFFFF);
 				my($nw) = syswrite(WBPF,$buf,2);
 				$nw == 2 || die("$WBPcfn: $nw bytes written ($!)");
 			}
@@ -1210,7 +1221,7 @@ sub WBPens($$$)
 			for ($beam=0; $beam<4; $beam++) {									# BT velocities
 				$buf = pack('v',unpack('S',pack('s',
 						defined($dta->{ENSEMBLE}[$ens]->{BT_VELOCITY}[$beam])
-							? round($dta->{ENSEMBLE}[$ens]->{BT_VELOCITY}[$beam]*1000)
+							? _round($dta->{ENSEMBLE}[$ens]->{BT_VELOCITY}[$beam]*1000)
 							: 0x8000)));
 				my($nw) = syswrite(WBPF,$buf,2);
 				$nw == 2 || die("$WBPcfn: $nw bytes written ($!)");
@@ -1236,7 +1247,7 @@ sub WBPens($$$)
 
 			sysseek(WBPF,33,1) || die("$WBPcfn: $!");							# BT range high bytes (1 per beam)
 			for ($beam=0; $beam<4; $beam++) {
-				$buf = pack('C',(round($dta->{ENSEMBLE}[$ens]->{BT_RANGE}[$beam]*100) & 0xFF0000) >> 16);
+				$buf = pack('C',(_round($dta->{ENSEMBLE}[$ens]->{BT_RANGE}[$beam]*100) & 0xFF0000) >> 16);
 				my($nw) = syswrite(WBPF,$buf,1);
 				$nw == 1 || die("$WBPcfn: $nw bytes written ($!)");
 			}
@@ -1255,6 +1266,42 @@ sub WBPens($$$)
 		$nw == 2 || die("$WBPcfn: $nw bytes written, ens=$ens ($!)");
 
 	} # ens loop
+}
+
+#----------------------------------------------------------------------
+# &clearEns(^data,ens-index)
+#	- undefine all velocities in ensemble, including BT
+#		- this is required for the LDEO_IX software,
+#		  which does not recognize missing attitude values
+#	- set percent good to zero
+#		- this is done for consistency
+#	- DO NOT undef heading, pitch and roll
+#		- the LDEO software does not recognize missing attitude vals
+#		  and, therefore, misinterprets those
+#		- while this should not matter because all the velocities are
+#		  also deleted, it was found that setting only the heading to
+#		  undef'd and leaving pitch and roll unchanged causes
+#		  significant errors in GPS velocity referencing! This
+#		  must be a bug
+#		- also, if attitudes are undef'd the LDEO software
+#		  cannto determine the instrument offset from pitch/roll
+#		  and the pitch/roll DL vs UL plots are bogus
+#----------------------------------------------------------------------
+
+sub clearEns($$)
+{
+	my($dta,$ens) = @_;
+	croak("clearEns: ens-index $ens out of range\n")
+		unless ($ens>=0 && $ens<=$#{$dta->{ENSEMBLE}});
+	for (my($bin)=0; $bin<$dta->{N_BINS}; $bin++) {
+		undef(@{$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$bin]});
+		@{$dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$bin]} = (0,0,0,0);
+	}
+	undef(@{$dta->{ENSEMBLE}[$ens]->{BT_VELOCITY}});
+	@{$dta->{ENSEMBLE}[$ens]->{BT_PERCENT_GOOD}} = (0,0,0,0);
+#	undef($dta->{ENSEMBLE}[$ens]->{HEADING});
+#	undef($dta->{ENSEMBLE}[$ens]->{PITCH});
+#	undef($dta->{ENSEMBLE}[$ens]->{ROLL});
 }
 
 1;      # return true for all the world to see

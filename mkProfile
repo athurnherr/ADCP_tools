@@ -2,9 +2,9 @@
 #======================================================================
 #                    M K P R O F I L E 
 #                    doc: Sun Jan 19 18:55:26 2003
-#                    dlm: Thu Mar 17 07:41:03 2016
+#                    dlm: Mon Sep 12 14:02:24 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 93 35 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 94 26 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Make an LADCP Profile by Integrating W (similar to Firing's scan*).
@@ -91,6 +91,7 @@
 #	Mar 22, 2015: - made it work for moored time series as well
 #	Mar 17, 2015: - adapted to new Getopt library
 #				  - removed warning
+#	Sep 12, 2016: - added %PD0_file
 
 # NOTES:
 #	- the battery values are based on transmission voltages (different
@@ -720,6 +721,7 @@ printf("#ANTS#PARAMS# date{$dta{ENSEMBLE}[$firstgood]->{DATE}} " .
 				 "end_time{$dta{ENSEMBLE}[$lastgood]->{TIME}} " .
 	  "bottom_xmit_voltage{$dta{ENSEMBLE}[$atbottom]->{ADC_XMIT_VOLTAGE}} " .
 	  "bottom_xmit_current{$dta{ENSEMBLE}[$atbottom]->{ADC_XMIT_CURRENT}} " .
+				 "PD0_file{$ARGV[0]} " .
 		 "pinging_duration{%.1f} " .
 			"cast_duration{%.1f} " .
 		   "0.8_valid_bins{%.1f} " .

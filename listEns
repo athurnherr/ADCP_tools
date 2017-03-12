@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T E N S 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Tue Apr 19 21:11:12 2016
+#                    dlm: Wed Nov  9 12:27:32 2016
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 181 53 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 115 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the ensemble list or dump ensembles to
@@ -47,6 +47,7 @@
 #	Sep  8, 2014: - added -B)T  
 #   Mar 17, 2016: - adapted to new Getopt library
 #	Apr 19, 2016: - added %date, %time to -E output
+#	Nov  9, 2016: - BUG: no error on missing files
 
 # Notes:
 #	- -E outputs data in earth coordinates, unless -b is set also
@@ -106,13 +107,16 @@ $RDI_Coords::minValidVels = 4 if ($opt_4);			# no 3-beam solutions
 # MAIN
 #----------------------------------------------------------------------
 
-while (-f $ARGV[0]) {
+while ($ARGV[0] ne '') {
+	die("$ARGV[0]: No such file or directory\n")
+		unless (-f $ARGV[0]);
+
+	readData(@ARGV,\%dta);
 	if ($opt_A && !$opt_E) {
 		print("#ANTS#PARAMS# RDI_file{$ARGV[0]}\n");
 	} elsif (!$opt_Q) {
 		print(STDERR "$ARGV[0]: ");
 	}
-	readData(@ARGV,\%dta);
 	printf(STDERR "%d complete ensembles...\n",scalar(@{$dta{ENSEMBLE}}))
 		unless ($opt_Q);
 	$dta{HEADING_BIAS} = -$opt_M;						# magnetic declination
