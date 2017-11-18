@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ C O O R D S . P L 
 #                    doc: Sun Jan 19 17:57:53 2003
-#                    dlm: Sun Jul 31 13:54:26 2016
+#                    dlm: Thu Oct 12 21:01:19 2017
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 568 0 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 260 20 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # RDI Workhorse Coordinate Transformations
@@ -53,6 +53,7 @@
 #	Jun  8, 2016: - added $ens as arg to velInstrumentToBeam() for consistency
 #	Jul  7, 2016: - added velEarthToBPw() with algorithm debugged and verified
 #					by Paul Wanis from TRDI
+#	Oct 12, 2017: - documentation
 
 use strict;
 use POSIX;
@@ -256,7 +257,7 @@ sub velBeamToEarth(@)
 # velInstrumentToBeam() transforms instrument to beam coordinates
 #	- based on manually solved eq system in sec 5.3 of coord manual
 #	- does not implement bin-remapping
-#	- does not work for 3-beam solutions, as it is not known which
+#	- returns undef for 3-beam solutions, as it is not known which
 #	  beam was bad
 #----------------------------------------------------------------------
 
@@ -308,7 +309,15 @@ sub velEarthToBeam(@)
 #		3) rotate into horizontal coords (earth coords w/o
 #		   considering heading, i.e. same as earth coords
 #		   in case of w
+#	- the commented-out version above is a "brute-force"
+#	  implementation which should give the same result
 #----------------------------------------------------------------------
+
+#sub velEarthToBPw(@)
+#{
+#   my(@bpv) = velBeamToBPEarth(&velEarthToBeam(@_));
+#   return ($bpv[1],$bpv[3]);
+#}
 
 sub velEarthToBPw(@)
 {

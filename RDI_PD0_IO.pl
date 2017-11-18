@@ -1,13 +1,13 @@
 #======================================================================
-#                    R D I _ P D 0 _ I O . P L 
+#                    R D I _ B B _ R E A D . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Tue Mar  7 12:07:29 2017
+#                    dlm: Tue Aug  8 16:19:45 2017
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 1250 39 NIL 0 0 72 0 2 4 NIL ofnI
+#					 uE-Info: 562 21 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
-
+	
 # Read RDI PD0 binary data files (*.[0-9][0-9][0-9])
-
+	
 # HISTORY:
 #	Jan 18, 2003: - incepted aboard the Aurora Australis (KAOS)
 #	Jan 19, 2003: - continued
@@ -34,7 +34,7 @@
 #	Oct 30, 2005: - added WH300 FW16.27 file format
 #				  - added DATA_FORMAT_VARIANT
 #				  - changed semantics so that first valid ensemble is
-#				    in E[0] (instead of E[$ensNo-1])
+#					in E[0] (instead of E[$ensNo-1])
 #	Nov  8, 2005: - replaced UNIXTIME by UNIX_TIME
 #				  - added SECNO
 #	Aug 31: 2006: - added DAYNO
@@ -62,7 +62,7 @@
 #	Sep  6, 2014: - adapted WBRhdr to >7 data types
 #	Oct 15, 2014: - implemented work-around for readData() not recognizing
 #					incomplete ensemble at the end, which seems to imply that there is
-#				    a garbage final ensemble that passes the checksum test???
+#					a garbage final ensemble that passes the checksum test???
 #	Oct  2, 2015: - added &skip_initial_trash()
 #	Dec 18, 2015: - added most data types to WBPofs()
 #				  - BUG: WBPens() requires round() for scaled values
@@ -84,19 +84,26 @@
 #	Nov 18, 2016: - BUG: ensNo was not reported correctly in format errors
 #	Nov 23, 2016: - no longer set pitch/roll/heading to undef in clearEns()
 #	Mar  7, 2016: - renamed round() to stop clashing with ANTSLIB
-
+#	May 18, 2017: - maded readHeader() more permissive (checkFmt flag)
+#				  - added partial support for Ocean Surveyor data
+#	Aug  1, 2017: BUG: minor typo in ocean surveyor code (err check not done?)
+#	Aug  7, 2017: - added LAG_LENGTH
+#				  - added SPEED_OF_SOUND to header
+#	Aug  8, 2017: - replaced croak() by die()
+#				  - added actual transducer frequencies
+	
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
 #	structures. Currently (Sep 2005) these routines have been tested
 #	with the following firmware versions (as reported by [listHdr]):
 #
-#	Firmw.	DATA_FORMAT(_VARIANT)	Owner 	Cruise	FIXED_LEADER_LENGTH
+#	Firmw.	DATA_FORMAT(_VARIANT)	Owner	Cruise	FIXED_LEADER_LENGTH
 #------------------------------------------------------------
-#	05.52	BB150 (1)				UH 		CLIVAR/P16S 42
+#	05.52	BB150 (1)				UH		CLIVAR/P16S 42
 #	16.12	WH300 (1)				FSU 	A0304		53
-#	16.21	WH300 (1)				LDEO 	NBP0402		53
-#	16.27	WH300 (2)				Nash 	?			59
-
+#	16.21	WH300 (1)				LDEO	NBP0402 	53
+#	16.27	WH300 (2)				Nash	?			59
+	
 # PD0 FILE FORMAT EXTENSIONS:
 #
 #	- file creator encoded in DATA_SOURCE_ID
@@ -104,7 +111,7 @@
 #	- first ensemble uses default RDI DATA_SOURCE_ID because the LDEO_IX
 #	  software assumes this
 #
-#	- DATA_SOURCE_ID = 0x7F						original TRDI PD0 file
+#	- DATA_SOURCE_ID = 0x7F 					original TRDI PD0 file
 #
 #	- DATA_SOURCE_ID = 0xA0 | PATCHED_MASK		produced by IMP+LADP 
 #		PATCHED_MASK & 0x04:						pitch value has been patched
@@ -114,7 +121,7 @@
 #			- HEADING can be missing (0xF000 badval, as 0x8000 is valid 327.68 heading)
 #
 #	- DATA_SOURCE_ID = 0xE0 					produced by editPD0
-
+	
 # NOTES:
 #	- RDI stores data in VAX/Intel byte order (little endian)
 #	- the output data structure does not exactly mirror the file data
@@ -138,12 +145,12 @@
 #	- all units except pressure are SI, i.e. in m and m/s
 #	- I don't understand the ERROR_STATUS_WORD; here's what 3 different
 #	  instruments returned:
-#	  	0x88000100	FSU instrument during A0304 (Firmware 16.12)
+#		0x88000100	FSU instrument during A0304 (Firmware 16.12)
 #		0x88008180	LDEO uplooker (slave) during NBP0402 (Firmware 16.21)
 #		0x00008180	LDEO downlooker (master) during NBP0402 (Firmware 16.21)
 #	  According to the manual (January 2001 version) this would, for example,
 #	  indicate power failures on both FSU and LDEO slave instruments...
-
+	
 # &readData() returns perl obj (ref to anonymous hash) with the following
 # structure:
 #
@@ -153,27 +160,28 @@
 #	HEADER_BYTES					scalar		?
 #	FIXED_LEADER_BYTES				scalar		42 for BB150; 53 for WH300, 58 for WH600, 59 for WH300(Nash)
 #	VARIABLE_LEADER_BYTES			scalar		?
-#	VELOCITY_DATA_BYTES				scalar		?
+#	VELOCITY_DATA_BYTES 			scalar		?
 #	CORRELATION_DATA_BYTES			scalar		?
 #	ECHO_INTENSITY_DATA_BYTES		scalar		?
-#	PERCENT_GOOD_DATA_BYTES			scalar		?
+#	PERCENT_GOOD_DATA_BYTES 		scalar		?
 #	BT_PRESENT						bool		NUMBER_OF_DATA_TYPES == 7
 #	BT_DATA_BYTES					scalar		undefined, ? if BT_PRESENT
 #	CPU_FW_VER						scalar		0--255
 #	CPU_FW_REV						scalar		0--255
 #	BEAM_FREQUENCY					scalar		75, 150, 300, 600, 1200, 2400 [kHz]
-#	CONVEX_BEAM_PATTERN				bool		undefined, 1
+#	LAG_LENGTH						scalar		???
+#	CONVEX_BEAM_PATTERN 			bool		undefined, 1
 #	CONCAVE_BEAM_PATTERN			bool		undefined, 1
 #	SENSOR_CONFIG					scalar		1--3
 #	XDUCER_HEAD_ATTACHED			bool		undefined, 1
 #	BEAM_ANGLE						scalar		15,20,30,undefined=other [deg]
-#	N_BEAMS							scalar		4--5
+#	N_BEAMS 						scalar		4--5
 #	N_DEMODS						scalar		2--3(???),undefined=n/a
 #	N_BINS							scalar		1--128
 #	PINGS_PER_ENSEMBLE				scalar		0--16384
 #	BIN_LENGTH						scalar		0.01--64 [m]
 #	BLANKING_DISTANCE				scalar		0-99.99 [m]
-#	MIN_CORRELATION					scalar		0--255
+#	MIN_CORRELATION 				scalar		0--255
 #	N_CODE_REPETITIONS				scalar		0--255
 #	MIN_PERCENT_GOOD				scalar		1--100 [%]
 #	MAX_ERROR_VELOCITY				scalar		0--5 [m/s]
@@ -182,17 +190,17 @@
 #	INSTRUMENT_COORDINATES			bool		undefined,1
 #	SHIP_COORDINATES				bool		undefined,1
 #	EARTH_COORDINATES				bool		undefined,1
-#	PITCH_AND_ROLL_USED				bool		undefined,1
+#	PITCH_AND_ROLL_USED 			bool		undefined,1
 #	USE_3_BEAM_ON_LOW_CORR			bool		undefined,1
-#	BIN_MAPPING_ALLOWED				bool		undefined,1
-#	HEADING_ALIGNMENT 				scalar		-179.99..180 [deg]
-#	HEADING_BIAS			 		scalar		-179.99..180 [deg]
+#	BIN_MAPPING_ALLOWED 			bool		undefined,1
+#	HEADING_ALIGNMENT				scalar		-179.99..180 [deg]
+#	HEADING_BIAS					scalar		-179.99..180 [deg]
 #	CALCULATE_SPEED_OF_SOUND		bool		undefined,1
-#	USE_PRESSURE_SENSOR				bool		undefined,1
-#	USE_COMPASS						bool		undefined,1
+#	USE_PRESSURE_SENSOR 			bool		undefined,1
+#	USE_COMPASS 					bool		undefined,1
 #	USE_PITCH_SENSOR				bool		undefined,1
-#	USE_ROLL_SENSOR					bool		undefined,1
-#	USE_CONDUCTIVITY_SENSOR			bool		undefined,1
+#	USE_ROLL_SENSOR 				bool		undefined,1
+#	USE_CONDUCTIVITY_SENSOR 		bool		undefined,1
 #	USE_TEMPERATURE_SENSOR			bool		undefined,1
 #	SPEED_OF_SOUND_CALCULATED		bool		undefined,1
 #	PRESSURE_SENSOR_AVAILABLE		bool		undefined,1
@@ -201,49 +209,49 @@
 #	ROLL_SENSOR_AVAILABLE			bool		undefined,1
 #	CONDUCTIVITY_SENSOR_AVAILABLE	bool		undefined,1
 #	TEMPERATURE_SENSOR_AVAILABLE	bool		undefined,1
-#	DISTANCE_TO_BIN1_CENTER			scalar		0--655.35 [m]
+#	DISTANCE_TO_BIN1_CENTER 		scalar		0--655.35 [m]
 #	TRANSMITTED_PULSE_LENGTH		scalar		0--655.35 [m]
 #	RL_FIRST_BIN					scalar		1--128
-#	RL_LAST_BIN						scalar		1--128
+#	RL_LAST_BIN 					scalar		1--128
 #	FALSE_TARGET_THRESHOLD			scalar		0--254, undefined=disabled
-#	LOW_LATENCY_SETTING				scalar		0--5(???)
+#	LOW_LATENCY_SETTING 			scalar		0--5(???)
 #	TRANSMIT_LAG_DISTANCE			scalar		0--655.35 [m]
 #	CPU_SERIAL_NUMBER				scalar		undefined, 0--65535 if WH300
 #	NARROW_BANDWIDTH				bool		undefined,1 (only set if WH300)
 #	WIDE_BANDWIDTH					bool		undefined,1 (only set if WH300)
 #	TRANSMIT_POWER					scalar		undefined, 0--255(high) if WH300
-#	TRANSMIT_POWER_HIGH				bool		undefined,1 (only set if WH300)
+#	TRANSMIT_POWER_HIGH 			bool		undefined,1 (only set if WH300)
 #	BT_PINGS_PER_ENSEMBLE			scalar		0--999
 #	BT_DELAY_BEFORE_REACQUIRE		scalar		0--999
 #	BT_MIN_CORRELATION				scalar		0--255
 #	BT_MIN_EVAL_AMPLITUDE			scalar		0--255
-#	BT_MIN_PERCENT_GOOD				scalar		0--100 [%]
-#	BT_MODE							scalar		4,5,6(?)
+#	BT_MIN_PERCENT_GOOD 			scalar		0--100 [%]
+#	BT_MODE 						scalar		4,5,6(?)
 #	BT_MAX_ERROR_VELOCITY			scalar		0--5 [m/s], undef=not screened
 #	BT_RL_MIN_SIZE					scalar		0--99.9 [m]
 #	BT_RL_NEAR						scalar		0--999.9 [m]
 #	BT_RL_FAR						scalar		0--999.9 [m]
 #	BT_MAX_TRACKING_DEPTH			scalar		8--999.9 [m]
-#	ENSEMBLE[ensemble_no-1]			array		ensemble info
+#	ENSEMBLE[ensemble_no-1] 		array		ensemble info
 #		XDUCER_FACING_UP			bool		undefined, 1
 #		XDUCER_FACING_DOWN			bool		undefined, 1
 #		N_BEAMS_USED				scalar		3,4,5(?)
 #		NUMBER						scalar		1--16777215
-#		BUILT_IN_TEST_ERROR			scalar		?,undefined=none
+#		BUILT_IN_TEST_ERROR 		scalar		?,undefined=none
 #		SPEED_OF_SOUND				scalar		1400--1600 [m/s]
 #		XDUCER_DEPTH				scalar		0.1--999.9 [m]
-#		HEADING						scalar		0--359.99 [deg]    --- IMP EXTENSION: undef
+#		HEADING 					scalar		0--359.99 [deg]    --- IMP EXTENSION: undef
 #		PITCH						scalar		-20.00-20.00 [deg] --- IMP EXTENSION: undef
 #		ROLL						scalar		-20.00-20.00 [deg] --- IMP EXTENSION: undef
 #		SALINITY					scalar		0-40 [psu]
-#		TEMPERATURE					scalar		-5.00--40.00 [deg]
+#		TEMPERATURE 				scalar		-5.00--40.00 [deg]
 #		MIN_PRE_PING_WAIT_TIME		scalar		? [s]
 #		HEADING_STDDEV				scalar		0-180 [deg]
 #		PITCH_STDDEV				scalar		0.0-20.0 [deg]
-#		ROLL_STDDEV					scalar		0.0-20.0 [deg]
+#		ROLL_STDDEV 				scalar		0.0-20.0 [deg]
 #		ADC_XMIT_CURRENT			scalar		0--255
 #		ADC_XMIT_VOLTAGE			scalar		0--255
-#		ADC_AMBIENT_TEMPERATURE		scalar		0--255
+#		ADC_AMBIENT_TEMPERATURE 	scalar		0--255
 #		ADC_PRESSURE_PLUS			scalar		0--255
 #		ADC_PRESSURE_MINUS			scalar		0--255
 #		ADC_ATTITUDE_TEMPERATURE	scalar		0--255
@@ -251,145 +259,146 @@
 #		ADC_CONTAMINATION			scalar		0--255
 #		ERROR_STATUS_WORD			scalar		undefined, ? (only set if WH300)
 #		PRESSURE					scalar		undefined, ?-? [dbar] (only set if WH300)
-#		PRESSURE_STDDEV				scalar		undefined, ?-? [dbar] (only set if WH300)
+#		PRESSURE_STDDEV 			scalar		undefined, ?-? [dbar] (only set if WH300)
 #		DATE						string		MM/DD/YYYY
 #		YEAR						scalar		?
 #		MONTH						scalar		1--12
-#		DAY							scalar		1--31
+#		DAY 						scalar		1--31
 #		TIME						string		HH:MM:SS.hh
 #		HOUR						scalar		0--23
 #		MINUTE						scalar		0--59
-#		SECONDS						scalar		0--59.99
+#		SECONDS 					scalar		0--59.99
 #		UNIX_TIME					scalar		0--?
 #		SECNO						scalar		0--? (number of seconds since daystart)
 #		DAYNO						double		fractional day number since start of current year (1.0 is midnight Jan 1st)
-#		VELOCITY[bin][beam]			scalars		-32.767--32.768 [m/s], undef=bad
-#		CORRELATION[bin][beam]		scalars		1--255, undefined=bad
-#		ECHO_AMPLITUDE[bin][beam]	scalars		0--255
-#		PERCENT_GOOD[bin][beam]		scalars		0--255
-#		BT_RANGE[beam]				scalars		tons [m]
-#		BT_VELOCITY[beam]			scalars		see VELOCITY
-#		BT_CORRELATION[beam]		scalars		see CORRELATION
-#		BT_EVAL_AMPLITUDE[beam]		scalars		0--255
-#		BT_PERCENT_GOOD[beam]		scalars		see PERCENT_GOOD
-#		BT_RL_VELOCITY[beam]		scalars		see VELOCITY
-#		BT_RL_CORRELATION[beam]		scalars		see CORRELATION
-#		BT_RL_ECHO_AMPLITUDE[beam]	scalars		see ECHO_AMPLITUDE
-#		BT_RL_PERCENT_GOOD[beam]	scalars		see PERCENT_GOOD
-#		BT_SIGNAL_STRENGTH[beam]	scalars		0--255
+#		VELOCITY[bin][beam] 		scalars 	-32.767--32.768 [m/s], undef=bad
+#		CORRELATION[bin][beam]		scalars 	1--255, undefined=bad
+#		ECHO_AMPLITUDE[bin][beam]	scalars 	0--255
+#		PERCENT_GOOD[bin][beam] 	scalars 	0--255
+#		BT_RANGE[beam]				scalars 	tons [m]
+#		BT_VELOCITY[beam]			scalars 	see VELOCITY
+#		BT_CORRELATION[beam]		scalars 	see CORRELATION
+#		BT_EVAL_AMPLITUDE[beam] 	scalars 	0--255
+#		BT_PERCENT_GOOD[beam]		scalars 	see PERCENT_GOOD
+#		BT_RL_VELOCITY[beam]		scalars 	see VELOCITY
+#		BT_RL_CORRELATION[beam] 	scalars 	see CORRELATION
+#		BT_RL_ECHO_AMPLITUDE[beam]	scalars 	see ECHO_AMPLITUDE
+#		BT_RL_PERCENT_GOOD[beam]	scalars 	see PERCENT_GOOD
+#		BT_SIGNAL_STRENGTH[beam]	scalars 	0--255
 #		HIGH_GAIN					bool		1, undefined
 #		LOW_GAIN					bool		1, undefined
-
-use strict;
-use Time::Local;						# timegm()
-
+	
+	use strict;
+	use Time::Local;						# timegm()
+	
 #----------------------------------------------------------------------
 # Time Conversion Subroutines
 #----------------------------------------------------------------------
-
-sub monthLength($$)										# of days in month
-{
-    my($Y,$M) = @_;
-
-    return 31 if ($M==1 || $M==3 || $M==5 || $M==7 ||
-                  $M==8 || $M==10 || $M==12);
-    return 30 if ($M==4 || $M==6 || $M==9 || $M==11);
-    return 28 if ($Y%4 != 0);
-    return 29 if ($Y%100 != 0);
-    return 28 if ($Y%400 > 0);
-    return 29;
-}
-
-{ my($epoch,$lM,$lD,$lY,$ldn);							# static scope
-
-  sub dayNo($$$$$$)
-  {
-	  my($Y,$M,$D,$h,$m,$s) = @_;
-	  my($dn);
-  
-	  if ($Y==$lY && $M==$lM && $D==$lD) {				# same day as last samp
-		  $dn = $ldn;
-	  } else {											# new day
-		  $epoch = $Y unless defined($epoch);			# 1st call
-		  $lY = $Y; $lM = $M; $lD = $D;					# store
-  
-		  for ($dn=0,my($cY)=$epoch; $cY<$Y; $cY++) {	# multiple years
-			  $dn += 337 + &monthLength($Y,$M);
+	
+	sub monthLength($$) 									# of days in month
+	{
+		my($Y,$M) = @_;
+	
+		return 31 if ($M==1 || $M==3 || $M==5 || $M==7 ||
+					  $M==8 || $M==10 || $M==12);
+		return 30 if ($M==4 || $M==6 || $M==9 || $M==11);
+		return 28 if ($Y%4 != 0);
+		return 29 if ($Y%100 != 0);
+		return 28 if ($Y%400 > 0);
+		return 29;
+	}
+	
+	{ my($epoch,$lM,$lD,$lY,$ldn);							# static scope
+	
+	  sub dayNo($$$$$$)
+	  {
+		  my($Y,$M,$D,$h,$m,$s) = @_;
+		  my($dn);
+	  
+		  if ($Y==$lY && $M==$lM && $D==$lD) {				# same day as last samp
+			  $dn = $ldn;
+		  } else {											# new day
+			  $epoch = $Y unless defined($epoch);			# 1st call
+			  $lY = $Y; $lM = $M; $lD = $D; 				# store
+	  
+			  for ($dn=0,my($cY)=$epoch; $cY<$Y; $cY++) {	# multiple years
+				  $dn += 337 + &monthLength($Y,$M);
+			  }
+	  
+			  $dn += $D;									# day in month
+			  while (--$M > 0) {							# preceding months
+				  $dn += &monthLength($Y,$M);
+			  }
+	
+			  $ldn = $dn;									# store
 		  }
-  
-		  $dn += $D;									# day in month
-		  while (--$M > 0) {							# preceding months
-			  $dn += &monthLength($Y,$M);
-		  }
-
-		  $ldn = $dn;									# store
+		  return $dn + $h/24 + $m/24/60 + $s/24/3600;
 	  }
-	  return $dn + $h/24 + $m/24/60 + $s/24/3600;
-  }
-
-} # static scope
-
+	
+	} # static scope
+	
 #----------------------------------------------------------------------
 # Read Data
 #----------------------------------------------------------------------
-
-my($WBRcfn,$WBPcfn);									# current file names for reading/patching
-my($BIT_errors) = 0;									# built-in-test errors
-
-my($FmtErr) = "%s: illegal %s Id 0x%04x at ensemble %d";
-
+	
+	my($WBRcfn,$WBPcfn);									# current file names for reading/patching
+	my($BIT_errors) = 0;									# built-in-test errors
+	
+	my($FmtErr) = "%s: illegal %s Id 0x%04x at ensemble %d";
+	
 #----------------------------------------------------------------------
 # skip to first valid ensemble (skip over initial garbage)
 #----------------------------------------------------------------------
-
-sub skip_initial_trash(@)
-{
-	my($quiet) = @_;
-	my($buf,$dta);
-
-	my($found) = 0;										# zero consecutive 0x7f found
-	my($skipped) = 0;
-	while ($found < 2) {
-		sysread(WBRF,$buf,1) == 1 || last;
-		($dta) = unpack('C',$buf);
-		if ($dta == 0x7f) {
-			$found++;
-		} elsif ($found==1 && ($dta==0xE0 || ($dta&0xF0==0xA0 && $dta&0x0F<8))) {
-			$found++;
-		} elsif ($found == 0) {
-			$skipped++;
-		} else {
-			$skipped += $found;
-			$found = 0;
+	
+	sub skip_initial_trash(@)
+	{
+		my($quiet) = @_;
+		my($buf,$dta);
+	
+		my($found) = 0; 									# zero consecutive 0x7f found
+		my($skipped) = 0;
+		while ($found < 2) {
+			sysread(WBRF,$buf,1) == 1 || last;
+			($dta) = unpack('C',$buf);
+			if ($dta == 0x7f) {
+				$found++;
+			} elsif ($found==1 && ($dta==0xE0 || ($dta&0xF0==0xA0 && $dta&0x0F<8))) {
+				$found++;
+			} elsif ($found == 0) {
+				$skipped++;
+			} else {
+				$skipped += $found;
+				$found = 0;
+			}
 		}
+		die("$WBRcfn: no valid ensemble header found [$!]\n")
+			if ($found < 2);
+		printf(STDERR "WARNING: %d bytes of initial garbage\n",$skipped)
+			if ($skipped > 0 && !$quiet);
+		return sysseek(WBRF,-2,1);
 	}
-	die("$WBRcfn: no valid ensemble header found [$!]\n")
-		if ($found < 2);
-	printf(STDERR "WARNING: %d bytes of initial garbage\n",$skipped)
-		if ($skipped > 0 && !$quiet);
-	return sysseek(WBRF,-2,1);
-}
-
+	
 #----------------------------------------------------------------------
 # readHeader(file_name,^dta) WBRhdr(^data)
 #	- read header data
 #	- also includes some data from 1st ens
 #----------------------------------------------------------------------
-
+	
 sub readHeader(@)
 {
 	my($fn,$dta) = @_;
 	$WBRcfn = $fn;
-    open(WBRF,$WBRcfn) || die("$WBRcfn: $!");
-    WBRhdr($dta) || die("$WBRcfn: Insufficient data\n");
+	open(WBRF,$WBRcfn) || die("$WBRcfn: $!");
+	WBRhdr($dta) || die("$WBRcfn: Insufficient data\n");
 }
 
-sub WBRhdr($)
+sub WBRhdr(@)
 {
-	my($dta) = @_;
+	my($dta,$checkFmt) = @_;
 	my($start_ens,$buf,$hid,$did,$Ndt,$B,$W,$i,$dummy,$id,@WBRofs);
 	my($B1,$B2,$B3,$B4,$B5,$B6,$B7,$W1,$W2,$W3,$W4,$W5);
-	
+	my($BT_dt);
+    
 	#--------------------
 	# HEADER
 	#--------------------
@@ -417,87 +426,106 @@ sub WBRhdr($)
 		$dta->{PRODUCER} = sprintf('unknown (0x%02X)');
 	}
 
-	printf(STDERR "WARNING: unexpected number of data types (%d)\n",
-		$dta->{NUMBER_OF_DATA_TYPES})
-			unless ($dta->{NUMBER_OF_DATA_TYPES} == 6 ||
-					$dta->{NUMBER_OF_DATA_TYPES} == 7);
-##	$dta->{BT_PRESENT} = ($dta->{NUMBER_OF_DATA_TYPES} == 7);
-	$dta->{BT_PRESENT} = ($dta->{NUMBER_OF_DATA_TYPES} >= 7);
+	if ($checkFmt) {
+		printf(STDERR "WARNING: unexpected number of data types (%d)\n",
+			$dta->{NUMBER_OF_DATA_TYPES})
+				unless ($dta->{NUMBER_OF_DATA_TYPES} == 6 ||
+						$dta->{NUMBER_OF_DATA_TYPES} == 7);
+		$dta->{BT_PRESENT} = ($dta->{NUMBER_OF_DATA_TYPES} >= 7);
+	}
 					  
 	sysread(WBRF,$buf,2*$dta->{NUMBER_OF_DATA_TYPES})
 		== 2*$dta->{NUMBER_OF_DATA_TYPES}
 			|| die("$WBRcfn: $!");
 	@WBRofs = unpack("v$dta->{NUMBER_OF_DATA_TYPES}",$buf);
-
-	$dta->{HEADER_BYTES} 					= $WBRofs[0];
-	$dta->{FIXED_LEADER_BYTES} 				= $WBRofs[1] - $WBRofs[0];
-	$dta->{VARIABLE_LEADER_BYTES}			= $WBRofs[2] - $WBRofs[1];
-	$dta->{VELOCITY_DATA_BYTES}				= $WBRofs[3] - $WBRofs[2];
-	$dta->{CORRELATION_DATA_BYTES}			= $WBRofs[4] - $WBRofs[3];
-	$dta->{ECHO_INTENSITY_DATA_BYTES}		= $WBRofs[5] - $WBRofs[4];
-	if ($dta->{BT_PRESENT}) {
-		$dta->{PERCENT_GOOD_DATA_BYTES}		= $WBRofs[6] - $WBRofs[5];
-		$dta->{BT_DATA_BYTES}				= $dta->{ENSEMBLE_BYTES} - 4 - $WBRofs[6];
-	} else {
-		$dta->{PERCENT_GOOD_DATA_BYTES}		= $dta->{ENSEMBLE_BYTES} - 4 - $WBRofs[5];
-	}
-
-	if ($dta->{FIXED_LEADER_BYTES} == 42) {				# Eric Firing's old instrument I used in 2004
-		$dta->{INSTRUMENT_TYPE} = 'BB150';
-	} elsif ($dta->{FIXED_LEADER_BYTES} == 53) {		# old firmware: no serial numbers
-		$dta->{INSTRUMENT_TYPE} = 'Workhorse';	
-	} elsif ($dta->{FIXED_LEADER_BYTES} == 59) {		# new firmware: with serial numbers
-		$dta->{INSTRUMENT_TYPE} = 'Workhorse';
-    } elsif ($dta->{FIXED_LEADER_BYTES} == 58) {		# DVL
-		$dta->{INSTRUMENT_TYPE} = 'Explorer';
-    } 
-
 #	for ($i=0; $i<$dta->{NUMBER_OF_DATA_TYPES}; $i++) {
 #		printf(STDERR "\nWBRofs[$i] = %d",$WBRofs[$i]);
 #	}
 
-	#----------------------------------
-	# Check Data Format of 1st Ensemble
-	#----------------------------------
+
+	$dta->{HEADER_BYTES}					= $WBRofs[0];
+	$dta->{FIXED_LEADER_BYTES}				= $WBRofs[1] - $WBRofs[0];
+	$dta->{VARIABLE_LEADER_BYTES}			= $WBRofs[2] - $WBRofs[1];
+    if ($checkFmt) {
+		$dta->{VELOCITY_DATA_BYTES} 			= $WBRofs[3] - $WBRofs[2];
+		$dta->{CORRELATION_DATA_BYTES}			= $WBRofs[4] - $WBRofs[3];
+		$dta->{ECHO_INTENSITY_DATA_BYTES}		= $WBRofs[5] - $WBRofs[4];
+		if ($dta->{BT_PRESENT}) {
+			$dta->{PERCENT_GOOD_DATA_BYTES} 	= $WBRofs[6] - $WBRofs[5];
+			$dta->{BT_DATA_BYTES}				= $dta->{ENSEMBLE_BYTES} - 4 - $WBRofs[6];
+		} else {
+			$dta->{PERCENT_GOOD_DATA_BYTES} 	= $dta->{ENSEMBLE_BYTES} - 4 - $WBRofs[5];
+	    }
+    }
+
+	if ($dta->{FIXED_LEADER_BYTES} == 42) { 			# Eric Firing's old instrument I used in 2004
+		$dta->{INSTRUMENT_TYPE} = 'BB150';
+	} elsif ($dta->{FIXED_LEADER_BYTES} == 53) {		# old firmware: no serial numbers
+		$dta->{INSTRUMENT_TYPE} = 'Workhorse';  
+	} elsif ($dta->{FIXED_LEADER_BYTES} == 59) {		# new firmware: with serial numbers
+		$dta->{INSTRUMENT_TYPE} = 'Workhorse';
+	} elsif ($dta->{FIXED_LEADER_BYTES} == 58) {		# DVL
+		$dta->{INSTRUMENT_TYPE} = 'Explorer';
+	} elsif ($dta->{FIXED_LEADER_BYTES} == 60) {		# OS75
+		$dta->{INSTRUMENT_TYPE} = 'Ocean Surveyor';
+    } else {
+		$dta->{INSTRUMENT_TYPE} = 'unknown';
+    }
+
+	#--------------------------------
+	# Variable Leader: SPEED_OF_SOUND
+	#--------------------------------
 
 	sysseek(WBRF,$start_ens+$WBRofs[1],0) || die("$WBRcfn: $!");
 	sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 	$id = unpack('v',$buf);
-	$id == 0x0080 || printf(STDERR $FmtErr."\n",$WBRcfn,"Variable Leader",$id,1);
-
-	sysseek(WBRF,$start_ens+$WBRofs[2],0) || die("$WBRcfn: $!");
+	if ($dta->{INSTRUMENT_TYPE} eq 'Ocean Surveyor') {
+		$id == 0x0081 || printf(STDERR $FmtErr."\n",$WBRcfn,"Variable Leader",$id,1);
+    } else {
+		$id == 0x0080 || printf(STDERR $FmtErr."\n",$WBRcfn,"Variable Leader",$id,1);
+    }
+	sysseek(WBRF,12,1) || die("$WBRcfn: $!");							# skip up to speed of sound
 	sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
-	$id = unpack('v',$buf);
-	$id == 0x0100 || printf(STDERR $FmtErr."\n",$WBRcfn,"Velocity Data",$id,1);
+	$dta->{SPEED_OF_SOUND} = unpack('v',$buf);
+	
+	#----------------------------------
+	# Check Data Format of 1st Ensemble
+	#----------------------------------
 
-	sysseek(WBRF,$start_ens+$WBRofs[3],0) || die("$WBRcfn: $!");
-	sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
-	$id = unpack('v',$buf);
-	$id == 0x0200 || printf(STDERR $FmtErr."\n",$WBRcfn,"Correlation Data",$id,1);
-    
-	sysseek(WBRF,$start_ens+$WBRofs[4],0) || die("$WBRcfn: $!");
-	sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
-	$id = unpack('v',$buf);
-	$id == 0x0300 || printf(STDERR $FmtErr."\n",$WBRcfn,"Echo Intensity",$id,1);
-
-	sysseek(WBRF,$start_ens+$WBRofs[5],0) || die("$WBRcfn: $!");
-	sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
-	$id = unpack('v',$buf);
-	$id == 0x0400 || printf(STDERR $FmtErr."\n",$WBRcfn,"Percent-Good Data",$id,1);
-
-	my($BT_dt);
-	if ($dta->{BT_PRESENT}) {
-		for ($BT_dt=6; $BT_dt<$dta->{NUMBER_OF_DATA_TYPES}; $BT_dt++) {										# scan until BT found
-			sysseek(WBRF,$start_ens+$WBRofs[$BT_dt],0) || die("$WBRcfn: $!");
-			sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
-			$id = unpack('v',$buf);
-			last if ($id == 0x0600);
-		}
-
-		if ($BT_dt == $dta->{NUMBER_OF_DATA_TYPES}) {
-			printf(STDERR "WARNING: no BT data found\n");die;
-			undef($dta->{BT_PRESENT});
-		}
+	if ($checkFmt) {
+		sysseek(WBRF,$start_ens+$WBRofs[2],0) || die("$WBRcfn: $!");
+		sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
+		$id = unpack('v',$buf);
+		$id == 0x0100 || printf(STDERR $FmtErr."\n",$WBRcfn,"Velocity Data",$id,1);
+	
+		sysseek(WBRF,$start_ens+$WBRofs[3],0) || die("$WBRcfn: $!");
+		sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
+		$id = unpack('v',$buf);
+		$id == 0x0200 || printf(STDERR $FmtErr."\n",$WBRcfn,"Correlation Data",$id,1);
+	    
+		sysseek(WBRF,$start_ens+$WBRofs[4],0) || die("$WBRcfn: $!");
+		sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
+		$id = unpack('v',$buf);
+		$id == 0x0300 || printf(STDERR $FmtErr."\n",$WBRcfn,"Echo Intensity",$id,1);
+	
+		sysseek(WBRF,$start_ens+$WBRofs[5],0) || die("$WBRcfn: $!");
+		sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
+		$id = unpack('v',$buf);
+		$id == 0x0400 || printf(STDERR $FmtErr."\n",$WBRcfn,"Percent-Good Data",$id,1);
+	
+		if ($dta->{BT_PRESENT}) {
+			for ($BT_dt=6; $BT_dt<$dta->{NUMBER_OF_DATA_TYPES}; $BT_dt++) { 									# scan until BT found
+				sysseek(WBRF,$start_ens+$WBRofs[$BT_dt],0) || die("$WBRcfn: $!");
+				sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
+				$id = unpack('v',$buf);
+				last if ($id == 0x0600);
+			}
+	
+			if ($BT_dt == $dta->{NUMBER_OF_DATA_TYPES}) {
+				printf(STDERR "WARNING: no BT data found\n");die;
+				undef($dta->{BT_PRESENT});
+			}
+	    }
     }
 
 	#--------------------
@@ -506,7 +534,8 @@ sub WBRhdr($)
 
 	sysseek(WBRF,$start_ens+$WBRofs[0],0) || die("$WBRcfn: $!");
 	sysread(WBRF,$buf,42) == 42 || die("$WBRcfn: $!");
-	($id,$dta->{CPU_FW_VER},$dta->{CPU_FW_REV},$B1,$B2,$dummy,$dummy,$dummy,
+	($id,$dta->{CPU_FW_VER},$dta->{CPU_FW_REV},$B1,$B2,$dummy,
+	 $dta->{LAG_LENGTH},$dummy,
 	 $dta->{N_BINS},$dta->{PINGS_PER_ENSEMBLE},$dta->{BIN_LENGTH},
 	 $dta->{BLANKING_DISTANCE},$dummy,$dta->{MIN_CORRELATION},
 	 $dta->{N_CODE_REPETITIONS},$dta->{MIN_PERCENT_GOOD},
@@ -518,9 +547,21 @@ sub WBRhdr($)
 	 $dta->{TRANSMIT_LAG_DISTANCE}) =
 		unpack('vCCCCC3CvvvCCCCvCCCCvvCCvvCCCCv',$buf);
 
-	$id == 0x0000 || printf(STDERR $FmtErr."\n",$WBRcfn,"Fixed Leader",$id,0);
+	if ($dta->{INSTRUMENT_TYPE} eq 'Ocean Surveyor') {
+		$id == 0x0001 || printf(STDERR $FmtErr."\n",$WBRcfn,"Fixed Leader",$id,0);
+    } else {
+		$id == 0x0000 || printf(STDERR $FmtErr."\n",$WBRcfn,"Fixed Leader",$id,0);
+    }
 
-    $dta->{BEAM_FREQUENCY} = 2**($B1 & 0x07) * 75;
+#   $dta->{BEAM_FREQUENCY} = 2**($B1 & 0x07) * 75;						# nominal
+	if    (($B1&0x07) == 0b000) { $dta->{BEAM_FREQUENCY} =   76.8; }		# actual
+	elsif (($B1&0x07) == 0b001) { $dta->{BEAM_FREQUENCY} =  153.6; }
+	elsif (($B1&0x07) == 0b010) { $dta->{BEAM_FREQUENCY} =  307.2; }
+	elsif (($B1&0x07) == 0b011) { $dta->{BEAM_FREQUENCY} =  614.4; }
+	elsif (($B1&0x07) == 0b100) { $dta->{BEAM_FREQUENCY} = 1228.8; }
+	elsif (($B1&0x07) == 0b101) { $dta->{BEAM_FREQUENCY} = 2457.6; }
+	else { die(sprintf("$WBRcfn: cannot decode BEAM_FREQUENCY (%03b)\n",$B1&0x07)); }
+
     $dta->{CONVEX_BEAM_PATTERN} = 1 if ($B1 & 0x08);
     $dta->{CONCAVE_BEAM_PATTERN} = 1 if (!($B1 & 0x08));
     $dta->{SENSOR_CONFIG} = ($B1 & 0x30) >> 4;
@@ -650,7 +691,7 @@ sub readData(@)
 	my($fn,$dta) = @_;
 	$WBRcfn = $fn;
     open(WBRF,$WBRcfn) || die("$WBRcfn: $!\n");
-    WBRhdr($dta) || die("$WBRcfn: Insufficient Data\n");
+    WBRhdr($dta,1) || die("$WBRcfn: Insufficient Data\n");
 	WBRens($dta->{N_BINS},$dta->{FIXED_LEADER_BYTES},
 		   \@{$dta->{ENSEMBLE}});
 	print(STDERR "$WBRcfn: $BIT_errors built-in-test errors\n")
@@ -725,8 +766,13 @@ sub WBRens($$$)
 		sysread(WBRF,$buf,4) == 4 || die("$WBRcfn: $!");
 		($id,$ensNo) = unpack("vv",$buf);										# only lower two bytes!!!
 
-		$id == 0x0080 ||
-			die(sprintf($FmtErr,$WBRcfn,"Variable Leader",$id,$ensNo + ($lastEns - ($lastEns & 0xFFFF))));
+		if (${$E}[$ens]->{INSTRUMENT_TYPE} eq 'Ocean Surveyor') {
+			$id == 0x0081 ||
+				die(sprintf($FmtErr,$WBRcfn,"Variable Leader",$id,$ensNo + ($lastEns - ($lastEns & 0xFFFF))));
+        } else {
+			$id == 0x0080 ||
+				die(sprintf($FmtErr,$WBRcfn,"Variable Leader",$id,$ensNo + ($lastEns - ($lastEns & 0xFFFF))));
+        }
 
 		if ($fixed_leader_bytes==42 || $fixed_leader_bytes==58) {				# BB150 & Explorer DVL
 			sysread(WBRF,$buf,7) == 7 || die("$WBRcfn: $!");
@@ -1291,7 +1337,7 @@ sub WBPens($$$)
 sub clearEns($$)
 {
 	my($dta,$ens) = @_;
-	croak("clearEns: ens-index $ens out of range\n")
+	die("clearEns: ens-index $ens out of range\n")
 		unless ($ens>=0 && $ens<=$#{$dta->{ENSEMBLE}});
 	for (my($bin)=0; $bin<$dta->{N_BINS}; $bin++) {
 		undef(@{$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$bin]});

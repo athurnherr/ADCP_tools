@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Sat Jul 30 09:46:59 2016
+#                    dlm: Tue Aug  8 16:25:05 2017
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 438 0 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 58 55 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -54,6 +54,8 @@
 #	Jan  9, 2016: - renamed ref_lr_w to mk_prof_ref_lr_w because the old name conflicts
 #				    with a sub in LADCP_w
 #   May 19, 2016: - adapted to new velBeamToInstrument() usage
+#	Aug  7, 2017: - added abmiguity velocity
+#	Aug  8, 2017: - changed transducer frequency to kHz
 
 use strict;
 
@@ -254,6 +256,21 @@ sub soundSpeed($$$)
 		}
 		return soundSpeed($S,$T,$D) / $eRef->{SPEED_OF_SOUND};
 	}
+}
+
+#======================================================================
+# ambiguity_velocity(transducer_freq,beam_angle,sound_speed,transmit_lag_dist)
+# 	- recipe provied by Jerry Mullison in August 2017
+#	- transducer_freq in kHz
+#	- sound speed can vary with ensemble
+#======================================================================
+
+sub ambiguity_velocity($$$$)
+{
+	my($xd_freq,$beam_angle,$speed_of_sound,$TL_distance) = @_;
+	my($lambda) = $speed_of_sound / (1000*$xd_freq);
+	my($D) = $speed_of_sound * cos(rad($beam_angle)) / 2;
+	return $lambda * $D / (4 * $TL_distance);
 }
 	
 #======================================================================

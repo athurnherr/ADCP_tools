@@ -2,9 +2,9 @@
 #======================================================================
 #                    M K P R O F I L E 
 #                    doc: Sun Jan 19 18:55:26 2003
-#                    dlm: Mon Sep 12 14:02:24 2016
+#                    dlm: Fri Oct 13 13:39:55 2017
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 94 26 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 230 37 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Make an LADCP Profile by Integrating W (similar to Firing's scan*).
@@ -92,6 +92,7 @@
 #	Mar 17, 2015: - adapted to new Getopt library
 #				  - removed warning
 #	Sep 12, 2016: - added %PD0_file
+#	Oct 13, 2017: - added instrument orientation
 
 # NOTES:
 #	- the battery values are based on transmission voltages (different
@@ -226,6 +227,9 @@ unless ($dta{TRANSMIT_POWER_HIGH}) {
 	print(STDERR "WARNING: $0 LOW TRANSMIT POWER!\n");
 }
 
+printf(STDERR "ADCP                  : %s (s/n %d) %s\n",
+											$dta{INSTRUMENT_TYPE},$dta{SERIAL_NUMBER},
+											$dta{ENSEMBLE}[0]->{XDUCER_FACING_UP} ? 'UL' : 'DL');
 printf(STDERR "# of ensembles        : %d\n",scalar(@{$dta{ENSEMBLE}}));
 
 my($sdt1,$sdt2,$ndt);
