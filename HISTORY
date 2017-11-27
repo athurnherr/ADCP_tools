@@ -1,9 +1,9 @@
 ======================================================================
                     H I S T O R Y 
                     doc: Tue May 15 18:04:39 2012
-                    dlm: Thu Mar 16 11:51:19 2017
+                    dlm: Mon Nov 20 10:21:00 2017
                     (c) 2012 A.M. Thurnherr
-                    uE-Info: 174 15 NIL 0 0 72 3 2 4 NIL ofnI
+                    uE-Info: 190 21 NIL 0 0 72 3 2 4 NIL ofnI
 ======================================================================
 
 --------------------------------------
@@ -149,6 +149,10 @@ Jul 30, 2016:
 	- minor bug in [RDI_PD0_IO.pl]
 	- improvements to [splitPD0]
 
+#--------------------------------
+# V1.8 (improved support for IMP)
+#--------------------------------
+
 Aug 23, 2016:
 	- added &clearEns to [RDI_PD0_IO.pl]
 	- updated to V1.8
@@ -166,9 +170,21 @@ Jan 17, 2017:
 Mar 7, 2017:
 	- namespace clash in [RDI_PD0_IO.pl]
 
+#-------------------------------------
+# V1.9 (published version for LADCP_w)
+#-------------------------------------
+
 Mar 12, 2017:
 	- updated HISTORY
 	- updated to V1.9 [ADCP_tools_lib.pl]
 
 Mar 15, 2017:
 	- published
+
+#--------------------------
+# V2.0 (for DT KVH project)
+---------------------------
+
+Nov 20, 2017:
+	- added patchPD0 to these tools
+	- updated to V2.0 [ADCP_tools_lib.pl]

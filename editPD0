@@ -2,9 +2,9 @@
 #======================================================================
 #                    E D I T P D 0 
 #                    doc: Mon Nov 25 20:24:31 2013
-#                    dlm: Tue Nov 15 11:05:46 2016
+#                    dlm: Thu Jul 27 18:30:16 2017
 #                    (c) 2013 A.M. Thurnherr
-#                    uE-Info: 73 76 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 122 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # edit RDI PD0 file, e.g. to replace pitch/roll/heading with external values
@@ -40,6 +40,9 @@
 #		ensure_UL()				correct data for wrong transducer orientation
 #		ensure_DL()					- sets correct flag & negates roll value
 #
+#		dealias(<WV lim[m/s]>) 	correct data for erroneously low WV setting
+#									- HEURISTIC, i.e. may not work
+#
 #	- -x notes:
 #		- multiple perl expressions can be combined with ,
 #
@@ -71,6 +74,7 @@
 #				  - made single-ping ensemble requirement for most routines
 #	Jul 12, 2016: - updated ensure_{DL,UL} routines
 #	Nov 15, 2016: - BUG: ensure_{DL,UL} routines did not negate heading data
+#	Jul 27, 2017: - began working on dealias()
 
 use Getopt::Std;
 
@@ -101,14 +105,58 @@ print(STDERR "Editing Data...");
 # Data Editing Library
 #--------------------------------------------------
 
-#
+#--------------------------------------------------
 # override pitch/roll/heading
-#
+#--------------------------------------------------
+
 sub p($) { $dta{ENSEMBLE}[$e]->{PITCH} = $_[0]; return 1; }
 sub r($) { $dta{ENSEMBLE}[$e]->{ROLL} = $_[0]; return 1; }
 sub h($) { $dta{ENSEMBLE}[$e]->{HEADING} = $_[0]; return 1;}
 
-#
+#--------------------------------------------------
+# correct data for erroneously low WV limit
+#--------------------------------------------------
+
+{ my(@target);												# static scope, undef initially
+
+sub dealias_V0($)
+{
+	my($WV) = @_;
+
+	if (@target) {											# dealias everything but first ensemble
+		for (my($bin)=0; $bin<$dta{N_BINS}; $bin++) {
+			for (my($beam)=0; $beam<4; $beam++) {
+				next unless defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam]);
+				my($dealiased) = 0;
+				$dealiased = ($dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam] - 2*$WV)
+					if ($dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam] > 0);
+				$dealiased = ($dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam] + 2*$WV)
+					if ($dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam] < 0);
+				if (abs($target[$beam]-$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam]) >
+					abs($target[$beam]-$dealiased)) {
+						$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam] = undef; #$dealiased;
+						$dealiased++;
+				}
+			}
+    	}
+    } else { # @target is undef
+    	$dealiased = 0;
+    }
+
+	@target = (0,0,0,0);									# calc ref-lr average target for next ens
+	for (my($bin)=1; $bin<=5; $bin++) {						# should work even if N_BINS < 5
+		for (my($beam)=0; $beam<4; $beam++) {
+			$target[$beam] += $dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam]/4
+				if defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam]);
+		}
+    }
+
+    return 1;
+}
+
+} # static scope
+
+#--------------------------------------------------
 # override transducer orientation
 #
 #	These routines are intended to correct ADCP data for
@@ -125,6 +173,7 @@ sub h($) { $dta{ENSEMBLE}[$e]->{HEADING} = $_[0]; return 1;}
 #		Hdg: Based on the time-series of headings recorded
 #		     during P18 profile 003 the heading needs
 #			 to be negated. Doing so yields a good profile.
+#--------------------------------------------------
 
 sub ensure_DL()
 {
@@ -152,9 +201,10 @@ sub ensure_UL()
 	return 1;
 }
 
-#
+#--------------------------------------------------
 # swap data from two mis-connected beams
-#
+#--------------------------------------------------
+
 sub swap_beams($$)
 {
 	my($b1,$b2) = @_;
@@ -210,9 +260,10 @@ sub swap_beams($$)
 }
 
 
-#
+#--------------------------------------------------
 # transform earth to beam coordinates
-#
+#--------------------------------------------------
+
 { my($checked);
 
 	sub earth2beam()
@@ -242,9 +293,10 @@ sub swap_beams($$)
 
 }
 
-#
+#--------------------------------------------------
 # transform instrument to beam coordinates
-#
+#--------------------------------------------------
+
 { my($checked);
 
 	sub instrument2beam()
@@ -268,9 +320,10 @@ sub swap_beams($$)
 
 }
 
-#
+#--------------------------------------------------
 # transform instrument to earth coordinates
-#
+#--------------------------------------------------
+
 { my($checked);
 
 	sub instrument2earth()
@@ -294,9 +347,10 @@ sub swap_beams($$)
 
 }
 
-#
+#--------------------------------------------------
 # transform beam to earth coordinates
-#
+#--------------------------------------------------
+
 { my($checked);
 
 	sub beam2earth()
@@ -345,7 +399,7 @@ if (defined($opt_e)) {															# edit instructions in edit file
 		next if m/^\s+$/;
 		my($ens,$expr) = m/^\s*(\*|\d+)\s+(.*)$/;
 	
-		my($id) = ($expr =~ m/^([A-Z]+)\s/);										# e.g. PITCH, ROLL, HEADING
+		my($id) = ($expr =~ m/^([A-Z]+)\s/);									# e.g. PITCH, ROLL, HEADING
 		$expr = sprintf('$dta{ENSEMBLE}[$e]->{%s}',$id)
 			if defined($id);
 		    

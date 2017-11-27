@@ -1,9 +1,9 @@
 #======================================================================
-#                    R D I _ B B _ R E A D . P L 
+#                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Tue Aug  8 16:19:45 2017
+#                    dlm: Wed Nov 22 11:03:59 2017
 #                    (c) 2003 A.M. Thurnherr
-#					 uE-Info: 562 21 NIL 0 0 72 0 2 4 NIL ofnI
+#					 uE-Info: 156 40 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 	
 # Read RDI PD0 binary data files (*.[0-9][0-9][0-9])
@@ -91,6 +91,7 @@
 #				  - added SPEED_OF_SOUND to header
 #	Aug  8, 2017: - replaced croak() by die()
 #				  - added actual transducer frequencies
+#	Nov 22, 2017: - BUG: dayNo() and monthLength() clashed with [libconv.pl]
 	
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -150,6 +151,9 @@
 #		0x00008180	LDEO downlooker (master) during NBP0402 (Firmware 16.21)
 #	  According to the manual (January 2001 version) this would, for example,
 #	  indicate power failures on both FSU and LDEO slave instruments...
+#	- defining the variable "$RDI_PD0_IO::IGNORE_Y2K_CLOCK" before calling &readData()
+#	  makes the code ignore the Y2K clock and use the old clock instead; this 
+#	  is used for Dan Torres' KVH system
 	
 # &readData() returns perl obj (ref to anonymous hash) with the following
 # structure:
@@ -293,9 +297,10 @@
 	
 #----------------------------------------------------------------------
 # Time Conversion Subroutines
+#	- prepended with _ to avoid conflicts with [libconv.pl]
 #----------------------------------------------------------------------
 	
-	sub monthLength($$) 									# of days in month
+	sub _monthLength($$) 									# of days in month
 	{
 		my($Y,$M) = @_;
 	
@@ -310,7 +315,7 @@
 	
 	{ my($epoch,$lM,$lD,$lY,$ldn);							# static scope
 	
-	  sub dayNo($$$$$$)
+	  sub _dayNo($$$$$$)
 	  {
 		  my($Y,$M,$D,$h,$m,$s) = @_;
 		  my($dn);
@@ -322,12 +327,12 @@
 			  $lY = $Y; $lM = $M; $lD = $D; 				# store
 	  
 			  for ($dn=0,my($cY)=$epoch; $cY<$Y; $cY++) {	# multiple years
-				  $dn += 337 + &monthLength($Y,$M);
+				  $dn += 337 + &_monthLength($Y,$M);
 			  }
 	  
 			  $dn += $D;									# day in month
 			  while (--$M > 0) {							# preceding months
-				  $dn += &monthLength($Y,$M);
+				  $dn += &_monthLength($Y,$M);
 			  }
 	
 			  $ldn = $dn;									# store
@@ -774,16 +779,16 @@ sub WBRens($$$)
 				die(sprintf($FmtErr,$WBRcfn,"Variable Leader",$id,$ensNo + ($lastEns - ($lastEns & 0xFFFF))));
         }
 
-		if ($fixed_leader_bytes==42 || $fixed_leader_bytes==58) {				# BB150 & Explorer DVL
+#		if ($fixed_leader_bytes==42 || $fixed_leader_bytes==58) {				# BB150 & Explorer DVL
 			sysread(WBRF,$buf,7) == 7 || die("$WBRcfn: $!");
 			(${$E}[$ens]->{YEAR},${$E}[$ens]->{MONTH},
 			 ${$E}[$ens]->{DAY},${$E}[$ens]->{HOUR},${$E}[$ens]->{MINUTE},
 			 ${$E}[$ens]->{SECONDS},$B4) = unpack('CCCCCCC',$buf);
 			${$E}[$ens]->{SECONDS} += $B4/100;
 			${$E}[$ens]->{YEAR} += (${$E}[$ens]->{YEAR} > 80) ? 1900 : 2000;
-		} else {
-			sysseek(WBRF,7,1) || die("$WBRcfn: $!");							# use Y2K RTC instead
-		}
+#		} else {
+#			sysseek(WBRF,7,1) || die("$WBRcfn: $!");							# use Y2K RTC instead
+#		}
 
 		sysread(WBRF,$buf,1) == 1 || die("$WBRcfn: $!");
 		$ensNo += unpack('C',$buf) << 16;
@@ -829,7 +834,8 @@ sub WBRens($$$)
 		${$E}[$ens]->{PITCH_STDDEV} /= 10;
 		${$E}[$ens]->{ROLL_STDDEV} /= 10;
 
-		if ($fixed_leader_bytes==53 || $fixed_leader_bytes==59) {			# Workhorse instruments
+		if (($fixed_leader_bytes==53 || $fixed_leader_bytes==59) && 		# Workhorse instruments
+			!defined($RDI_PD0_IO::IGNORE_Y2K_CLOCK)) {
 			sysread(WBRF,$buf,23) == 23 || die("$WBRcfn: $!");
 			(${$E}[$ens]->{ERROR_STATUS_WORD},
 		 	 $dummy,${$E}[$ens]->{PRESSURE},${$E}[$ens]->{PRESSURE_STDDEV},
@@ -866,8 +872,8 @@ sub WBRens($$$)
 										  ${$E}[$ens]->{MINUTE},
 									 	  ${$E}[$ens]->{SECONDS});
 		${$E}[$ens]->{DAYNO}
-			= &dayNo(${$E}[$ens]->{YEAR},${$E}[$ens]->{MONTH},${$E}[$ens]->{DAY},
-					 ${$E}[$ens]->{HOUR},${$E}[$ens]->{MINUTE},${$E}[$ens]->{SECONDS});
+			= &_dayNo(${$E}[$ens]->{YEAR},${$E}[$ens]->{MONTH},${$E}[$ens]->{DAY},
+					  ${$E}[$ens]->{HOUR},${$E}[$ens]->{MINUTE},${$E}[$ens]->{SECONDS});
 
 		# when analyzing an STA file from an OS75 SADCP (Poseidion),
 		# I noticed that there is no time information. This causes

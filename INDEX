@@ -1,9 +1,9 @@
 #======================================================================
 #                    I N D E X 
 #                    doc: Thu Feb  7 14:21:21 2008
-#                    dlm: Wed May 25 12:17:43 2016
+#                    dlm: Mon Nov 20 10:15:08 2017
 #                    (c) 2008 A.M. Thurnherr
-#                    uE-Info: 15 33 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 17 77 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 =General Utilities=
@@ -14,6 +14,7 @@
 [listBT]	list bottom-track data
 [listVels]	list water-track data
 [listW]		list vertical velocities; BROKEN
+[patchPD0]	patch PD0 file with external attitude data (pitch, roll, heading)
 [scanBins]	list per-bin stats; BROKEN
 [splitPD0]	split PD0 file using list of ensemble numbers
 

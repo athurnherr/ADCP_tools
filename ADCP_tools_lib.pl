@@ -1,9 +1,9 @@
 #======================================================================
 #                    A D C P _ T O O L S _ L I B . P L 
 #                    doc: Tue Jan  5 10:45:47 2016
-#                    dlm: Sun Mar 12 12:09:33 2017
+#                    dlm: Mon Nov 20 10:21:30 2017
 #                    (c) 2016 A.M. Thurnherr
-#                    uE-Info: 13 51 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 14 57 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # HISTORY:
@@ -11,8 +11,9 @@
 #	...
 #	Aug 23, 2016: - updated to V1.8
 #	Mar 12, 2017: - updated to V1.9 for LADCP_w 1.3
+#	Nov 20, 2017: - updated to V2.0 to include [patchPD0]
 
-$ADCP_tools_version = 1.9;
+$ADCP_tools_version = 2.0;
 
 die(sprintf("$0: obsolete ADCP_tools V%.1f; V%.1f required\n",
     $ADCP_tools_version,$ADCP_tools_minVersion))

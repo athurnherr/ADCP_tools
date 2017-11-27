@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B I N S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Fri Jan 27 17:41:10 2017
+#                    dlm: Mon Jun 19 03:49:12 2017
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 68 81 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 168 1 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -164,8 +164,8 @@ sub dumpBin($$$)						# write time series of single bin
 		print(P "$k\{$P{$k}\} ");
 	}
 	my($pct3b) = 100*$three_beam[$b]/(($le-$fe+1) * $dta{PINGS_PER_ENSEMBLE});
-	die("assertion failed: gv[$b] = $good_vels[$b]; 3b = $three_beam[$b]; ens=$fe..$le; ")
-		if ($pct3b > 100);
+#	die("assertion failed ($pct3b > 100): gv[$b] = $good_vels[$b]; 3b = $three_beam[$b]; ens=$fe..$le; ")
+#		if ($pct3b > 100);
 	printf(STDERR "%02d:%.0f%%/%.0f%% ",$b+1,100*$good_vels[$b]/($le-$fe+1),$pct3b);
 
 	printf(P "pct_3_beam{%.0f} ",$pct3b);

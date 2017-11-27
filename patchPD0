@@ -1,0 +1,158 @@
+#!/usr/bin/perl
+#======================================================================
+#                    P A T C H P D 0 
+#                    doc: Tue Aug 23 20:00:15 2016
+#                    dlm: Mon Nov 20 12:27:15 2017
+#                    (c) 2010 A.M. Thurnherr
+#                    uE-Info: 32 16 NIL 0 0 72 0 2 4 NIL ofnI
+#======================================================================
+
+$antsSummary = 'patch TRDI PD0 file with external attitude data';
+
+# History:
+#	Aug 23, 2016: - exported from IMP+LADCP
+#	Aug 25, 2016: - completed basic structure
+#	Nov 20, 2017: - major code cleanup
+#				  - added -d) to keep original data source id
+
+# PATCH-FILE REQUIREMENTS (ANTS format)
+#	- %LADCP_pitch.mu %LADCP_roll.mu		mean LADCP pitch and roll
+#	- %IMU_hdg_offset						heading offset of external IMU
+#	- LADCP_ens								ADCP ensemble number
+#	- pitch, roll							external pitch/roll *anomalies* 
+#	- hdg									external heading rotated into ADCP coord system
+
+# PATCHED PD0 FILE:
+#
+#	- pitch = RDI_pitch(mean_LADCP_gimbal_pitch + rotated_external_pitch_anomaly)
+#	- roll  = mean_LADCP_roll + rotated_external_roll_anomaly
+#	- hdg	= external_hdg - heading_offset
+#
+#	- unless -d is used, every patched ensemble has set the DATA_SOURCE_ID as follows; 
+#	  PROCESSING SOFTWARE NEEDS TO BE ABLE TO DEAL WITH DSID values != 0x7F
+#		0xA0	no values patched
+#		0xA1	heading patched
+#		0xA2	roll patched
+#		0xA3	roll & heading patched
+#		0xA4	pitch patched
+#		0xA5	pitch & heading patched
+#		0xA6	pitch & roll patched
+#		0xA7	pitch, roll & heading patched
+#
+#	- additionally, all velocities from ensembles with missing pitch/roll/heading
+#	  values are removed unless -k is set
+
+($ANTS)    = (`which ANTSlib` =~ m{^(.*)/[^/]*$});
+($ADCP_TOOLS) = ($0 =~ m{^(.*)/[^/]*$});
+
+$antsMinLibVersion = 6.7;
+$ADCP_tools_minVersion  = 1.8;
+
+require "$ANTS/ants.pl";
+require "$ANTS/libvec.pl";
+require "$ANTS/libstats.pl";
+require "$ADCP_TOOLS/ADCP_tools_lib.pl";
+
+$antsParseHeader = 0;
+&antsUsage('dhko:pr',2,
+	'[patch -p)itch] [-r)oll] [-h)eading] (none patches all)',
+	'[-o) <heading-offset>] [-k)eep velocities of unpatched ensembles]',
+	'[keep original -d)ata-source id]',
+	'<original PD0 file> <patched PD0 file> [external attitude file]');
+
+$opt_p = $opt_r = $opt_h = 1
+	unless ($opt_p || $opt_r || $opt_h);
+
+$LADCP_file  = &antsFileArg();
+$outPD0 = $ARGV[0]; shift;
+
+#----------------------------------------------------------------------
+# Step 1: Read LADCP Data
+#----------------------------------------------------------------------
+
+readData($LADCP_file,\%LADCP);
+
+#----------------------------------------------------------------------
+# Step 2: Process External Attidue Input to Patch PD0 file
+#----------------------------------------------------------------------
+
+my($pr_missing,$hdg_missing) = (0,0);
+
+&antsIn();
+
+my($ensF) 	= &fnr('LADCP_ens');
+my($pitchF) = &fnr('pitch');
+my($rollF)	= &fnr('roll');
+my($hdgF)	= &fnr('hdg');
+my($LADCP_pitch_mean)	= &antsRequireParam('LADCP_pitch.mu');
+my($LADCP_roll_mean)	= &antsRequireParam('LADCP_roll.mu');
+
+my($rho,$crho,$srho);
+if (defined($opt_o)) {
+	$rho  = $opt_o - &antsRequireParam('IMU_hdg_offset');
+	$crho = cos(rad($rho));
+	$srho = sin(rad($rho));
+}
+
+do {
+	my($ens) = $P{RECNO};
+	die("assertion failed [$ants_[0][$ensF] != $LADCP{ENSEMBLE}[$ens]->{NUMBER} --- 1-$LADCP{ENSEMBLE}[0]->{NUMBER} + $P{RECNO} + $d]")
+		unless ($ants_[0][$ensF] == $LADCP{ENSEMBLE}[$ens]->{NUMBER});
+#	print(STDERR "assertion succeeded [$ants_[0][$ensF] == $LADCP{ENSEMBLE}[$ens]->{NUMBER} --- 1-$LADCP{ENSEMBLE}[0]->{NUMBER} + $P{RECNO} + $d]\n");
+	$LADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID} = 0xA0;
+	
+	if (numbersp($ants_[0][$pitchF],$ants_[0][$rollF])) {
+		if (defined($opt_o)) {
+			my($rot_p) = ($ants_[$r][$pitchF]  * $crho +
+						  $ants_[$r][$rollF]   * $srho);
+			my($rot_r) = (-$ants_[$r][$pitchF] * $srho +
+						   $ants_[$r][$rollF]  * $crho);
+			$ants_[$r][$pitchF] = $rot_p;
+			$ants_[$r][$rollF]	= $rot_r;
+        } 
+		if ($opt_p) {
+			$LADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID} |= ($opt_p<<2);
+			$LADCP{ENSEMBLE}[$ens]->{PITCH} = RDI_pitch($LADCP_pitch_mean + $ants_[0][$pitchF],
+														$LADCP_roll_mean  + $ants_[0][$rollF]);
+		}
+		if ($opt_r) {
+			$LADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID} |= ($opt_r<<1);
+			$LADCP{ENSEMBLE}[$ens]->{ROLL} = $LADCP_roll_mean + $ants_[0][$rollF];
+		}
+    } else {
+    	$pr_missing++;
+		unless ($opt_k)  {
+	    	clearEns(\%LADCP,$ens);
+	    	$LADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID}= 0xA0;
+	    }
+    }
+	    
+    if (numberp($ants_[0][$hdgF])) {
+    	$LADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID} |= $opt_h;
+   		if (defined($opt_o)) {
+	    	$ants_[0][$hdgF] -= $rho;
+	    	$ants_[0][$hdgF] += 360 if ($ants_[0][$hdgF] < 0);
+	    }
+		$LADCP{ENSEMBLE}[$ens]->{HEADING} = $ants_[0][$hdgF]
+			if $opt_h;
+	} else {
+		$hdg_missing++;
+		unless ($opt_k)  {
+	    	clearEns(\%LADCP,$ens);
+	    	$LADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID}= 0xA0;
+	    }
+	}
+} while (&antsIn());
+
+$LADCP{ENSEMBLE}[0]->{DATA_SOURCE_ID} = 0x7F;				# ensure correct DSID (1st ens: orig; 2nd ens: this prog)
+$LADCP{ENSEMBLE}[1]->{DATA_SOURCE_ID} = 0xA0
+	unless ($LADCP{ENSEMBLE}[1]->{DATA_SOURCE_ID}&0xF0 == 0xA0);
+
+writeData($outPD0,\%LADCP);
+
+my($verb) = $opt_k ? 'retained' : 'cleared';
+printf(STDERR "$outPD0: %d pitch/roll & %d heading values $verb\n",$pr_missing,$hdg_missing)
+       if ($pr_missing+$hdg_missing);
+        
+exit(0);
+
