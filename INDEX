@@ -1,9 +1,9 @@
 #======================================================================
 #                    I N D E X 
 #                    doc: Thu Feb  7 14:21:21 2008
-#                    dlm: Mon Nov 20 10:15:08 2017
+#                    dlm: Wed Dec  6 09:05:41 2017
 #                    (c) 2008 A.M. Thurnherr
-#                    uE-Info: 17 77 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 34 73 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 =General Utilities=
@@ -31,3 +31,5 @@
 [mkProfile]		make depth-vs-time profile by integrating vertical velocities
 [checkIX]		check LDEO_IX output
 [splitYYPD0]	split LADCP yoyo or tow-yo file; requires ANTS utilities
+[patchPD0]		patch PD0 file with alternate attitude data (from an IMU)
+

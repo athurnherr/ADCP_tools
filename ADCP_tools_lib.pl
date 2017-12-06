@@ -1,9 +1,9 @@
 #======================================================================
 #                    A D C P _ T O O L S _ L I B . P L 
 #                    doc: Tue Jan  5 10:45:47 2016
-#                    dlm: Mon Nov 20 10:21:30 2017
+#                    dlm: Tue Nov 28 10:58:22 2017
 #                    (c) 2016 A.M. Thurnherr
-#                    uE-Info: 14 57 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 14 51 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # HISTORY:
@@ -11,7 +11,7 @@
 #	...
 #	Aug 23, 2016: - updated to V1.8
 #	Mar 12, 2017: - updated to V1.9 for LADCP_w 1.3
-#	Nov 20, 2017: - updated to V2.0 to include [patchPD0]
+#	Nov 28, 2017: - updated to V2.0 for LADCP_w 1.4
 
 $ADCP_tools_version = 2.0;
 

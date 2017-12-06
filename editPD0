@@ -2,9 +2,9 @@
 #======================================================================
 #                    E D I T P D 0 
 #                    doc: Mon Nov 25 20:24:31 2013
-#                    dlm: Thu Jul 27 18:30:16 2017
+#                    dlm: Wed Dec  6 09:38:33 2017
 #                    (c) 2013 A.M. Thurnherr
-#                    uE-Info: 122 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 89 37 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # edit RDI PD0 file, e.g. to replace pitch/roll/heading with external values
@@ -75,6 +75,7 @@
 #	Jul 12, 2016: - updated ensure_{DL,UL} routines
 #	Nov 15, 2016: - BUG: ensure_{DL,UL} routines did not negate heading data
 #	Jul 27, 2017: - began working on dealias()
+#	Dec  6, 2017: - cosmetics
 
 use Getopt::Std;
 
@@ -85,7 +86,7 @@ require "$ADCP_TOOLS/ADCP_tools_lib.pl";
 $USAGE = "$0 @ARGV";
 die("Usage: $0 " .
     '-e) <edit-file> | -x) <expr> ' .
-    '-k)eep original data-source id' .
+    '[-k)eep original data-source id] ' .
     "<input file> <output file>\n")
         unless (&getopts('ke:x:') && @ARGV == 2);
 

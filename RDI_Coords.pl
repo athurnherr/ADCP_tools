@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ C O O R D S . P L 
 #                    doc: Sun Jan 19 17:57:53 2003
-#                    dlm: Thu Oct 12 21:01:19 2017
+#                    dlm: Mon Nov 27 07:13:25 2017
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 260 20 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 58 62 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # RDI Workhorse Coordinate Transformations
@@ -54,6 +54,8 @@
 #	Jul  7, 2016: - added velEarthToBPw() with algorithm debugged and verified
 #					by Paul Wanis from TRDI
 #	Oct 12, 2017: - documentation
+#	Nov 26, 2017: - BUG: velBeamtoBPEarth() did not respect missing values
+#	Nov 27, 2017: - BUG: numbersp() from [antslib.pl] was used
 
 use strict;
 use POSIX;
@@ -367,26 +369,46 @@ sub velEarthToBPw(@)
 		#	- v12 is horizontal velocity from beam1 to beam2, i.e. westward for upward-looking ADCP
 		#	  with beam 3 pointing north (heading = 0)
 
-		my($v12_ic) = ($b1-$b2)/$TwoSinBAngle;									# instrument coords
-		my($v34_ic) = ($b4-$b3)/$TwoSinBAngle;									# consistent with RDI Coords
-		my($w12_ic) = ($b1+$b2)/$TwoCosBAngle;
-		my($w34_ic) = ($b3+$b4)/$TwoCosBAngle;
-		my($w_ic) = ($w12_ic+$w34_ic) / 2;
+		my($v12_ic,$w12_ic,$v34_ic,$w34_ic,$w_ic);
+	    
+		if (numberp($b1) && numberp($b2)) {
+			$v12_ic = ($b1-$b2)/$TwoSinBAngle;									# instrument coords...
+			$w12_ic = ($b1+$b2)/$TwoCosBAngle; 									# consistent with RDI convention
+		}
+		if (numberp($b3) && numberp($b4)) {
+			$v34_ic = ($b4-$b3)/$TwoSinBAngle;
+			$w34_ic = ($b3+$b4)/$TwoCosBAngle;
+		}
 	    
 		if ($ADCP->{ENSEMBLE}[$ens]->{XDUCER_FACING_DOWN}) {					# beampair Earth coords
-			$v12 = $v12_ic*$cr 		+ $v34_ic*0			+ $w_ic*$sr;			# Lohrman et al. (1990) A1
-			$v34 = $v12_ic*$sp*$sr	+ $v34_ic*$cp		- $w_ic*$sp*$cr;		#	- defined for z upward => DL
-			$w12 =-$v12_ic*$cp*$sr	+ $v34_ic*$sp		+ $w12_ic*$cp*$cr;
-			$w34 =-$v12_ic*$cp*$sr	+ $v34_ic*$sp		+ $w34_ic*$cp*$cr;
-		} else {																# RDI Coord trans manual
-			$v12 =-$v12_ic*$cr 		+ $v34_ic*0			- $w_ic*$sr;			# 	- as above with 1st & 3rd cols negated
-			$v34 =-$v12_ic*$sp*$sr	+ $v34_ic*$cp		+ $w_ic*$sp*$cr;
-			$w12 = $v12_ic*$cp*$sr	+ $v34_ic*$sp		- $w12_ic*$cp*$cr;
-			$w34 = $v12_ic*$cp*$sr	+ $v34_ic*$sp		- $w34_ic*$cp*$cr;
+			if (numberp($w12_ic) && numberp($w34_ic)) {
+				$w_ic = ($w12_ic+$w34_ic) / 2;
+				$v12 = $v12_ic*$cr		+ $v34_ic*0 		+ $w_ic*$sr;		# Lohrman et al. (1990) A1
+				$v34 = $v12_ic*$sp*$sr	+ $v34_ic*$cp		- $w_ic*$sp*$cr;	#	- defined for z upward => DL
+				$w12 =-$v12_ic*$cp*$sr	+ $v34_ic*$sp		+ $w12_ic*$cp*$cr;
+	            $w34 =-$v12_ic*$cp*$sr  + $v34_ic*$sp       + $w34_ic*$cp*$cr;
+	        } elsif (numberp($w12_ic)) {
+				$v12 = $v12_ic*$cr		+ $w12_ic*$sr;	    
+				$w12 =-$v12_ic*$cp*$sr	+ $w12_ic*$cp*$cr;
+	        } elsif (numberp($w34_ic)) {
+				$v34 = $v34_ic*$cp		- $w34_ic*$sp*$cr;    
+				$w34 = $v34_ic*$sp		+ $w34_ic*$cp*$cr;
+	        }
+		} else {																
+			if (numberp($w12_ic) && numberp($w34_ic)) {
+				$w_ic = ($w12_ic+$w34_ic) / 2;
+				$v12 =-$v12_ic*$cr		+ $v34_ic*0 		- $w_ic*$sr;		#	- as above with 1st & 3rd cols negated
+				$v34 =-$v12_ic*$sp*$sr	+ $v34_ic*$cp		+ $w_ic*$sp*$cr;
+				$w12 = $v12_ic*$cp*$sr	+ $v34_ic*$sp		- $w12_ic*$cp*$cr;
+	            $w34 = $v12_ic*$cp*$sr  + $v34_ic*$sp       - $w34_ic*$cp*$cr;
+	        } elsif (numberp($w12_ic)) {
+				$v12 =-$v12_ic*$cr		- $w12_ic*$sr;		
+				$w12 = $v12_ic*$cp*$sr	- $w12_ic*$cp*$cr;
+	        } elsif (numberp($w34_ic)) {
+				$v34 = $v34_ic*$cp		+ $w34_ic*$sp*$cr;
+				$w34 = $v34_ic*$sp		- $w34_ic*$cp*$cr;
+	        }
 		}
-
-		$v12=$w12=undef unless (defined($b1) && defined($b2));
-		$v34=$w34=undef unless (defined($b3) && defined($b4));
 
 		return ($v12,$w12,$v34,$w34);
 	}

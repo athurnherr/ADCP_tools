@@ -1,13 +1,13 @@
 #!/usr/local/bin/perl
 #======================================================================
-#                    R D I 2 G R D 
+#                    P D 0 2 G R D 
 #                    doc: Wed Aug 30 11:51:22 2006
-#                    dlm: Thu May 19 10:21:25 2016
+#                    dlm: Wed Dec  6 09:18:49 2017
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 186 33 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 33 21 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
-# make GMT grd files from RDI file
+# make GMT grd files from RDI PD0 file
 
 # HISTORY:
 #	Aug 30, 2006: - created at end of GRAVILUCK cruise
@@ -18,6 +18,7 @@
 #	Jun 18, 2009: - BUG: xysize had been called xyside
 #   Mar 17, 2016: - adapted to new Getopt library
 #	May 19, 2016: - adapted to velBeamToEarth()
+#	Dec  6, 2017: - renamed from RDI2grd
 
 # NOTES:
 #	- regular grids only => no dimensional time axis for data collected
@@ -29,7 +30,7 @@
 
 use Getopt::Std;
 $0 =~ m{(.*/)[^/]+};
-require "$1RDI_BB_Read.pl";
+require "$1RDI_PD0_IO.pl";
 require "$1RDI_Coords.pl";
 
 use NetCDF;
@@ -124,7 +125,7 @@ sub dumpVar($$$$$)
 $usage = "$0 @ARGV";
 die("Usage: $0 [-M)agnetic <declination>] [-r)ange <first_ens,last_ens>] " .
 			  "[output -b)ase <name>] [-d)imensional coordinates] " .
-			  "<RDI file>\n")
+			  "<PD0 file>\n")
 	unless (&getopts("b:dM:r:") && @ARGV == 1);
 
 print(STDERR "WARNING: magnetic declination not set!\n")

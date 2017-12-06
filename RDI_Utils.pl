@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Tue Aug  8 16:25:05 2017
+#                    dlm: Mon Nov 27 10:32:50 2017
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 58 55 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 59 75 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -56,6 +56,7 @@
 #   May 19, 2016: - adapted to new velBeamToInstrument() usage
 #	Aug  7, 2017: - added abmiguity velocity
 #	Aug  8, 2017: - changed transducer frequency to kHz
+#	Nov 27, 2017: - BUG: profile-restart heuristic did not work with P6#001
 
 use strict;
 
@@ -467,10 +468,11 @@ sub mk_prof(...)											# make profile
 				  $dta->{ENSEMBLE}[$lastgood]->{UNIX_TIME}; # ... last good ens
 	
 		if ($dt > $max_gap) {
-#			if ($dta->{ENSEMBLE}[$lastgood]->{UNIX_TIME} -					# heuristic changed Feb 22, 2014
-#			    $dta->{ENSEMBLE}[$firstgood]->{UNIX_TIME} > 15*60) {
-			if (@{$dta->{ENSEMBLE}}-$e < @{$dta->{ENSEMBLE}}/2) {
+			# 2nd heuristic test added Nov 2017 for P06 profile #001
+			if ((@{$dta->{ENSEMBLE}}-$e < @{$dta->{ENSEMBLE}}/2) &&
+				($maxz > 25 && $z < $maxz/2)) {
 					printf(STDERR "WARNING: %.1f-s gap in 2nd half of profile is too long; profile ended at ensemble $lastgood\n",$dt);
+#					printf(STDERR "\t[#ens = %d, end-of-gap = $e]\n",scalar(@{$dta->{ENSEMBLE}}));
 					last;
 			}
 			printf(STDERR "WARNING: %.1f-s gap in first half of profile is too long; profile restarted at ensemble $e\n",$dt);

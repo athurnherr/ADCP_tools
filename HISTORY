@@ -1,9 +1,9 @@
 ======================================================================
                     H I S T O R Y 
                     doc: Tue May 15 18:04:39 2012
-                    dlm: Mon Nov 20 10:21:00 2017
+                    dlm: Wed Dec  6 12:42:00 2017
                     (c) 2012 A.M. Thurnherr
-                    uE-Info: 190 21 NIL 0 0 72 3 2 4 NIL ofnI
+                    uE-Info: 199 15 NIL 0 0 72 3 2 4 NIL ofnI
 ======================================================================
 
 --------------------------------------
@@ -181,10 +181,19 @@ Mar 12, 2017:
 Mar 15, 2017:
 	- published
 
-#--------------------------
-# V2.0 (for DT KVH project)
----------------------------
+#-------------------------------------
+# V2.0 (bad bug in velBeamtoBPEarth())
+--------------------------------------
 
 Nov 20, 2017:
-	- added patchPD0 to these tools
+	- added patchPD0 to DT tools
+
+Nov 26, 2017:
 	- updated to V2.0 [ADCP_tools_lib.pl]
+	- bad bug in [RDI_Coords.pl] velBeamToBPEarth()
+	- improved gap heuristics in [RDI_Utils.pl]
+
+Dec  6, 2017:
+	- updated [Manual.pdf]
+	- added [Manual.pdf] [loadANTS.m] to distro
+	- published
