@@ -2,9 +2,9 @@
 #======================================================================
 #                    P A T C H P D 0 
 #                    doc: Tue Aug 23 20:00:15 2016
-#                    dlm: Mon Nov 20 12:27:15 2017
+#                    dlm: Sat Dec 23 16:12:01 2017
 #                    (c) 2010 A.M. Thurnherr
-#                    uE-Info: 32 16 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 51 24 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 $antsSummary = 'patch TRDI PD0 file with external attitude data';
@@ -14,6 +14,9 @@ $antsSummary = 'patch TRDI PD0 file with external attitude data';
 #	Aug 25, 2016: - completed basic structure
 #	Nov 20, 2017: - major code cleanup
 #				  - added -d) to keep original data source id
+#	Dec  9, 2017: - added $antsSuppressCommonOptions = 1;
+#	Dec 23, 2017: - added support for -c
+#				  - BUG: not backward compatible with old IMP files any more
 
 # PATCH-FILE REQUIREMENTS (ANTS format)
 #	- %LADCP_pitch.mu %LADCP_roll.mu		mean LADCP pitch and roll
@@ -45,8 +48,8 @@ $antsSummary = 'patch TRDI PD0 file with external attitude data';
 ($ANTS)    = (`which ANTSlib` =~ m{^(.*)/[^/]*$});
 ($ADCP_TOOLS) = ($0 =~ m{^(.*)/[^/]*$});
 
-$antsMinLibVersion = 6.7;
-$ADCP_tools_minVersion  = 1.8;
+$antsMinLibVersion = 7.0;
+$ADCP_tools_minVersion  = 2.1;
 
 require "$ANTS/ants.pl";
 require "$ANTS/libvec.pl";
@@ -54,14 +57,18 @@ require "$ANTS/libstats.pl";
 require "$ADCP_TOOLS/ADCP_tools_lib.pl";
 
 $antsParseHeader = 0;
-&antsUsage('dhko:pr',2,
+$antsSuppressCommonOptions = 1;
+&antsUsage('cdhko:pr',2,
 	'[patch -p)itch] [-r)oll] [-h)eading] (none patches all)',
+	'[patch -c)lock with pre-Y2K RTC calues]',
 	'[-o) <heading-offset>] [-k)eep velocities of unpatched ensembles]',
 	'[keep original -d)ata-source id]',
 	'<original PD0 file> <patched PD0 file> [external attitude file]');
 
 $opt_p = $opt_r = $opt_h = 1
 	unless ($opt_p || $opt_r || $opt_h);
+
+$RDI_PD0_IO::OVERRIDE_Y2K_CLOCK = $opt_c;
 
 $LADCP_file  = &antsFileArg();
 $outPD0 = $ARGV[0]; shift;
@@ -89,6 +96,8 @@ my($LADCP_roll_mean)	= &antsRequireParam('LADCP_roll.mu');
 
 my($rho,$crho,$srho);
 if (defined($opt_o)) {
+	&antsAddParams('IMU_hdg_offset',$P{IMP_hdg_offset})						# backward compatibility
+		if defined($P{IMP_hdg_offset});
 	$rho  = $opt_o - &antsRequireParam('IMU_hdg_offset');
 	$crho = cos(rad($rho));
 	$srho = sin(rad($rho));
@@ -98,7 +107,6 @@ do {
 	my($ens) = $P{RECNO};
 	die("assertion failed [$ants_[0][$ensF] != $LADCP{ENSEMBLE}[$ens]->{NUMBER} --- 1-$LADCP{ENSEMBLE}[0]->{NUMBER} + $P{RECNO} + $d]")
 		unless ($ants_[0][$ensF] == $LADCP{ENSEMBLE}[$ens]->{NUMBER});
-#	print(STDERR "assertion succeeded [$ants_[0][$ensF] == $LADCP{ENSEMBLE}[$ens]->{NUMBER} --- 1-$LADCP{ENSEMBLE}[0]->{NUMBER} + $P{RECNO} + $d]\n");
 	$LADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID} = 0xA0;
 	
 	if (numbersp($ants_[0][$pitchF],$ants_[0][$rollF])) {

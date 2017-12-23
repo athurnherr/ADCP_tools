@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B I N S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Mon Jun 19 03:49:12 2017
+#                    dlm: Sat Dec 23 16:10:11 2017
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 168 1 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 104 28 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -101,7 +101,7 @@
 
 use Getopt::Std;
 
-$ADCP_tools_minVersion = 1.4;
+$ADCP_tools_minVersion = 2.1;
 ($ADCP_TOOLS) = ($0 =~ m{(.*/)[^/]+});
 require "$ADCP_TOOLS/ADCP_tools_lib.pl";
 

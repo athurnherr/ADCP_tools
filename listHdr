@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T H D R 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Tue Aug  8 16:25:46 2017
+#                    dlm: Thu Dec  7 10:45:31 2017
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 102 39 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 79 60 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the RDI BB header
@@ -47,7 +47,7 @@
 use Getopt::Std;
 
 ($ADCP_TOOLS) = ($0 =~ m{(.*/)[^/]+});
-$ADCP_tools_minVersion = 1.4; 
+$ADCP_tools_minVersion = 2.1; 
 require "$ADCP_TOOLS/ADCP_tools_lib.pl";
 
 die("Usage: $0 [-s)ummary] [-l)ong listing] <PD0 file[...]>\n")
@@ -63,17 +63,21 @@ while ($ARGV[0] ne '') {
 	die("$ARGV[0]: No such file or directory\n")
 		unless (-f $ARGV[0]);
 	
-	readHeader($ARGV[0],\%hdr);
+	my($valid) = readHeader($ARGV[0],\%hdr,$opt_s);
 	print("$ARGV[0]:\n") unless ($opt_s);
 
 	if ($opt_s) {														# summary ANTS output
 		my($id) = $ARGV[0];
 		$id =~ s/00[0-9]\.000//;										# leave just deployment name for std RDI files
 		$id =~ s@^.*/([^/]+)@\1@;
-		printf("%s %d %.1f %d %g %d %.1f\n",
-			$id,$hdr{SERIAL_NUMBER},$hdr{BEAM_FREQUENCY},
-			$hdr{N_BINS},$hdr{BLANKING_DISTANCE},$hdr{BIN_LENGTH},
-			$hdr{TRANSMITTED_PULSE_LENGTH});
+		if ($valid) {
+			printf("%s %d %.1f %d %g %d %.1f\n",
+				$id,$hdr{SERIAL_NUMBER},$hdr{BEAM_FREQUENCY},
+				$hdr{N_BINS},$hdr{BLANKING_DISTANCE},$hdr{BIN_LENGTH},
+	            $hdr{TRANSMITTED_PULSE_LENGTH});
+	    } else {
+			printf("%s [no complete ensemble in file]\n",$id);
+	    }
 		shift;
 		next;
 	}

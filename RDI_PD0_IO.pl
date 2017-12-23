@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Wed Nov 22 11:03:59 2017
+#                    dlm: Sat Dec 23 16:03:46 2017
 #                    (c) 2003 A.M. Thurnherr
-#					 uE-Info: 156 40 NIL 0 0 72 0 2 4 NIL ofnI
+#					 uE-Info: 1184 24 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 	
 # Read RDI PD0 binary data files (*.[0-9][0-9][0-9])
@@ -92,6 +92,11 @@
 #	Aug  8, 2017: - replaced croak() by die()
 #				  - added actual transducer frequencies
 #	Nov 22, 2017: - BUG: dayNo() and monthLength() clashed with [libconv.pl]
+#				  - added support for RDI_PD0_IO::IGNORE_Y2K_CLOCK
+#	Dec  7, 2017: - added suppress_error to readHeader()
+#	Dec 23, 2017: - BUG: could no longer read Anslope II raw files
+#				  - added support for patching ADCP time data
+#				  - added support for RDI_PD0_IO::OVERRIDE_Y2K_CLOCK
 	
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -391,10 +396,16 @@
 	
 sub readHeader(@)
 {
-	my($fn,$dta) = @_;
+	my($fn,$dta,$suppress_error) = @_;
 	$WBRcfn = $fn;
 	open(WBRF,$WBRcfn) || die("$WBRcfn: $!");
-	WBRhdr($dta) || die("$WBRcfn: Insufficient data\n");
+	if (WBRhdr($dta)) {
+		return 1;
+    } elsif ($suppress_error) {
+		return undef;
+    } else {
+		die("$WBRcfn: Insufficient data\n");
+    }
 }
 
 sub WBRhdr(@)
@@ -779,8 +790,8 @@ sub WBRens($$$)
 				die(sprintf($FmtErr,$WBRcfn,"Variable Leader",$id,$ensNo + ($lastEns - ($lastEns & 0xFFFF))));
         }
 
-#		if ($fixed_leader_bytes==42 || $fixed_leader_bytes==58) {				# BB150 & Explorer DVL
-			sysread(WBRF,$buf,7) == 7 || die("$WBRcfn: $!");
+#		if ($fixed_leader_bytes==42 || $fixed_leader_bytes==58) {				# BB150 & Explorer DVL (if DISABLED!)
+			sysread(WBRF,$buf,7) == 7 || die("$WBRcfn: $!");					# always read pre-Y2K clock
 			(${$E}[$ens]->{YEAR},${$E}[$ens]->{MONTH},
 			 ${$E}[$ens]->{DAY},${$E}[$ens]->{HOUR},${$E}[$ens]->{MINUTE},
 			 ${$E}[$ens]->{SECONDS},$B4) = unpack('CCCCCCC',$buf);
@@ -852,7 +863,9 @@ sub WBRens($$$)
 
 # 		THE FOLLOWING LINE OF CODE WAS REMOVED 7/30/2016 WHEN I ADDED A POP
 #		TO THE last STATEMENT ABOVE (INCOMPLETE ENSEMBLE)
-#		pop(@{$E}),last if (${$E}[$ens]->{MONTH}>12);						# 10/15/2014; IWISE#145 UL ???
+#		THE LINE WAS RE-ENABLED ON 12/23/2017 BECAUSE OTHERWISE THE
+#		ANSLOPE II PROFILES IN THE HOWTO CANNOT BE READ.
+		pop(@{$E}),last if (${$E}[$ens]->{MONTH}>12);						# 10/15/2014; IWISE#145 UL ???
 
 		if ($fixed_leader_bytes == 58) {									# Explorer DVL
 			sysread(WBRF,$buf,14) == 14 || die("$WBRcfn: $!");
@@ -882,6 +895,7 @@ sub WBRens($$$)
 			${$E}[$ens]->{UNIX_TIME} = 0;
 			${$E}[$ens]->{SECNO} = 0;
         } else {
+#			print(STDERR "\n[$ens]->${$E}[$ens]->{MINUTE}:${$E}[$ens]->{HOUR},${$E}[$ens]->{DAY},${$E}[$ens]->{MONTH},${$E}[$ens]->{YEAR}-<\n");
 			${$E}[$ens]->{UNIX_TIME}
 				= timegm(0,${$E}[$ens]->{MINUTE},
 						   ${$E}[$ens]->{HOUR},
@@ -1157,30 +1171,56 @@ sub WBPens($$$)
 		sysseek(WBPF,$start_ens+$WBPofs[0]+25,0) || die("$WBPcfn: $!");
 		syswrite(WBPF,$buf,1) == 1 || die("$WBPcfn: $!");
 
-		#------------------------------
-		# Variable Leader
-		#------------------------------
+		#----------------------------------------------------------------------
+		# Variable Leader #1
+		#	- if $RDI_PD0_IO::OVERRIDE_Y2K_CLOCK is set, the data from the pre-Y2K
+		#	  clock are used to override the ADCP clock values; this allows
+		#	  a better time to be recorded by the data acquisition system
+		#	  without overwriting the main instrument clock data
+		#----------------------------------------------------------------------
 
-		sysseek(WBPF,$start_ens+$WBPofs[1]+14,0) || die("$WBPcfn: $!");		# jump to SPEED_OF_SOUND
+		if ($RDI_PD0_IO::OVERRIDE_Y2K_CLOCK) {
+			sysseek(WBPF,$start_ens+$WBPofs[1]+4,0) || die("$WBPcfn: $!");		# jump to RTC_YEAR
+			sysread(WBPF,$buf,7) == 7 || die("$WBRcfn: $!");					# read pre-Y2K clock
+			($dta->{ENSEMBLE}[$ens]->{YEAR},
+			 $dta->{ENSEMBLE}[$ens]->{MONTH},
+			 $dta->{ENSEMBLE}[$ens]->{DAY},
+			 $dta->{ENSEMBLE}[$ens]->{HOUR},
+			 $dta->{ENSEMBLE}[$ens]->{MINUTE},
+			 $dta->{ENSEMBLE}[$ens]->{SECONDS},$B4) =
+				unpack('CCCCCCC',$buf);
+			$dta->{ENSEMBLE}[$ens]->{SECONDS} += $B4/100;
+			$dta->{ENSEMBLE}[$ens]->{YEAR} += ($dta->{ENSEMBLE}[$ens]->{YEAR} > 80) ? 1900 : 2000;
+		}
+		
+		#----------------------------------------------------------------------
+		# Variable Leader #2
+		#	- patch everything from SPEED_OF_SOUND to TEMPERATURE
+		# 	- at one stage, IMP allowed for missing values in pitch/roll and heading;
+		#	  on 12/23/2017 the corresponding code was disabled (replaced by assertion)
+		#----------------------------------------------------------------------
+
+		sysseek(WBPF,$start_ens+$WBPofs[1]+14,0) || die("$WBPcfn: $!");			# jump to SPEED_OF_SOUND
 		
 		$dta->{ENSEMBLE}[$ens]->{XDUCER_DEPTH} = _round($dta->{ENSEMBLE}[$ens]->{XDUCER_DEPTH}*10);
 
-		#---------------------------------
-		# NB: IMP allows for missing value
-		#---------------------------------
+#		$dta->{ENSEMBLE}[$ens]->{HEADING} = defined($dta->{ENSEMBLE}[$ens]->{HEADING})
+#							   ? _round($dta->{ENSEMBLE}[$ens]->{HEADING}*100)
+#							   : 0xF000;
+#		$dta->{ENSEMBLE}[$ens]->{PITCH} = defined($dta->{ENSEMBLE}[$ens]->{PITCH})
+#							 ? unpack('S',pack('s',_round($dta->{ENSEMBLE}[$ens]->{PITCH}*100)))
+#							 : 0x8000;
+#		$dta->{ENSEMBLE}[$ens]->{ROLL} = defined($dta->{ENSEMBLE}[$ens]->{ROLL})
+#						    ? unpack('S',pack('s',_round($dta->{ENSEMBLE}[$ens]->{ROLL}*100)))
+#						    : 0x8000;
 
-		$dta->{ENSEMBLE}[$ens]->{HEADING} = defined($dta->{ENSEMBLE}[$ens]->{HEADING})
-							   ? _round($dta->{ENSEMBLE}[$ens]->{HEADING}*100)
-							   : 0xF000;
-		$dta->{ENSEMBLE}[$ens]->{PITCH} = defined($dta->{ENSEMBLE}[$ens]->{PITCH})
-							 ? unpack('S',pack('s',_round($dta->{ENSEMBLE}[$ens]->{PITCH}*100)))
-							 : 0x8000;
-		$dta->{ENSEMBLE}[$ens]->{ROLL} = defined($dta->{ENSEMBLE}[$ens]->{ROLL})
-						    ? unpack('S',pack('s',_round($dta->{ENSEMBLE}[$ens]->{ROLL}*100)))
-						    : 0x8000;
-
-		$dta->{ENSEMBLE}[$ens]->{TEMPERATURE} =
-			unpack('S',pack('s',_round($dta->{ENSEMBLE}[$ens]->{TEMPERATURE}*100)));
+		croak("$0: assertion failed") unless defined($dta->{ENSEMBLE}[$ens]->{HEADING}) &&
+											 defined($dta->{ENSEMBLE}[$ens]->{PITCH}) &&
+											 defined($dta->{ENSEMBLE}[$ens]->{ROLL});
+		$dta->{ENSEMBLE}[$ens]->{HEADING} 	  = _round($dta->{ENSEMBLE}[$ens]->{HEADING}*100);
+		$dta->{ENSEMBLE}[$ens]->{PITCH}   	  = unpack('S',pack('s',_round($dta->{ENSEMBLE}[$ens]->{PITCH}*100)));
+		$dta->{ENSEMBLE}[$ens]->{ROLL} 	  	  = unpack('S',pack('s',_round($dta->{ENSEMBLE}[$ens]->{ROLL}*100)));
+		$dta->{ENSEMBLE}[$ens]->{TEMPERATURE} = unpack('S',pack('s',_round($dta->{ENSEMBLE}[$ens]->{TEMPERATURE}*100)));
 
 		$buf = pack('vvvvvvv',
 			 $dta->{ENSEMBLE}[$ens]->{SPEED_OF_SOUND},
@@ -1192,6 +1232,23 @@ sub WBPens($$$)
 		$nw == 14 || die("$WBPcfn: $nw bytes written ($!)");
 
 
+		#----------------------------------------------------------------------
+		# Variable Leader #3
+		#	- patch Y2K RTC
+		#----------------------------------------------------------------------
+
+		sysseek(WBPF,$start_ens+$WBPofs[1]+57,0) || die("$WBPcfn: $!");			# jump to RTC_CENTURY
+
+		my($century) 	= int($dta->{ENSEMBLE}[$ens]->{YEAR} / 100);
+		my($year)	 	=     $dta->{ENSEMBLE}[$ens]->{YEAR} % 100;
+		my($seconds) 	= int($dta->{ENSEMBLE}[$ens]->{SECONDS});
+		my($hundredths) = 100 * ($dta->{ENSEMBLE}[$ens]->{SECONDS} - $seconds);
+		$buf = pack('CCCCCCCC',$century,$year,$dta->{ENSEMBLE}[$ens]->{MONTH},
+							   $dta->{ENSEMBLE}[$ens]->{DAY},$dta->{ENSEMBLE}[$ens]->{HOUR},
+							   $dta->{ENSEMBLE}[$ens]->{MINUTE},$seconds,$hundredths);
+		my($nw) = syswrite(WBPF,$buf,8);
+		$nw == 8 || die("$WBPcfn: $nw bytes written ($!)");
+		
 		#--------------------
 		# Velocity Data
 		#--------------------

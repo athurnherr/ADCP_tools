@@ -1,9 +1,9 @@
 ======================================================================
                     H I S T O R Y 
                     doc: Tue May 15 18:04:39 2012
-                    dlm: Wed Dec  6 12:42:00 2017
+                    dlm: Sat Dec 23 16:13:38 2017
                     (c) 2012 A.M. Thurnherr
-                    uE-Info: 199 15 NIL 0 0 72 3 2 4 NIL ofnI
+                    uE-Info: 214 15 NIL 0 0 72 3 2 4 NIL ofnI
 ======================================================================
 
 --------------------------------------
@@ -183,7 +183,7 @@ Mar 15, 2017:
 
 #-------------------------------------
 # V2.0 (bad bug in velBeamtoBPEarth())
---------------------------------------
+#-------------------------------------
 
 Nov 20, 2017:
 	- added patchPD0 to DT tools
@@ -197,3 +197,18 @@ Dec  6, 2017:
 	- updated [Manual.pdf]
 	- added [Manual.pdf] [loadANTS.m] to distro
 	- published
+
+#----------------------------------------------------
+# V2.1 (make listHdr -s not bomb on incomplete files)
+#----------------------------------------------------
+
+Dec  7, 2017:
+	- changes to [RDI_PD0_IO.pl] [listHdr]
+	- updated to V2.1 [ADCP_tools_lib.pl]
+
+Dec 23, 2017:
+	- added support for -c to [patchPD0] for DT KVH system
+	- added backward compatibility to [patchPD0]
+	- updated all tools to use MinVersion 2.1
+	- updated [patchPD0] to use ANTSlib V7.0
+	- PUBLISHED

@@ -2,9 +2,9 @@
 #======================================================================
 #                    E D I T P D 0 
 #                    doc: Mon Nov 25 20:24:31 2013
-#                    dlm: Wed Dec  6 09:38:33 2017
+#                    dlm: Sat Dec 23 16:10:02 2017
 #                    (c) 2013 A.M. Thurnherr
-#                    uE-Info: 89 37 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 83 28 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # edit RDI PD0 file, e.g. to replace pitch/roll/heading with external values
@@ -80,7 +80,7 @@
 use Getopt::Std;
 
 ($ADCP_TOOLS) = ($0 =~ m{(.*/)[^/]+});
-$ADCP_tools_minVersion = 1.4; 
+$ADCP_tools_minVersion = 2.1; 
 require "$ADCP_TOOLS/ADCP_tools_lib.pl";
 
 $USAGE = "$0 @ARGV";

@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T V E L S 
 #                    doc: Mon Apr 25 21:12:54 2016
-#                    dlm: Mon Apr 25 21:48:18 2016
+#                    dlm: Sat Dec 23 16:10:33 2017
 #                    (c) 2016 A.M. Thurnherr
-#                    uE-Info: 180 0 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 21 28 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # list water-track velocity samples as ANTS records (PD02ANTS)
@@ -18,7 +18,7 @@
 
 use Getopt::Std;
 
-$ADCP_tools_minVersion = 1.4;
+$ADCP_tools_minVersion = 2.1;
 ($ADCP_TOOLS) = ($0 =~ m{(.*/)[^/]+});
 require "$ADCP_TOOLS/ADCP_tools_lib.pl";
 

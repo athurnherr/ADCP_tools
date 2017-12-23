@@ -1,9 +1,9 @@
 #======================================================================
 #                    A D C P _ T O O L S _ L I B . P L 
 #                    doc: Tue Jan  5 10:45:47 2016
-#                    dlm: Tue Nov 28 10:58:22 2017
+#                    dlm: Thu Dec  7 10:43:28 2017
 #                    (c) 2016 A.M. Thurnherr
-#                    uE-Info: 14 51 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 17 25 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # HISTORY:
@@ -12,8 +12,9 @@
 #	Aug 23, 2016: - updated to V1.8
 #	Mar 12, 2017: - updated to V1.9 for LADCP_w 1.3
 #	Nov 28, 2017: - updated to V2.0 for LADCP_w 1.4
+#	Dec  7, 2017: - updated to V2.1 for improvements to listHdr
 
-$ADCP_tools_version = 2.0;
+$ADCP_tools_version = 2.1;
 
 die(sprintf("$0: obsolete ADCP_tools V%.1f; V%.1f required\n",
     $ADCP_tools_version,$ADCP_tools_minVersion))
