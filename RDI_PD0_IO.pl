@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Sat Dec 23 16:03:46 2017
+#                    dlm: Tue Jun 12 19:10:08 2018
 #                    (c) 2003 A.M. Thurnherr
-#					 uE-Info: 1184 24 NIL 0 0 72 2 2 4 NIL ofnI
+#					 uE-Info: 115 72 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 	
 # Read RDI PD0 binary data files (*.[0-9][0-9][0-9])
@@ -97,6 +97,22 @@
 #	Dec 23, 2017: - BUG: could no longer read Anslope II raw files
 #				  - added support for patching ADCP time data
 #				  - added support for RDI_PD0_IO::OVERRIDE_Y2K_CLOCK
+#	Feb  6, 2018: - added supprort for first_ens, last_ens in readData()
+#	Feb  7, 2018: - BUG: new params were not optional
+#				  - made read routines more permissive by allowing
+#					garbage between ensembles
+#	Mar 15, 2018: - BUG: WBPens() did not work for files with garbage
+#	Mar 16, 2018: - added skipped garbage warning
+#				  - BUG: garbage skipping did not work correctly for files w/o BT
+#	Mar 20, 2018: - BUG: garbage skipping STILL did not work correctly for files w/o BT
+#	Apr  9, 2018: - added last_bin argument to readData()
+#	Apr 10, 2018: - slight improvement (parameter range check)
+#	Apr 23, 2018: - make WBRens() work (again?) with BB150 data froim 1996
+#	Apr 24, 2018: - BUG: undefined lat_bin argument to readData() did not work
+#	Apr 30, 2018: - added support for repeated ensembles
+#				  - added warning on wrong ensemble length
+#	Jun  9, 2018: - removed double \n from warnings
+#	Jun 12, 2018: - BUG: IMPed files did not pass the garbage detection 
 	
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -119,7 +135,7 @@
 #
 #	- DATA_SOURCE_ID = 0x7F 					original TRDI PD0 file
 #
-#	- DATA_SOURCE_ID = 0xA0 | PATCHED_MASK		produced by IMP+LADP 
+#	- DATA_SOURCE_ID = 0xA0 | PATCHED_MASK		produced by IMP+LADCP, KVH+LADCP
 #		PATCHED_MASK & 0x04:						pitch value has been patched
 #		PATCHED_MASK & 0x02:						roll value has been patched
 #		PATCHED_MASK & 0x01:						heading value has been patched
@@ -357,36 +373,52 @@
 	my($FmtErr) = "%s: illegal %s Id 0x%04x at ensemble %d";
 	
 #----------------------------------------------------------------------
-# skip to first valid ensemble (skip over initial garbage)
+# skip to next valid start of ensemble (skip over garbage)
 #----------------------------------------------------------------------
 	
-	sub skip_initial_trash(@)
-	{
-		my($quiet) = @_;
-		my($buf,$dta);
-	
-		my($found) = 0; 									# zero consecutive 0x7f found
-		my($skipped) = 0;
-		while ($found < 2) {
-			sysread(WBRF,$buf,1) == 1 || last;
-			($dta) = unpack('C',$buf);
-			if ($dta == 0x7f) {
-				$found++;
-			} elsif ($found==1 && ($dta==0xE0 || ($dta&0xF0==0xA0 && $dta&0x0F<8))) {
-				$found++;
-			} elsif ($found == 0) {
-				$skipped++;
-			} else {
-				$skipped += $found;
-				$found = 0;
-			}
+sub goto_next_ens(@)
+{
+	my($fh,$return_skipped) = @_;							# if return_skipped not set, return file pos
+	my($buf,$dta);
+
+	my($found) = 0; 										# zero consecutive 0x7f found
+	my($skipped) = 0; my($garbage_start);
+	while ($found < 2) {
+		sysread($fh,$buf,1) == 1 || last; 
+		($dta) = unpack('C',$buf);
+		if ($dta == 0x7f) {
+			$found++;
+		} elsif ($found==1 &&
+					($dta==0xE0	||									# from editPD0
+					 (($dta&0xF0)==0xA0 && ($dta&0x0F)<8))) {		# from IMP+LADCP or KVH+LADCP
+			$found++;
+		} elsif ($found == 0) {
+			$garbage_start = sysseek($fh,0,1)-1 unless defined($garbage_start);
+			$skipped++;
+		} else {											# here, found == 1 but 2nd byte was not found
+			$garbage_start = sysseek($fh,0,1)-$found unless defined($garbage_start);
+			$skipped += $found;
+			$found = 0;
 		}
-		die("$WBRcfn: no valid ensemble header found [$!]\n")
-			if ($found < 2);
-		printf(STDERR "WARNING: %d bytes of initial garbage\n",$skipped)
-			if ($skipped > 0 && !$quiet);
-		return sysseek(WBRF,-2,1);
 	}
+	my($fpos) = ($found < 2) ? undef : sysseek($fh,-2,1);
+	return $skipped if ($return_skipped);
+	
+	if ($skipped) {
+		if (eof($fh)) {
+#				04/18/18: disabled the following line of code because it is very common at
+#						  least with the older RDI instruments I am looking at in the context
+#						  of the SR1b repeat section analysis
+#			print(STDERR "WARNING (RDI_PD0_IO): PD0 file ends with $skipped garbage bytes\n");
+		} elsif ($garbage_start == 0) {
+			print(STDERR "WARNING (RDI_PD0_IO): PD0 file starts with $skipped garbage bytes\n");
+		} else {
+			print(STDERR "WARNING (RDI_PD0_IO): $skipped garbage bytes in PD0 file beginning at byte $garbage_start\n");
+		}
+	}
+	
+	return $fpos;
+}
 	
 #----------------------------------------------------------------------
 # readHeader(file_name,^dta) WBRhdr(^data)
@@ -419,7 +451,10 @@ sub WBRhdr(@)
 	# HEADER
 	#--------------------
 
-	skip_initial_trash();
+	my($skipped) = goto_next_ens(\*WBRF,1);	
+   	printf(STDERR "WARNING: %d bytes of initial garbage\n",$skipped)
+		if ($skipped > 0);
+	
 	sysread(WBRF,$buf,6) == 6 || return undef;
 	($hid,$did,$dta->{ENSEMBLE_BYTES},$dummy,$dta->{NUMBER_OF_DATA_TYPES})
 		= unpack('CCvCC',$buf);
@@ -455,7 +490,7 @@ sub WBRhdr(@)
 			|| die("$WBRcfn: $!");
 	@WBRofs = unpack("v$dta->{NUMBER_OF_DATA_TYPES}",$buf);
 #	for ($i=0; $i<$dta->{NUMBER_OF_DATA_TYPES}; $i++) {
-#		printf(STDERR "\nWBRofs[$i] = %d",$WBRofs[$i]);
+#		printf(STDERR "WBRofs[$i] = %d",$WBRofs[$i]);
 #	}
 
 
@@ -698,33 +733,49 @@ sub WBRhdr(@)
 }
 
 #----------------------------------------------------------------------
-# readData(file_name,^data) WBRens(nbins,fixed_leader_bytes,^data)
-# 	- read all ensembles
+# readData(file_name,^data[,first_ens,last_ens[,last_bin]]) 
+# 	- read ensembles
+#	- read all ensembles unless first_ens and last_ens are given
+#	- read all bins unless last_bin is given
 #----------------------------------------------------------------------
 
 sub readData(@)
 {
-	my($fn,$dta) = @_;
+	my($fn,$dta,$fe,$le,$lb) = @_;
 	$WBRcfn = $fn;
     open(WBRF,$WBRcfn) || die("$WBRcfn: $!\n");
     WBRhdr($dta,1) || die("$WBRcfn: Insufficient Data\n");
-	WBRens($dta->{N_BINS},$dta->{FIXED_LEADER_BYTES},
-		   \@{$dta->{ENSEMBLE}});
+    $lb = $dta->{N_BINS}
+		unless (numberp($lb) && $lb>=1 && $lb<=$dta->{N_BINS});
+	WBRens($lb,$dta->{FIXED_LEADER_BYTES},\@{$dta->{ENSEMBLE}},$fe,$le);
 	print(STDERR "$WBRcfn: $BIT_errors built-in-test errors\n")
 		if ($BIT_errors);
 }
 
-sub WBRens($$$)
+sub WBRens(@)
 {
-	my($nbins,$fixed_leader_bytes,$E) = @_;
+	my($nbins,$fixed_leader_bytes,$E,$fe,$le) = @_;
 	my($start_ens,$B1,$B2,$B3,$B4,$I,$id,$bin,$beam,$buf,$dummy,@dta,$i,$cs,@WBRofs);
-	my($ens,$ensNo,$dayStart,$ens_length,$hid,$did,$ndt);
+	my($ens,$ensNo,$dayStart,$ens_length,$hid,$did,$ndt,$el);
 
     sysseek(WBRF,0,0) || die("$WBRcfn: $!");
-	$start_ens = skip_initial_trash(1);
-	for ($ens=0; 1; $ens++,$start_ens+=$ens_length+2) {
-#		print(STDERR "ens = $ens\n");
-#		print(STDERR "start_ens = $start_ens\n");
+ENSEMBLE:
+	for ($ens=0; 1; $ens++) {
+		$start_ens = goto_next_ens(\*WBRF);
+		last unless defined($start_ens);
+
+		#----------------------------------------
+		# Handle first_ens and last_ens
+		#----------------------------------------
+
+		if (defined($fe) && $ens>0 && ${$E}[$ens-1]->{NUMBER}<$fe) {					# delete previous ensemble
+			pop(@{$E}); $ens--;
+		}
+
+		if (defined($le) && $ens>0 && ${$E}[$ens-1]->{NUMBER}>$le) {					# delete previous ensemble and finish
+			pop(@{$E}); $ens--;
+			last;
+		}
 
 		#----------------------------------------
 		# Get ensemble length and # of data types 
@@ -732,7 +783,7 @@ sub WBRens($$$)
 
 		sysseek(WBRF,$start_ens,0) || die("$WBRcfn: $!");
 		sysread(WBRF,$buf,6) == 6 || last;
-		($hid,$did,$ens_length,$dummy,$ndt) = unpack('CCvCC',$buf);
+		($hid,$did,$el,$dummy,$ndt) = unpack('CCvCC',$buf);
 		$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header",$hid,defined($ensNo)?$ensNo+1:0));
 		${$E}[$ens]->{DATA_SOURCE_ID} = $did;
 		if ($did == 0x7f) {
@@ -745,7 +796,16 @@ sub WBRens($$$)
 			${$E}[$ens]->{PRODUCER} = 'unknown';
 	    }
 
-##		printf(STDERR "\n$WBRcfn: WARNING: unexpected number of data types (%d, ens=$ens)\n",$ndt),last
+		if (defined($ens_length) && ($el != $ens_length)) {
+			print(STDERR "WARNING (RDI_PD0_IO): ensemble ${$E}[$#{$E}]->{NUMBER} skipped (unexpected length)\n");
+			pop(@{$E});
+			$ens--;
+			next;
+		}
+		
+		$ens_length = $el;
+
+##		printf(STDERR "$WBRcfn: WARNING: unexpected number of data types (%d, ens=$ens)\n",$ndt),last
 ##				unless ($ndt == 6 || $ndt == 7);
 		sysread(WBRF,$buf,2*$ndt) == 2*$ndt || die("$WBRcfn: $!");
 		@WBRofs = unpack("v$ndt",$buf);
@@ -763,15 +823,16 @@ sub WBRens($$$)
 		sysseek(WBRF,$start_ens,0) || die("$WBRcfn: $!");
 		unless ((sysread(WBRF,$buf,$ens_length) == $ens_length) &&				# incomplete ensemble
 				(sysread(WBRF,$cs,2) == 2)) {
+#			print(STDERR "INCOMPLETE ENSEMBLE\n");
 			pop(@{$E});
 			last;
 		}
 
 		unless (unpack('%16C*',$buf) == unpack('v',$cs)) {						# bad checksum
-			pop(@{$E});
-			last;
-#			next;																# using this might make the code work
-		}																		# for files with isolated bad ensembles
+#			print(STDERR "BAD CHECKSUM\n");
+			pop(@{$E}); $ens--;
+			next;
+		}		
 
 		#------------------------------
 		# Variable Leader
@@ -803,6 +864,16 @@ sub WBRens($$$)
 
 		sysread(WBRF,$buf,1) == 1 || die("$WBRcfn: $!");
 		$ensNo += unpack('C',$buf) << 16;
+
+		for (my($i)=$ens; $i>0; $i--) {											# check for duplicate ens; e.g. 2018 S4P 24UL
+			if (${$E}[$i]->{NUMBER} == $ensNo) {									
+				print(STDERR "WARNING (RDI_PD0_IO): duplicate ensemble $ensNo skipped\n");
+				pop(@{$E});
+				$ens--;
+				next ENSEMBLE;
+			}
+		}
+			
 		${$E}[$ens]->{NUMBER} = $ensNo;
 		
 		sysread(WBRF,$buf,30) == 30 || die("$WBRcfn: $!");
@@ -888,14 +959,14 @@ sub WBRens($$$)
 			= &_dayNo(${$E}[$ens]->{YEAR},${$E}[$ens]->{MONTH},${$E}[$ens]->{DAY},
 					  ${$E}[$ens]->{HOUR},${$E}[$ens]->{MINUTE},${$E}[$ens]->{SECONDS});
 
-		# when analyzing an STA file from an OS75 SADCP (Poseidion),
+		# when analyzing an STA file from an OS75 SADCP (Poseidon),
 		# I noticed that there is no time information. This causes
 		# timegm to bomb. 
 		if (${$E}[$ens]->{MONTH} == 0) {					# no time info
 			${$E}[$ens]->{UNIX_TIME} = 0;
 			${$E}[$ens]->{SECNO} = 0;
         } else {
-#			print(STDERR "\n[$ens]->${$E}[$ens]->{MINUTE}:${$E}[$ens]->{HOUR},${$E}[$ens]->{DAY},${$E}[$ens]->{MONTH},${$E}[$ens]->{YEAR}-<\n");
+#			print(STDERR "[$ens]->${$E}[$ens]->{MINUTE}:${$E}[$ens]->{HOUR},${$E}[$ens]->{DAY},${$E}[$ens]->{MONTH},${$E}[$ens]->{YEAR}-<\n");
 			${$E}[$ens]->{UNIX_TIME}
 				= timegm(0,${$E}[$ens]->{MINUTE},
 						   ${$E}[$ens]->{HOUR},
@@ -988,12 +1059,9 @@ sub WBRens($$$)
 			die(sprintf($FmtErr,$WBRcfn,"Percent-Good Data",$id,$ensNo));
 
 		for ($i=0,$bin=0; $bin<$nbins; $bin++) {
-#			printf(STDERR "%-GOOD($bin): ");
 			for ($beam=0; $beam<4; $beam++,$i++) {
-#				printf(STDERR "$dta[$i] ");
 				${$E}[$ens]->{PERCENT_GOOD}[$bin][$beam] = $dta[$i];
 			}
-#			printf(STDERR "\n");
 		}
 
 		#-----------------------------------------
@@ -1009,7 +1077,11 @@ sub WBRens($$$)
 			last if ($id == 0x0600);
 		}
 
-		next if ($nxt == $ndt);													# no BT found => next ens
+		if ($nxt == $ndt) {														# no BT found => next ens
+#			sysseek(WBRF,4,1) || die("$WBRcfn: $!");							# skip over remainder of ensemble
+			sysseek(WBRF,$start_ens+$ens_length+2,0) || die("$WBRcfn: $!");
+			next;
+		}
 
 		sysseek(WBRF,14,1) || die("$WBRcfn: $!");								# BT range, velocity, corr, %-good, ...
 		sysread(WBRF,$buf,28) == 28 || die("$WBRcfn: $!");
@@ -1054,17 +1126,21 @@ sub WBRens($$$)
 		}
 
 		sysseek(WBRF,2,1) || die("$WBRcfn: $!");								# BT signal strength & BT range high bytes
-		sysread(WBRF,$buf,9) == 9 || die("$WBRcfn: $!");
-		@dta = unpack('C4CC4',$buf);
-		for ($beam=0; $beam<4; $beam++) {
-			${$E}[$ens]->{BT_SIGNAL_STRENGTH}[$beam] = $dta[$beam];
-		}
-		${$E}[$ens]->{HIGH_GAIN} if    ($dta[4]);
-		${$E}[$ens]->{LOW_GAIN} unless ($dta[4]);
-		for ($beam=0; $beam<4; $beam++) {										# high bytes (1 byte per beam)
-			${$E}[$ens]->{BT_RANGE}[$beam] += $dta[5+$beam] * 655.36
-				if ($dta[5+$beam]);
-		}
+#		sysread(WBRF,$buf,9) == 9 || die("$WBRcfn: $!");
+		if (sysread(WBRF,$buf,9) == 9) {										# SR1b JR16 BB150 data files require this
+			@dta = unpack('C4CC4',$buf);
+			for ($beam=0; $beam<4; $beam++) {
+				${$E}[$ens]->{BT_SIGNAL_STRENGTH}[$beam] = $dta[$beam];
+			}
+			${$E}[$ens]->{HIGH_GAIN} if    ($dta[4]);
+			${$E}[$ens]->{LOW_GAIN} unless ($dta[4]);
+			for ($beam=0; $beam<4; $beam++) {									# high bytes (1 byte per beam)
+				${$E}[$ens]->{BT_RANGE}[$beam] += $dta[5+$beam] * 655.36
+					if ($dta[5+$beam]);
+			}
+#			sysseek(WBRF,8,1) || die("$WBRcfn: $!");							# remainder of ensemble
+        }
+        sysseek(WBRF,$start_ens+$ens_length+2,0) || die("$WBRcfn: $!");
 	} # ens loop
 }
 
@@ -1116,9 +1192,12 @@ sub WBPens($$$)
 {
 	my($nbins,$fixed_leader_bytes,$dta) = @_;
 	my($start_ens,$B1,$B2,$B3,$B4,$I,$id,$bin,$beam,$buf,$dummy,@dta,$i,$cs,@WBPofs);
-	my($ens,$dayStart,$ens_length,$hid,$ndt);
+	my($ens,$dayStart,$ens_length,$hid,$ndt,$el);
 
-	for ($ens=$start_ens=0; $ens<=$#{$dta->{ENSEMBLE}}; $ens++,$start_ens+=$ens_length+2) {
+#	for ($ens=$start_ens=0; $ens<=$#{$dta->{ENSEMBLE}}; $ens++,$start_ens+=$ens_length+2) {
+	for ($ens=0; $ens<=$#{$dta->{ENSEMBLE}}; $ens++) {
+		$start_ens = goto_next_ens(\*WBPF);
+		die("ens = $ens\n") unless defined($start_ens);
 
 		#------------------------------
 		# Patch Header (Data Source Id)
@@ -1134,8 +1213,11 @@ sub WBPens($$$)
 		$nw == 1 || die("$WBPcfn: $nw bytes written ($!)");
 
 		sysread(WBPF,$buf,4) == 4 || die("$WBPcfn: unexpected EOF");
-		($ens_length,$dummy,$ndt) = unpack('vCC',$buf);
-		printf(STDERR "\n$WBPcfn: WARNING: unexpected number of data types (%d, ens=$ens)\n",$ndt),last
+		($el,$dummy,$ndt) = unpack('vCC',$buf);
+		$ens--,next if (defined($ens_length) && ($el != $ens_length));
+		$ens_length = $el;
+		
+		printf(STDERR "$WBPcfn: WARNING: unexpected number of data types (%d, ens=$ens)\n",$ndt),last
 				unless ($ndt == 6 || $ndt == 7);
 
 		sysread(WBPF,$buf,2*$ndt) == 2*$ndt || die("$WBPcfn: $!");
@@ -1172,6 +1254,20 @@ sub WBPens($$$)
 		syswrite(WBPF,$buf,1) == 1 || die("$WBPcfn: $!");
 
 		#----------------------------------------------------------------------
+		# Variable Leader #0
+		#	- read ensNo for debugging purposes
+		#----------------------------------------------------------------------
+
+		sysseek(WBPF,$start_ens+$WBPofs[1]+2,0) || die("$WBPcfn: $!");
+		sysread(WBPF,$buf,2) == 2 || die("$WBPcfn: $!");
+		my($ensNo) = unpack("v",$buf);											# only lower two bytes!!!
+		sysseek(WBPF,$start_ens+$WBPofs[1]+13,0) || die("$WBPcfn: $!");			# jump to high byte
+		sysread(WBPF,$buf,1) == 1 || die("$WBPcfn: $!");
+		$ensNo += unpack('C',$buf) << 16;
+		die("ensNo = $ensNo (should be $dta->{ENSEMBLE}[$ens]->{NUMBER})\n")
+			unless ($ensNo == $dta->{ENSEMBLE}[$ens]->{NUMBER});
+
+		#----------------------------------------------------------------------
 		# Variable Leader #1
 		#	- if $RDI_PD0_IO::OVERRIDE_Y2K_CLOCK is set, the data from the pre-Y2K
 		#	  clock are used to override the ADCP clock values; this allows
@@ -1181,7 +1277,7 @@ sub WBPens($$$)
 
 		if ($RDI_PD0_IO::OVERRIDE_Y2K_CLOCK) {
 			sysseek(WBPF,$start_ens+$WBPofs[1]+4,0) || die("$WBPcfn: $!");		# jump to RTC_YEAR
-			sysread(WBPF,$buf,7) == 7 || die("$WBRcfn: $!");					# read pre-Y2K clock
+			sysread(WBPF,$buf,7) == 7 || die("$WBPcfn: $!");					# read pre-Y2K clock
 			($dta->{ENSEMBLE}[$ens]->{YEAR},
 			 $dta->{ENSEMBLE}[$ens]->{MONTH},
 			 $dta->{ENSEMBLE}[$ens]->{DAY},
@@ -1195,6 +1291,7 @@ sub WBPens($$$)
 		
 		#----------------------------------------------------------------------
 		# Variable Leader #2
+		#   - read ensemble number for debugging purposes
 		#	- patch everything from SPEED_OF_SOUND to TEMPERATURE
 		# 	- at one stage, IMP allowed for missing values in pitch/roll and heading;
 		#	  on 12/23/2017 the corresponding code was disabled (replaced by assertion)

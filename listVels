@@ -2,15 +2,16 @@
 #======================================================================
 #                    L I S T V E L S 
 #                    doc: Mon Apr 25 21:12:54 2016
-#                    dlm: Sat Dec 23 16:10:33 2017
+#                    dlm: Thu Oct  4 16:03:35 2018
 #                    (c) 2016 A.M. Thurnherr
-#                    uE-Info: 21 28 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 14 61 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # list water-track velocity samples as ANTS records (PD02ANTS)
 
 # HISTORY:
 #	Apr 25, 2016: - created from [listBins]
+#	Oct  4, 2016: - removed pointless transducer config check
 
 # General Notes:
 #	- everything (e.g. beams) is numbered from 1
@@ -95,8 +96,6 @@ for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {				# check/transform velocities
 	$P{last_ens} = $dta{ENSEMBLE}[$e]->{NUMBER};
 	$le = $e;
 
-	die("3-beams used in ensemble #$dta{ENSEMBLE}[$e]->{NUMBER}\n")
-		if ($dta{ENSEMBLE}[$e]->{N_BEAMS_USED} < 4);
 	die("BIT error in ensemble $dta{ENSEMBLE}[$e]->{NUMBER}\n")
 		if defined($dta{ENSEMBLE}[$e]->{BUILT_IN_TEST_ERROR});
 	die("Low gain in ensemble #$dta{ENSEMBLE}[$e]->{NUMBER}\n")

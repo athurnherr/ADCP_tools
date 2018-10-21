@@ -2,9 +2,9 @@
 #======================================================================
 #                    S P L I T P D 0 
 #                    doc: Sat Aug 21 22:20:27 2010
-#                    dlm: Sat Jul 30 18:50:43 2016
+#                    dlm: Mon Apr  2 15:49:09 2018
 #                    (c) 2010 A.M. Thurnherr
-#                    uE-Info: 69 60 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 28 36 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # split RDI files based on list of ensemble numbers (e.g. from yoyo -t)
@@ -19,11 +19,13 @@
 #	Jul 30, 2016: - modified -o default
 #				  - added code to set DSID of first ensemble of each
 #					output file to 0x7f7f
+#	Apr  2, 1018: - BUG in error messages
+#				  - added header id check
 
 # NOTES:
 #   - it is assumed that the input file begins with ensemble #1
-#   - turning-point ensembles are written to preceding profile,
-#     for compatibility with [yoyo]
+#   - turning-point ensembles are written to next profile,
+#     for compatibility with [yoyo]?
 
 # FILE NAME CONVENTION:
 #   - in order to assign individual yoyo casts numerical station numbers,
@@ -38,7 +40,7 @@ use Getopt::Std;
 
 die("Usage: $0 " .
 	"[-o)ut-file <fmt[e.g. 017DL_%02d.000]>] " .
-	"[-f)irst <cast #>] " .
+	"[-f)irst output <cast #>] " .
 	"[require -m)in <ens> to produce output] " .
 	"<RDI file> <ens> <ens[...]>\n")
 		unless (&getopts('f:o:m:') && @ARGV>=3);
@@ -50,7 +52,8 @@ unless (defined($opt_o)) {
 
 $opt_m = 0 unless defined($opt_m);								# default: produce tiny files as well
 	
-readHeader($ARGV[0],\%hdr); shift;								# get length of ensembles
+$fn = $ARGV[0]; shift;
+readHeader($fn,\%hdr); 											# get length of ensembles
 $ens_len = $hdr{ENSEMBLE_BYTES} + 2;
 
 $first_ens = $ARGV[0]+1; shift;									# initialize loop
@@ -59,19 +62,21 @@ $cnr = 1;
 
 do {															# split data
 	sysseek(WBRF,($first_ens-2)*$ens_len,0) ||					# begin next block of ensembles
-		die("$WBRcfn: $!");
-	$last_ens++ unless defined($ARGV[0]);
+		die("$fn: $!");
+	$last_ens++ unless defined($fn);
 
-	sysread(WBRF,$ids,2) || die("$WBRcfn: file truncated");		# read 1st ensemble & ensure DSID is 0x7f
+	sysread(WBRF,$ids,2) || die("$fn: file truncated");			# read 1st ensemble & ensure DSID is 0x7f
+	die("$fn: illegal header id [0x" . unpack('H4',$ids) . "]")	# require 1st byte to be 0x7f
+		unless (substr(unpack('H4',$ids),0,2) eq '7f');
 	$ids = pack('H4','7f7f');									# reset DSID
 	sysread(WBRF,$febuf,$ens_len-4) == $ens_len-4 ||
-		die("$WBRcfn: file truncated");
-	sysread(WBRF,$csum,2) || die("$WBRcfn: file truncated");
+		die("$fn: file truncated");
+	sysread(WBRF,$csum,2) || die("$fn: file truncated");
 	$csum = pack('v',unpack('%16C*',$ids.$febuf));				# re-calculate checksum
 	
 	$nBytes = ($last_ens-$first_ens) * $ens_len;				# read remaining ensembles in block
 	sysread(WBRF,$buf,$nBytes) == $nBytes ||
-		die("$WBRcfn: file truncated");
+		die("$fn: file truncated (ends before ens#$last_ens)");
 
 	if ($last_ens-$first_ens+1 >= $opt_m) {						# write output only if sufficient # of ensembles
 		$fn = sprintf($opt_o,$opt_f+$cnr++);

@@ -2,13 +2,12 @@
 #======================================================================
 #                    L I S T E N S 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Wed Nov  9 12:27:32 2016
+#                    dlm: Thu May 31 11:10:51 2018
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 115 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 62 51 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
-# Print useful info from the ensemble list or dump ensembles to
-# separate files.
+$synopsis = 'list ensemble summaries (default), dump ensembles (-E), time-average ensembles (-T)';
 
 # HISTORY:
 #	Jan 18, 2003: - created
@@ -48,40 +47,80 @@
 #   Mar 17, 2016: - adapted to new Getopt library
 #	Apr 19, 2016: - added %date, %time to -E output
 #	Nov  9, 2016: - BUG: no error on missing files
+#	Feb  7, 2018: - removed 3-beam error
+#	Apr  1, 2018: - improved usage message
+#				  - removed -Q option (errcheck only, which is not necessary; can use mkProfile to check for errors)
+#				  - added -T (time averaging)
+#	Apr  2, 2018: - made it work
+#				  - BUG: velBeamToInstrument() was using old usage
+#	Apr  3, 2018: - BUG: typo
+#				  - added -S from [listBins]
+#				  - removed -B and an BT data (current version did not treat beam-coord BT data correctly)
+#	Apr  4, 2018: - added support for first_ens and last_ens in [RDI_PD0_IO.pl]
+#				  - removed support for multiple input files
+#	Apr 10, 2018: - added -l)ast bin
+#	May 31, 2018: - BUG: -A was disabled by default
 
 # Notes:
-#	- -E outputs data in earth coordinates, unless -b is set also
-#	- -E output is always in ANTS format, ignoring -A
-#	- no soundspeed correction
+#	- -E/-B outputs data in earth coordinates, unless -b is set also
+#	- -E/-T output is always in ANTS format
 
 use Getopt::Std;
-$0 =~ m{(.*/)[^/]+};
-require "$1RDI_BB_Read.pl";
-require "$1RDI_Coords.pl";
 
-die("Usage: $0 [-A)nts] [-Q)uiet (errcheck only)] " .
-			  "[-f)ields <[name=]FIELD[,...]>] " .
-			  "[require -4)-beam solutions] [-d)iscard <beam#>] " .
-			  "[write -E)nsemples <.suff> [use -B)T] [-M)agnetic <declination>] [min -p)ercent-good <#>] [keep -b)eam coords]] " .
-			  "[-r)ange <first_ens,last_ens>] [in-w)ater ensembles only] " .
-			  "<RDI file...>\n")
-	unless (&getopts("4ABbd:E:f:M:p:Qr:w") && $#ARGV >= 0);
+$ADCP_tools_minVersion = 2.2;
+($ADCP_TOOLS) = ($0 =~ m{(.*/)[^/]+});
+require "$ADCP_TOOLS/ADCP_tools_lib.pl";
 
-print(STDERR "WARNING: no soundspeed correction applied!\n");
+$antsMinLibVersion = 7.0;
+($ANTS) = (`which ANTSlib` =~ m{^(.*)/[^/]*$});
+require "$ANTS/ants.pl";
+require "$ANTS/libconv.pl";
+
+($self) = ($0 =~ m{.*/([^/]+)});
+$cmdline = "$self @ARGV";
+
+die("\n$self [-4ABbdEfiMprSTw] <PD0 file> -- $synopsis\n\nCommand-Line Options:\n\t" .
+			  "Output Ensemble Summary (default mode):\n\t\t" .
+				  "[-A)NTS format]\n\t\t" .
+			  "Dump Ensembles (-E|-T; ANTS Format):\n\t\t" .
+				  "[dump individual -E)nsemples <.suff>]\n\t\t" .
+				  "[-T)ime-average ensembles [time-series start (decimal day),]<averaging interval (days)>[,time-series end (decimal day)]]\n\t\t\t" .
+				  	"[-i)gnore bins with <fraction> of max samples (-T only)]\n\t\t\t" .
+				  	"[output -B)asename <bn>]\n\t\t" .
+				  "[-M)agnetic <declination>]\n\t\t" .
+				  "[-S)oundspeed correction <salin|*,temp|*,depth|*>\n\t\t" .
+				  "[require min -p)ercent-good <#>]\n\t\t" .
+				  "[keep -b)eam coords (do not transform to earth coordinates)]\n\t" .
+			  "Common Options:\n\t\t" .
+				  "[add -f)ields <[name=]FIELD[,...]>]\n\t\t" .
+				  "[require -4)-beam solutions] [-d)iscard <beam#>]\n\t\t" .
+				  "[-r)ange <first_ens,last_ens>] [-l)ast <bin>]\n\t\t" .
+				  "[in-w)ater ensembles only]\n")
+	unless (&getopts("4AB:bd:E:f:i:l:M:p:r:S:T:w") && @ARGV == 1);
+
+die("$ARGV[0]: no such file\n")
+	unless (-f $ARGV[0]);
+
+$dump_ens = defined($opt_E) + defined($opt_T);
+die("$self: cannot combine -E with -T\n") if ($dump_ens > 1);
+
+if (defined($opt_S)) {
+	($SS_salin,$SS_temp,$SS_depth) = split(',',$opt_S);
+} else {
+	print(STDERR "WARNING: no soundspeed correction applied!\n")
+		if ($dump_ens);
+}
 
 print(STDERR "WARNING: magnetic declination not set!\n")
-	if defined($opt_E) && !defined($opt_M);
+	if ($dump_ens && !defined($opt_M));
 
-die("$0: illegal option combination\n")
-	if ($opt_Q && $opt_A) || ((defined($opt_M) || defined($opt_p) || defined($opt_b) || $opt_B) && !defined($opt_E));
+die("$self: illegal option combination\n")
+	if ((defined($opt_M) || defined($opt_p) || defined($opt_b)) && !defined($dump_ens));
 
-die("$0: -4 and -d are mutually exclusive\n")
+die("$self: -4 and -d are mutually exclusive\n")
 	if ($opt_4 && defined($opt_d));
 
-($first_ens,$last_ens) = split(',',$opt_r)
-	if defined($opt_r);
-
-undef($opt_A) if defined($opt_E);
+#undef($opt_A) if defined($dump_ens);
 
 $opt_p = 0 unless defined($opt_p);
 
@@ -107,239 +146,406 @@ $RDI_Coords::minValidVels = 4 if ($opt_4);			# no 3-beam solutions
 # MAIN
 #----------------------------------------------------------------------
 
-while ($ARGV[0] ne '') {
-	die("$ARGV[0]: No such file or directory\n")
-		unless (-f $ARGV[0]);
-
-	readData(@ARGV,\%dta);
-	if ($opt_A && !$opt_E) {
-		print("#ANTS#PARAMS# RDI_file{$ARGV[0]}\n");
-	} elsif (!$opt_Q) {
-		print(STDERR "$ARGV[0]: ");
-	}
-	printf(STDERR "%d complete ensembles...\n",scalar(@{$dta{ENSEMBLE}}))
-		unless ($opt_Q);
-	$dta{HEADING_BIAS} = -$opt_M;						# magnetic declination
-	shift;
-
-	if ($dta{BEAM_COORDINATES}) {						# coords used
-		$beamCoords = 1;
-	} elsif (!$dta{EARTH_COORDINATES}) {
-		die("$ARGV[0]: only beam and earth coordinates implemented so far\n");
-	}
-
-	die("$ARGV[0]: -b only makes sense for beam-coordinate data\n")
-		if ($opt_b && !$beamCoords);
-
-	if ($opt_A) {										# select output fmt: ANTS
-		unless ($opt_Q) {
-			printf("#ANTS#PARAMS# N_ensembles{%d}\n",scalar(@{$dta{ENSEMBLE}}));
-			print('#ANTS#FIELDS# {ens} {time} {xducer_up} {temp} {hdg} {pitch} {roll} {XMIT_VOLTAGE} {XMIT_CURRENT}');
-			print(' {ESW}') if ($dta{FIXED_LEADER_BYTES} >= 53);
-	        print("$addLayout\n");
-	    }
-
-		$dumpEns = sub ($)
-		{
-			my($e) = @_;
-			
-			printf('%d %lf %d %g',
-				$dta{ENSEMBLE}[$e]->{NUMBER},
-				$dta{ENSEMBLE}[$e]->{UNIX_TIME},
-				$dta{ENSEMBLE}[$e]->{XDUCER_FACING_UP} ? 1 : 0,
-				$dta{ENSEMBLE}[$e]->{TEMPERATURE},
-			);
-			if (defined($dta{ENSEMBLE}[$e]->{HEADING})) { printf(' %g',$dta{ENSEMBLE}[$e]->{HEADING}); }
-			else { printf(' nan'); }
-			if (defined($dta{ENSEMBLE}[$e]->{PITCH})) { printf(' %g',$dta{ENSEMBLE}[$e]->{PITCH}); }
-			else { printf(' nan'); }
-			if (defined($dta{ENSEMBLE}[$e]->{ROLL})) { printf(' %g',$dta{ENSEMBLE}[$e]->{ROLL}); }
-			else { printf(' nan'); }
-			printf(' %g %g',
-				$dta{ENSEMBLE}[$e]->{ADC_XMIT_VOLTAGE},
-				$dta{ENSEMBLE}[$e]->{ADC_XMIT_CURRENT},
-			);
-			printf(' %08X',$dta{ENSEMBLE}[$e]->{ERROR_STATUS_WORD})
-				if ($dta{FIXED_LEADER_BYTES} >= 53);
-			foreach my $f (@addFields) {
-				my($fn,$fi) = ($f =~ m{([^[]*)(\[.*)});
-				$fn = $f unless defined($fn);
-				my($v) = eval("\$dta{ENSEMBLE}[$e]->{$fn}$fi");
-				print(defined($v) ? " $v" : " nan");
-			}
-			print("\n");
-		}
-
-	} elsif ($opt_E) {										# one file per ens
-
-		$dumpEns = sub ($)
-		{
-			my($e) = @_;
-			my($b,$i);
-			my($file) = "$dta{ENSEMBLE}[$e]->{NUMBER}$opt_E";
-		
-			open(P,">$file") || die("$file: $!\n");
-			print(P "#!/usr/bin/perl -S list\n");
-			print(P "#ANTS#PARAMS# " .
-					"date{$dta{ENSEMBLE}[$e]->{DATE}} " .
-					"time{$dta{ENSEMBLE}[$e]->{TIME}} " .
-					"BT_u{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[0]} " .
-					"BT_v{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[1]} " .
-					"BT_w{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[2]} " .
-					"BT_e{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[3]} " .
-					"BT_cor1{$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[0]} " .
-					"BT_cor2{$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[1]} " .
-					"BT_cor3{$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[2]} " .
-					"BT_cor4{$dta{ENSEMBLE}[$e]->{BT_CORRELATION}[3]} " .
-					"BT_amp1{$dta{ENSEMBLE}[$e]->{BT_AMPLITUDE}[0]} " .
-					"BT_amp2{$dta{ENSEMBLE}[$e]->{BT_AMPLITUDE}[1]} " .
-					"BT_amp3{$dta{ENSEMBLE}[$e]->{BT_AMPLITUDE}[2]} " .
-					"BT_amp4{$dta{ENSEMBLE}[$e]->{BT_AMPLITUDE}[3]} " .
-					"soundspeed_correction{NONE!} " .
-					"\n"
-			);
-			print(P "#ANTS#FIELDS# " .
-					"{bin} {dz} {u} {v} {w} {e} {w12} {w34} {cor1} {cor2} {cor3} {cor4} " .
-					"{amp1} {amp2} {amp3} {amp4} "
-			);
-			if ($beamCoords) {
-				print(P "{pcg1} {pcg2} {pcg3} {pcg4}");
-			} else {
-				print(P "{pc3beam} {pcBadErrVel} {pc1or2beam} {pc4beam}");
-			}
-			print(P "$addLayout\n");
-			    
-			for (my($b)=0; $b<$dta{N_BINS}; $b++) {
-				my(@v,$w12,$w34);
-				my($dz) = $dta{DISTANCE_TO_BIN1_CENTER} + $b*$dta{BIN_LENGTH};
-		
-				if ($beamCoords) {
-					undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0])
-						if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][0] < $opt_p) || ($opt_d == 1));
-					undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1])
-						if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][1] < $opt_p) || ($opt_d == 2));
-					undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2])
-						if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][2] < $opt_p) || ($opt_d == 3));
-					undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3])
-						if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][3] < $opt_p) || ($opt_d == 4));
-					($dummy,$w12,$dummy,$w34) =
-						velBeamToBPEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
-					@v = $opt_b ? @{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]} :
-							velInstrumentToEarth(\%dta,$e,
-								velBeamToInstrument(\%dta,
-									@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]}));
-				} else {
-					@v = velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
-				}
-		
-				$v[0] = nan unless defined($v[0]);		# u
-				$v[1] = nan unless defined($v[1]);		# v
-				$v[2] = nan unless defined($v[2]);		# w
-				$v[3] = nan unless defined($v[3]);		# err_vel
-				$w12 = nan unless defined($w12);		# w from beams 1&2
-				$w34 = nan unless defined($w34);		# w from beams 3&4
-
-				my(@out);
-				if ($opt_B) {
-					$v[0] = nan unless defined($dta{ENSEMBLE}[$e]->{BT_VELOCITY}[0]);
-					$v[1] = nan unless defined($dta{ENSEMBLE}[$e]->{BT_VELOCITY}[1]);
-					@out = (
-						$b,$dz,$v[0]-$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[0],
-						$v[1]-$dta{ENSEMBLE}[$e]->{BT_VELOCITY}[1],$v[2],$v[3],$w12,$w34,
-						@{$dta{ENSEMBLE}[$e]->{CORRELATION}[$b]},
-						@{$dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b]},
-						@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]}
-					);
-				} else {
-					@out = (
-						$b,$dz,$v[0],$v[1],$v[2],$v[3],$w12,$w34,
-						@{$dta{ENSEMBLE}[$e]->{CORRELATION}[$b]},
-						@{$dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b]},
-						@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]}
-					);
-				}
-				foreach my $f (@addFields) {
-					my($fn,$fi) = ($f =~ m{([^[]*)(\[.*)});
-					$fn = $f unless defined($fn);
-					push(@out,eval("\$dta{ENSEMBLE}[$e]->{$fn}$fi"));
-				}
-				for ($i=0; $i<19+@addFields; $i++) {
-					$out[$i] = nan unless defined($out[$i]);
-				}
-				print(P "@out\n");
-			}
-			close(P);
-		}
-
-	} else {											# neither ANTS nor ens files
-		unless ($opt_Q) {
-			if ($dta{FIXED_LEADER_BYTES} >= 53) {
-				printf("    # Date       Time        XD  Temp Headng Pitch  Roll #vv DSID ESW$addLayout\n");
-				printf("-----------------------------------------------------------------------\n");
-			} else {
-				printf("    # Date       Time        XD  Temp Headng Pitch  Roll #vv DSID$addLayout\n");
-				printf("-------------------------------------------------------------------\n");
-			}
-		}
-
-		$dumpEns = sub ($)
-		{
-			my($e) = @_;
-
-			printf('%5d %s %s %s %5.1f',
-				$dta{ENSEMBLE}[$e]->{NUMBER},
-				$dta{ENSEMBLE}[$e]->{DATE},
-				$dta{ENSEMBLE}[$e]->{TIME},
-				$dta{ENSEMBLE}[$e]->{XDUCER_FACING_UP} ? "UP" : "DN",
-				$dta{ENSEMBLE}[$e]->{TEMPERATURE},
-			);
-			if (defined($dta{ENSEMBLE}[$e]->{HEADING})) { printf(' %6.1f',$dta{ENSEMBLE}[$e]->{HEADING}); }
-			else { printf('    nan'); }
-			if (defined($dta{ENSEMBLE}[$e]->{PITCH})) { printf(' %5.1f',$dta{ENSEMBLE}[$e]->{PITCH}); }
-			else { printf('   nan'); }
-			if (defined($dta{ENSEMBLE}[$e]->{ROLL})) { printf(' %5.1f',$dta{ENSEMBLE}[$e]->{ROLL}); }
-			else { printf('   nan'); }
-			printf(' %3d 0x%02X',
-				$dta{ENSEMBLE}[$e]->{BIN1VELS},
-				$dta{ENSEMBLE}[$e]->{DATA_SOURCE_ID},
-			);
-			printf(' 0x%08X',$dta{ENSEMBLE}[$e]->{ERROR_STATUS_WORD})
-				if ($dta{FIXED_LEADER_BYTES} >= 53);
-			foreach my $f (@addFields) {
-				my($fn,$fi) = ($f =~ m{([^[]*)(\[.*)});
-				$fn = $f unless defined($fn);
-				my($v) = eval("\$dta{ENSEMBLE}[$e]->{$fn}$fi");
-				print(defined($v) ? " $v" : " nan");
-			}
-			print(" BUILT-IN-TEST ERROR")
-				if defined($dta{ENSEMBLE}[$e]->{BUILT_IN_TEST_ERROR});
-			print("\n");
-		}
-		
-	}
-
-	for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {
-		next if (defined($first_ens) &&
-				 $dta{ENSEMBLE}[$e]->{NUMBER} < $first_ens);
-		last if (defined($last_ens) &&
-				 $dta{ENSEMBLE}[$e]->{NUMBER} > $last_ens);
-		 $dta{ENSEMBLE}[$e]->{BIN1VELS} =
-				defined($dta{ENSEMBLE}[$e]->{VELOCITY}[1][0]) +
-				defined($dta{ENSEMBLE}[$e]->{VELOCITY}[1][1]) +
-				defined($dta{ENSEMBLE}[$e]->{VELOCITY}[1][2]) +
-	            defined($dta{ENSEMBLE}[$e]->{VELOCITY}[1][3]);
-		next if ($opt_w && $dta{ENSEMBLE}[$e]->{BIN1VELS}<3);
-
-		die("3-beams used in ensemble #$dta{ENSEMBLE}[$e]->{NUMBER}\n")
-			if ($dta{ENSEMBLE}[$e]->{N_BEAMS_USED} < 4);
-		die("BIT error in ensemble $dta{ENSEMBLE}[$e]->{NUMBER}\n")
-			if ($opt_Q || $opt_A || $opt_E) && defined($dta{ENSEMBLE}[$e]->{BUILT_IN_TEST_ERROR});
-		die("Low gain in ensemble #$dta{ENSEMBLE}[$e]->{NUMBER}\n")
-			if ($dta{ENSEMBLE}[$e]->{LOW_GAIN});
-
-		&$dumpEns($e)
-			unless ($opt_Q);
-	}
+printf(STDERR "Reading $ARGV[0]...");
+if (defined($opt_r)) {								# read selected range
+	my($fe,$le) = split(',',$opt_r);
+	readData(@ARGV,\%dta,$fe,$le,$opt_l);
+} else {											# read entire file (possibly selected bins)
+	readData(@ARGV,\%dta,undef,undef,$opt_l);
 }
+printf(STDERR "\n\t%d complete ensembles\n",scalar(@{$dta{ENSEMBLE}}));
+
+$dta{HEADING_BIAS} = -$opt_M;						# magnetic declination
+
+if ($dta{BEAM_COORDINATES}) {						# coords used
+	$beamCoords = 1;
+} elsif (!$dta{EARTH_COORDINATES}) {
+	die("$ARGV[0]: beam or earth coordinates required (implementation restriction)\n");
+}
+die("$ARGV[0]: -b requires beam-coordinate data\n")
+	if ($opt_b && !$beamCoords);
+
+($basename) = defined($opt_B)						# set basename of output files
+			? $opt_B
+			: ($ARGV[0] =~ m{([^\./]+)\.[^\.]+});
+
+#----------------------------------------------------------------------
+# define &dumpEns() routine for different output formats:
+#	-A			ANTS format ensemble summary
+#	-E			create one file per ensemble
+#	-T			time-average multiple ensembles
+#	default:	ASCII ensemble summary (human readable)
+#----------------------------------------------------------------------
+
+if ($opt_A) {										# select output fmt: ANTS
+	print("#ANTS#PARAMS# PD0_file{$ARGV[0]}\n");
+	printf("#ANTS#PARAMS# N_ensembles{%d}\n",scalar(@{$dta{ENSEMBLE}}));
+	print('#ANTS#FIELDS# {ens} {date} {time} {unix-time} {xducer_up} {temp} {hdg} {pitch} {roll} {XMIT_VOLTAGE} {XMIT_CURRENT}');
+	print(' {ESW}') if ($dta{FIXED_LEADER_BYTES} >= 53);
+	print("$addLayout\n");
+
+	$dumpEns = sub ($)
+	{
+		my($e) = @_;
+	    
+		printf('%d %s %s %lf %d %g',
+			$dta{ENSEMBLE}[$e]->{NUMBER},
+			$dta{ENSEMBLE}[$e]->{DATE},
+			$dta{ENSEMBLE}[$e]->{TIME},
+			$dta{ENSEMBLE}[$e]->{UNIX_TIME},
+			$dta{ENSEMBLE}[$e]->{XDUCER_FACING_UP} ? 1 : 0,
+			$dta{ENSEMBLE}[$e]->{TEMPERATURE},
+		);
+		if (defined($dta{ENSEMBLE}[$e]->{HEADING})) { printf(' %g',$dta{ENSEMBLE}[$e]->{HEADING}); }
+		else { printf(' nan'); }
+		if (defined($dta{ENSEMBLE}[$e]->{PITCH})) { printf(' %g',$dta{ENSEMBLE}[$e]->{PITCH}); }
+		else { printf(' nan'); }
+		if (defined($dta{ENSEMBLE}[$e]->{ROLL})) { printf(' %g',$dta{ENSEMBLE}[$e]->{ROLL}); }
+		else { printf(' nan'); }
+		printf(' %g %g',
+			$dta{ENSEMBLE}[$e]->{ADC_XMIT_VOLTAGE},
+			$dta{ENSEMBLE}[$e]->{ADC_XMIT_CURRENT},
+		);
+		printf(' %08X',$dta{ENSEMBLE}[$e]->{ERROR_STATUS_WORD})
+			if ($dta{FIXED_LEADER_BYTES} >= 53);
+		foreach my $f (@addFields) {
+			my($fn,$fi) = ($f =~ m{([^[]*)(\[.*)});
+			$fn = $f unless defined($fn);
+			my($v) = eval("\$dta{ENSEMBLE}[$e]->{$fn}$fi");
+			print(defined($v) ? " $v" : " nan");
+		}
+		print("\n");
+	}
+
+} elsif ($opt_E) {										# dump each ensemble in separate file 
+
+	$dumpEns = sub ($)
+	{
+		my($e) = @_;
+		my($b,$i);
+		my($file) = "$dta{ENSEMBLE}[$e]->{NUMBER}$opt_E";
+    
+		my($ssCorr) = defined($opt_S) ? ssCorr($dta{ENSEMBLE}[$e],$SS_salin,$SS_temp,$SS_depth) : 1;
+
+		open(P,">$file") || die("$file: $!\n");
+		print(P "#!/usr/bin/perl -S list\n");
+		print(P "#ANTS#PARAMS# " .
+				"date{$dta{ENSEMBLE}[$e]->{DATE}} " .
+				"time{$dta{ENSEMBLE}[$e]->{TIME}} " .
+				"soundspeed_correction{%s} " .
+				"magnetic_declination{%g} " .
+				"\n",
+					(defined($opt_S) ? $opt_S : "NONE!"),
+					$opt_M
+		);
+		print(P "#ANTS#FIELDS# " .
+				"{bin} {dz} {u} {v} {w} {e} {w12} {w34} {corr1} {corr2} {corr3} {corr4} " .
+				"{amp1} {amp2} {amp3} {amp4} "
+		);
+		if ($beamCoords) {
+			print(P "{pcg1} {pcg2} {pcg3} {pcg4}");
+		} else {
+			print(P "{pc3beam} {pcBadErrVel} {pc1or2beam} {pc4beam}");
+		}
+		print(P "$addLayout\n");
+		    
+		my($ssCorr) = defined($opt_S) ? ssCorr($dta{ENSEMBLE}[$e],$SS_salin,$SS_temp,$SS_depth) : 1;
+		for (my($b)=0; $b<$dta{N_BINS}; $b++) {
+			my(@v,$w12,$w34);
+			my($dz) = $ssCorr * ($dta{DISTANCE_TO_BIN1_CENTER} + $b*$dta{BIN_LENGTH});
+    
+			if ($beamCoords) {
+				undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0])
+					if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][0] < $opt_p) || ($opt_d == 1));
+				undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1])
+					if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][1] < $opt_p) || ($opt_d == 2));
+				undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2])
+					if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][2] < $opt_p) || ($opt_d == 3));
+				undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3])
+					if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][3] < $opt_p) || ($opt_d == 4));
+				($dummy,$w12,$dummy,$w34) =
+					velBeamToBPEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
+				@v = $opt_b ? @{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]} :
+							  velBeamToEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
+			} else {
+				@v = velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
+			}
+			$v[0] *= $ssCorr if defined($v[0]);
+			$v[1] *= $ssCorr if defined($v[1]);
+			$v[2] *= $ssCorr if defined($v[2]);
+			$v[3] *= $ssCorr if defined($v[3]);
+			$w12 *= $ssCorr if defined($w12);
+			$w34 *= $ssCorr if defined($w34);
+    
+			$v[0] = nan unless defined($v[0]);		# u
+			$v[1] = nan unless defined($v[1]);		# v
+			$v[2] = nan unless defined($v[2]);		# w
+			$v[3] = nan unless defined($v[3]);		# err_vel
+			$w12 = nan unless defined($w12);		# w from beams 1&2
+			$w34 = nan unless defined($w34);		# w from beams 3&4
+
+			my(@out) = (
+				$b+1,$dz,$v[0],$v[1],$v[2],$v[3],$w12,$w34,
+				@{$dta{ENSEMBLE}[$e]->{CORRELATION}[$b]},
+				@{$dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b]},
+				@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]}
+			);
+			foreach my $f (@addFields) {
+				my($fn,$fi) = ($f =~ m{([^[]*)(\[.*)});
+				$fn = $f unless defined($fn);
+				push(@out,eval("\$dta{ENSEMBLE}[$e]->{$fn}$fi"));
+			}
+			for ($i=0; $i<19+@addFields; $i++) {
+				$out[$i] = nan unless defined($out[$i]);
+			}
+			print(P "@out\n");
+		}
+		chmod(0777&~umask,*P);
+		close(P);
+	}
+
+} elsif (defined($opt_T)) { 									# time-average ensembles
+
+	my(@tmp) = split(',',$opt_T);								# decode -T 
+	my($Tstart,$deltaT,$Tend,$month,$day,$year);
+	if (@tmp == 3) {
+		($Tstart,$deltaT,$Tend) = @tmp;
+	} elsif (@tmp == 2) {
+		($Tstart,$deltaT) = @tmp;
+		($month,$day,$year) = split('/',$dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{DATE});
+		$Tend = str2dec_time($dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{DATE},$dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{TIME},$year);
+	} else {
+		($month,$day,$year) = split('/',$dta{ENSEMBLE}[0]->{DATE});
+		$Tstart = str2dec_time($dta{ENSEMBLE}[0]->{DATE},$dta{ENSEMBLE}[0]->{TIME},$year);
+		($deltaT) = @tmp;
+		($month,$day,$year) = split('/',$dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{DATE});
+		$Tend = str2dec_time($dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{DATE},$dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{TIME},$year);
+	}
+	$Tstart = &{&antsCompileConstExpr($')} if ($Tstart =~ m{^=});
+	$deltaT = &{&antsCompileConstExpr($')} if ($deltaT =~ m{^=});
+	$Tend	= &{&antsCompileConstExpr($')} if ($Tend   =~ m{^=});
+	$deltaT = 9e99 unless ($deltaT > 0);
+																# format string for zero-padded filenames
+	my($fnfmt) = sprintf('%%0%dd',length(sprintf('%d',($Tend-$Tstart)/$deltaT+1)));
+
+	$cbin		= 1;											# current tim-bin number; used inside dumpEns
+	$max_nens	= 0;											# max number of samples
+
+	sub dde($$) 												# divide allowing for zero; used inside dumpEns
+	{
+		my($sum,$n) = @_;
+		return $n ? $sum/$n : nan;
+	}
+
+	$dumpEns = sub ($)											# time average and output when next bin is started
+	{
+		my($e) = @_;
+		my($b,$i);
+
+		my($month,$day,$year) = ($e >= 0) ? split('/',$dta{ENSEMBLE}[$e]->{DATE}) : (undef,undef,undef);
+		my($dn) = ($e >= 0) ? str2dec_time($dta{ENSEMBLE}[$e]->{DATE},$dta{ENSEMBLE}[$e]->{TIME},$year) : undef;
+
+		if ($e<0 || $dn>=$Tstart+$cbin*$deltaT) {				# dump full bin
+			my($file) = sprintf("$basename.T$fnfmt",$cbin); 	# file name: <basename>.T0001
+
+			do {												# skip empy bins
+				$cbin++;
+			} while ($dn>=$Tstart+$cbin*$deltaT);
+
+			$max_nens = $a1_n[0] if ($a1_n[0] > $max_nens); 	# update max number of samples in time bin
+			if ($a1_n[0] >= $opt_i*$max_nens) { 				# write file only if sufficient samples (-i)
+			    
+				open(P,">$file") || die("$file: $!\n"); 		# open file and output metadata
+				print(P "#!/usr/bin/perl -S list\n");
+				print(P "#ANTS# $cmdline\n");
+				printf(P "#ANTS#PARAMS# " .
+						"PD0_file{$ARGV[0]} " .
+						"dn{%s} " .
+						"N_ensembles{%d} ensemble_range{%d,%d} " .
+						"delta-T{%g} " .
+						"soundspeed_correction{%s} " .
+						"magnetic_declination{%g} " .
+						"\n",
+							&dde($dn_s,$dn_n),
+							$a1_n[0],$feib,$leib,$deltaT,
+							(defined($opt_S) ? $opt_S : "NONE!"),
+							$opt_M
+
+				);
+			    
+				print(P "#ANTS#FIELDS# " .													# Layout
+						"{bin} {dz} {u} {v} {w} {e} {w12} {w34} {corr1} {corr2} {corr3} {corr4} " .
+						"{amp1} {amp2} {amp3} {amp4} "
+				);
+				if ($beamCoords) {
+					print(P "{pcg1} {pcg2} {pcg3} {pcg4} ");
+				} else {
+					print(P "{pc3beam} {pcBadErrVel} {pc1or2beam} {pc4beam} ");
+				}
+				print(P "{uvw.nsamp} {e.nsamp} ");
+				print(P "$addLayout\n");
+																							# ssCorr for dz based on first ensemble in bin
+				my($ssCorr) = defined($opt_S)
+							? ssCorr($dta{ENSEMBLE}[$feib-$dta{ENSEMBLE}[0]->{NUMBER}],$SS_salin,$SS_temp,$SS_depth)
+							: 1;
+				for (my($b)=0; $b<$dta{N_BINS}; $b++) { 									# output data
+					my($dz) = $ssCorr * ($dta{DISTANCE_TO_BIN1_CENTER} + $b*$dta{BIN_LENGTH});
+					printf(P "%d %g  %g %g %g %g  %g %g  %d %d %d %d  %d %d %d %d  %d %d %d %d	%d %d",
+						$b+1,$dz,
+						&dde($v1[$b],$v1_n[$b]),&dde($v2[$b],$v2_n[$b]),&dde($v3[$b],$v3_n[$b]),&dde($v4[$b],$v4_n[$b]),
+						&dde($w12[$b],$w12_n[$b]),&dde($w34[$b],$w34_n[$b]),
+						&dde($c1[$b],$c1_n[$b]),&dde($c2[$b],$c2_n[$b]),&dde($c3[$b],$c3_n[$b]),&dde($c4[$b],$c4_n[$b]),
+						&dde($a1[$b],$a1_n[$b]),&dde($a2[$b],$a2_n[$b]),&dde($a3[$b],$a3_n[$b]),&dde($a4[$b],$a4_n[$b]),
+						&dde($p1[$b],$p1_n[$b]),&dde($p2[$b],$p2_n[$b]),&dde($p3[$b],$p3_n[$b]),&dde($p4[$b],$p4_n[$b]),
+						$v1_n[$b],$v4_n[$b]
+					);
+
+					for (my($i)=0; $i<@af; $i++) {
+						printf(P "%g ",&dde($af[$i][$b],$af_n[$i][$b]));
+					}
+					print(P "\n");
+				}
+				chmod(0777&~umask,*P);														# activate output
+				close(P);
+			} # if -i check okay
+
+			for (my($b)=0; $b<$dta{N_BINS}; $b++) { 										# reset stats	 
+				$v1[$b] = $v1_n[$b] = $v2[$b] = $v2_n[$b] = $v3[$b] = $v3_n[$b] = $v4[$b] = $v4_n[$b] = 0;
+				$w12[$b] = $w12_n[$b] = $w34[$b] = $w34_n[$b] = 0;
+				$c1[$b] = $c1_n[$b] = $c2[$b] = $c2_n[$b] = $c3[$b] = $c3_n[$b] = $c4[$b] = $c4_n[$b] = 0;							    
+				$a1[$b] = $a1_n[$b] = $a2[$b] = $a2_n[$b] = $a3[$b] = $a3_n[$b] = $a4[$b] = $a4_n[$b] = 0;
+				$p1[$b] = $p1_n[$b] = $p2[$b] = $p2_n[$b] = $p3[$b] = $p3_n[$b] = $p4[$b] = $p4_n[$b] = 0;
+				for (my($i)=0; $i<@af; $i++) {
+					$af[$i][$b] = $af_n[$i][$b] = 0;
+				}
+				$dn_s = $dn_n = 0;															# day number
+			}
+				    
+			undef($feib);																	# make sure first ensemble in bin will be updated below
+		} # if time bin is full
+
+		$feib = $dta{ENSEMBLE}[$e]->{NUMBER} unless defined($feib); 						# update first and last ensembles in current bin
+		$leib = $dta{ENSEMBLE}[$e]->{NUMBER};
+
+		$dn_s += $dn; $dn_n++;																# day number
+		    
+		my($ssCorr) = defined($opt_S) ? ssCorr($dta{ENSEMBLE}[$e],$SS_salin,$SS_temp,$SS_depth) : 1;
+		for (my($b)=0; $b<$dta{N_BINS}; $b++) {
+			my(@v,$this_w12,$this_w34);
+			if ($beamCoords) {																# convert to earth coordinates
+				undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0])
+					if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][0] < $opt_p) || ($opt_d == 1));
+				undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1])
+					if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][1] < $opt_p) || ($opt_d == 2));
+				undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2])
+					if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][2] < $opt_p) || ($opt_d == 3));
+				undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3])
+					if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][3] < $opt_p) || ($opt_d == 4));
+				($dummy,$this_w12,$dummy,$this_w34) =
+					velBeamToBPEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
+				@v = $opt_b ? @{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]} :
+							  velBeamToEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
+			} else {
+				@v = velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
+			}
+			$v[0] *= $ssCorr if defined($v[0]); $v[1] *= $ssCorr if defined($v[1]); 		# apply sound-speed correction
+			$v[2] *= $ssCorr if defined($v[2]); $v[3] *= $ssCorr if defined($v[3]);
+			$w12  *= $ssCorr if defined($w12);	$w34  *= $ssCorr if defined($w34);
+    
+			$v1[$b]+=$v[0],$v1_n[$b]++ if defined($v[0]);									# update sums and nsamps
+			$v2[$b]+=$v[1],$v2_n[$b]++ if defined($v[1]);
+			$v3[$b]+=$v[2],$v3_n[$b]++ if defined($v[2]);
+			$v4[$b]+=$v[3],$v4_n[$b]++ if defined($v[3]);
+			$w12[$b]+=$this_w12,$w12_n[$b]++ if defined($this_w12);
+			$w34[$b]+=$this_w34,$w34_n[$b]++ if defined($this_w34);
+			$c1[$b]+=$dta{ENSEMBLE}[$e]->{CORRELATION}[$b][0],$c1_n[$b]++;
+			$c2[$b]+=$dta{ENSEMBLE}[$e]->{CORRELATION}[$b][1],$c2_n[$b]++;
+			$c3[$b]+=$dta{ENSEMBLE}[$e]->{CORRELATION}[$b][2],$c3_n[$b]++;
+			$c4[$b]+=$dta{ENSEMBLE}[$e]->{CORRELATION}[$b][3],$c4_n[$b]++;
+			$a1[$b]+=$dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b][0],$a1_n[$b]++;
+			$a2[$b]+=$dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b][1],$a2_n[$b]++;
+			$a3[$b]+=$dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b][2],$a3_n[$b]++;
+			$a4[$b]+=$dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b][3],$a4_n[$b]++;
+			$p1[$b]+=$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][0],$p1_n[$b]++;
+			$p2[$b]+=$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][1],$p2_n[$b]++;
+			$p3[$b]+=$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][2],$p3_n[$b]++;
+			$p4[$b]+=$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][3],$p4_n[$b]++;
+
+			my($fi) = 0;
+			foreach my $f (@addFields) {
+				my($fn,$fi) = ($f =~ m{([^[]*)(\[.*)});
+				$fn = $f unless defined($fn);
+				my($val) = eval("\$dta{ENSEMBLE}[$e]->{$fn}$fi");
+				$af[$fi][$b]+=$val,$af_n[$fi][$b]++ if defined($val);
+				$fi++;
+			}
+		}
+	}
+
+} else {											# neither ANTS nor ens files (DEFAULT OUTPUT)
+	if ($dta{FIXED_LEADER_BYTES} >= 53) {
+		printf("Ens # Date		 Time		 XD  Temp Headng Pitch	Roll #vv DSID ESW$addLayout\n");
+		printf("----------------------------------------------------------------------------\n");
+	} else {
+		printf("Ens # Date		 Time		 XD  Temp Headng Pitch	Roll #vv DSID$addLayout\n");
+		printf("------------------------------------------------------------------------\n");
+	}
+
+	$dumpEns = sub ($)
+	{
+		my($e) = @_;
+
+		printf('%5d %s %s %s %5.1f',
+			$dta{ENSEMBLE}[$e]->{NUMBER},
+			$dta{ENSEMBLE}[$e]->{DATE},
+			$dta{ENSEMBLE}[$e]->{TIME},
+			$dta{ENSEMBLE}[$e]->{XDUCER_FACING_UP} ? "UP" : "DN",
+			$dta{ENSEMBLE}[$e]->{TEMPERATURE},
+		);
+		if (defined($dta{ENSEMBLE}[$e]->{HEADING})) { printf(' %6.1f',$dta{ENSEMBLE}[$e]->{HEADING}); }
+		else { printf('    nan'); }
+		if (defined($dta{ENSEMBLE}[$e]->{PITCH})) { printf(' %5.1f',$dta{ENSEMBLE}[$e]->{PITCH}); }
+		else { printf('   nan'); }
+		if (defined($dta{ENSEMBLE}[$e]->{ROLL})) { printf(' %5.1f',$dta{ENSEMBLE}[$e]->{ROLL}); }
+		else { printf('   nan'); }
+		printf(' %3d 0x%02X',
+			$dta{ENSEMBLE}[$e]->{BIN1VELS},
+			$dta{ENSEMBLE}[$e]->{DATA_SOURCE_ID},
+		);
+		printf(' 0x%08X',$dta{ENSEMBLE}[$e]->{ERROR_STATUS_WORD})
+			if ($dta{FIXED_LEADER_BYTES} >= 53);
+		foreach my $f (@addFields) {
+			my($fn,$fi) = ($f =~ m{([^[]*)(\[.*)});
+			$fn = $f unless defined($fn);
+			my($v) = eval("\$dta{ENSEMBLE}[$e]->{$fn}$fi");
+			print(defined($v) ? " $v" : " nan");
+		}
+		print(" BUILT-IN-TEST ERROR")
+			if defined($dta{ENSEMBLE}[$e]->{BUILT_IN_TEST_ERROR});
+		print("\n");
+	}
+} # define output format
+
+#----------------------------------------------------------------------
+# Loop Over Ensembles
+#----------------------------------------------------------------------
+
+for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {
+	 $dta{ENSEMBLE}[$e]->{BIN1VELS} =
+			defined($dta{ENSEMBLE}[$e]->{VELOCITY}[1][0]) +
+			defined($dta{ENSEMBLE}[$e]->{VELOCITY}[1][1]) +
+			defined($dta{ENSEMBLE}[$e]->{VELOCITY}[1][2]) +
+			defined($dta{ENSEMBLE}[$e]->{VELOCITY}[1][3]);
+	next if ($opt_w && $dta{ENSEMBLE}[$e]->{BIN1VELS}<3);
+
+	die("BIT error in ensemble $dta{ENSEMBLE}[$e]->{NUMBER}\n")
+		if ($opt_A || $dump_ens) && defined($dta{ENSEMBLE}[$e]->{BUILT_IN_TEST_ERROR});
+	die("Low gain in ensemble #$dta{ENSEMBLE}[$e]->{NUMBER}\n")
+		if ($dta{ENSEMBLE}[$e]->{LOW_GAIN});
+
+	&$dumpEns($e);
+}
+
+&$dumpEns(-1) if defined($opt_T);										# dump final bin
 
 exit(0);	

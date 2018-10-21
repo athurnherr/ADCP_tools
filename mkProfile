@@ -2,9 +2,9 @@
 #======================================================================
 #                    M K P R O F I L E 
 #                    doc: Sun Jan 19 18:55:26 2003
-#                    dlm: Fri Oct 13 13:39:55 2017
+#                    dlm: Tue May  1 10:12:56 2018
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 230 37 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 395 0 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Make an LADCP Profile by Integrating W (similar to Firing's scan*).
@@ -93,6 +93,8 @@
 #				  - removed warning
 #	Sep 12, 2016: - added %PD0_file
 #	Oct 13, 2017: - added instrument orientation
+#	Apr  2, 2018: - BUG: velBeamToInstrument() used old usage
+#	Apr 24, 2018: - BUG: bin1 was used even with zero blanking
 
 # NOTES:
 #	- the battery values are based on transmission voltages (different
@@ -256,6 +258,7 @@ if ($maxdt1-$mindt1>=0.1 || $maxdt2-$mindt2>=0.1) {
 # Step 1: Integrate w & determine water depth 
 #======================================================================
 
+$minb = 2 if ($dta{BLANKING_DISTANCE} == 0);
 ($firstgood,$lastgood,$atbottom,$w_gap_time,$zErr,$maxz,$rms_heave_accel) =
 	mk_prof(\%dta,0,$opt_F,$minb,$maxb,$opt_c,$opt_e,$opt_g,$opt_p);
 
@@ -324,7 +327,7 @@ sub ref_lr_uv($$$)									# calc ref-level u/v
 					 $dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][2] < 100 ||
 					 $dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][3] < 100);
 			@v = velInstrumentToEarth(\%dta,$ens,
-					velBeamToInstrument(\%dta,
+					velBeamToInstrument(\%dta,$ens,
 						@{$dta{ENSEMBLE}[$ens]->{VELOCITY}[$i]}));
 		} else {
 			next if ($dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][0] > 0 ||

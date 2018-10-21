@@ -2,9 +2,9 @@
 #======================================================================
 #                    E D I T P D 0 
 #                    doc: Mon Nov 25 20:24:31 2013
-#                    dlm: Sat Dec 23 16:10:02 2017
+#                    dlm: Wed Mar 14 21:15:51 2018
 #                    (c) 2013 A.M. Thurnherr
-#                    uE-Info: 83 28 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 417 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # edit RDI PD0 file, e.g. to replace pitch/roll/heading with external values

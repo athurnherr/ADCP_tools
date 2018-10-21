@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Mon Nov 27 10:32:50 2017
+#                    dlm: Sat Jun  9 12:11:01 2018
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 59 75 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 61 58 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -57,6 +57,8 @@
 #	Aug  7, 2017: - added abmiguity velocity
 #	Aug  8, 2017: - changed transducer frequency to kHz
 #	Nov 27, 2017: - BUG: profile-restart heuristic did not work with P6#001
+#	Mar 18, 2018: - added -ve dt consistency check
+#	Jun  9, 2018: - added support for ENV{NO_GAP_WARNINGS}
 
 use strict;
 
@@ -466,6 +468,10 @@ sub mk_prof(...)											# make profile
 	
 		my($dt) = $dta->{ENSEMBLE}[$e]->{UNIX_TIME} -		# time step since
 				  $dta->{ENSEMBLE}[$lastgood]->{UNIX_TIME}; # ... last good ens
+
+		die(sprintf("PANIC: negative dt = $dt between ensembles %d and %d\n",
+			$dta->{ENSEMBLE}[$lastgood]->{NUMBER},$dta->{ENSEMBLE}[$e]->{NUMBER}))
+				if ($dt < 0);
 	
 		if ($dt > $max_gap) {
 			# 2nd heuristic test added Nov 2017 for P06 profile #001
@@ -475,7 +481,8 @@ sub mk_prof(...)											# make profile
 #					printf(STDERR "\t[#ens = %d, end-of-gap = $e]\n",scalar(@{$dta->{ENSEMBLE}}));
 					last;
 			}
-			printf(STDERR "WARNING: %.1f-s gap in first half of profile is too long; profile restarted at ensemble $e\n",$dt);
+			printf(STDERR "WARNING: %.1f-s gap beginning at ens#%d in first half of profile is too long; profile restarted at ensemble %d\n",
+				$dt,$dta->{ENSEMBLE}[$lastgood+1]->{NUMBER},$dta->{ENSEMBLE}[$e]->{NUMBER});
 			$firstgood = $lastgood = $e;
 			$dta->{ENSEMBLE}[$e]->{ELAPSED_TIME} = 0;
 			$z = $zErr = $maxz = 0;
@@ -495,7 +502,9 @@ sub mk_prof(...)											# make profile
 			$rms_heave_accel_ssq += (($dta->{ENSEMBLE}[$e]->{W}-$dta->{ENSEMBLE}[$lastgood]->{W})/$dt)**2;
 			$rms_heave_accel_nsamp++;
 		} elsif ($dt > 15) {
-	       	printf(STDERR "WARNING: long-ish w gap (dt=%.1fs)\n",$dt);
+	       	printf(STDERR "WARNING: long-ish w gap at ens#%d-%d (dt=%.1fs)\n",
+				$dta->{ENSEMBLE}[$lastgood+1]->{NUMBER},$dta->{ENSEMBLE}[$e-1]->{NUMBER},$dt)
+					unless defined($ENV{NO_GAP_WARNINGS});
 		}
 	
 		$dta->{ENSEMBLE}[$e]->{DEPTH} = $z;
