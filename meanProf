@@ -2,9 +2,9 @@
 #======================================================================
 #                    M E A N P R O F 
 #                    doc: Fri Feb 22 08:40:18 2008
-#                    dlm: Wed Mar 16 07:02:38 2016
+#                    dlm: Fri Aug 24 13:45:21 2018
 #                    (c) 2008 A.M. Thurnherr
-#                    uE-Info: 14 49 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 15 71 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # extract time-averaged mean profile from ADCP data
@@ -12,6 +12,7 @@
 # HISTORY:
 #	Feb 22, 2008: - created from [listBins]
 #	Mar 16, 2016: - adapted to new Getopt library
+#	Aug 24, 2018: - BUG: code bombed when there are no 4-beam solutions
 
 # Soundspeed Correction:
 #	- applied as described in the RDI coord-trans manual
@@ -194,7 +195,8 @@ for ($b=0; $b<=$lastGoodBin; $b++) {
 	$mean_pcg3[$b] = $sum_pcg3[$b] / $n_pcg3[$b]; $mean_pcg4[$b] = $sum_pcg4[$b] / $n_pcg4[$b];
 	$mean_u[$b] = $sum_u[$b] / $good_vels[$b]; $mean_v[$b] = $sum_v[$b] / $good_vels[$b];
 	$mean_w[$b] = $sum_w[$b] / $good_vels[$b];
-	$mean_e[$b] = $sum_e[$b] / ($good_vels[$b] - $three_beam[$b]);
+	$mean_e[$b] = $sum_e[$b] / ($good_vels[$b] - $three_beam[$b])
+		if ($good_vels[$b] - $three_beam[$b] > 0);
 }
 
 for ($e=$fe; $e<=$le; $e++) {

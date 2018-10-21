@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B I N S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Sat Dec 23 16:10:11 2017
+#                    dlm: Wed Aug 29 07:23:21 2018
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 104 28 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 136 20 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -66,6 +66,7 @@
 #				  - BUG: 3-beam %ages were incorrect: 1) they were based on goodvels instead of the
 #						 entire ensemble range; 2) pings-per-ensemble were not considered
 #				  - BUG: output layout was all messed up for non-valid velocities
+#	Aug 29, 2018: - added error message on -r decoding failures
 
 # General Notes:
 #	- everything (e.g. beams) is numbered from 1
@@ -132,8 +133,11 @@ print(STDERR "WARNING: magnetic declination not set!\n")
 $opt_o = '>bin%d.raw' unless defined($opt_o);
 $ifn = $ARGV[0];
 
-($first_ens,$last_ens) = split(',',$opt_r)
-	if defined($opt_r);
+if (defined($opt_r)) {
+	($first_ens,$last_ens) = split(',',$opt_r);
+	die("Cannot decode -r $opt_r\n")
+		unless ($first_ens>0 && $last_ens>$first_ens);
+}
 
 if (defined($opt_S)) {
 	($SS_salin,$SS_temp,$SS_depth) = split(',',$opt_S);
