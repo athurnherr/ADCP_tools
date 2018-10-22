@@ -1,9 +1,9 @@
 ======================================================================
                     H I S T O R Y 
                     doc: Tue May 15 18:04:39 2012
-                    dlm: Sat Dec 23 16:13:38 2017
+                    dlm: Wed Mar 28 12:21:58 2018
                     (c) 2012 A.M. Thurnherr
-                    uE-Info: 214 15 NIL 0 0 72 3 2 4 NIL ofnI
+                    uE-Info: 237 60 NIL 0 0 72 3 2 4 NIL ofnI
 ======================================================================
 
 --------------------------------------
@@ -212,3 +212,26 @@ Dec 23, 2017:
 	- updated all tools to use MinVersion 2.1
 	- updated [patchPD0] to use ANTSlib V7.0
 	- PUBLISHED
+
+#---------------------------------------------------------------
+# V2.2
+#	- allow interior garbage in ADCP files
+#	- allow use of individual Instrument Transformation Matrices
+#---------------------------------------------------------------
+
+Feb  6, 2018:
+	- updated to V2.2 [ADCP_tools_lib.pl]
+	- support for partial files in RDI_PD0_IO, listBins
+
+Feb  7, 2018:
+	- added support for garbage inside PD0 files
+	- improvement to listEns
+
+Mar 14-20, 2018:
+	- added consistency check to mk_prof()
+	- fixed bugs in RDI_PD0_IO
+	- updated [HISTORY]
+
+Mar 28, 2018:
+	- added &loadInstrumentTransformation() to [RDI_Coords.pl]
+	- added support for &loadInstrumentTransformation() to [listBins]

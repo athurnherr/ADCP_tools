@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T H D R 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Thu Dec  7 10:45:31 2017
+#                    dlm: Tue Mar 20 12:18:03 2018
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 79 60 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 74 9 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the RDI BB header
@@ -68,8 +68,10 @@ while ($ARGV[0] ne '') {
 
 	if ($opt_s) {														# summary ANTS output
 		my($id) = $ARGV[0];
-		$id =~ s/00[0-9]\.000//;										# leave just deployment name for std RDI files
-		$id =~ s@^.*/([^/]+)@\1@;
+		if ($id =~ /^\w{5}\d{3}\.\d{3}/) {								# leave just deployment name for std RDI files
+			$id =~ s/00[0-9]\.000//;										
+			$id =~ s@^.*/([^/]+)@\1@;
+		}
 		if ($valid) {
 			printf("%s %d %.1f %d %g %d %.1f\n",
 				$id,$hdr{SERIAL_NUMBER},$hdr{BEAM_FREQUENCY},

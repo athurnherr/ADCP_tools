@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B T 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Mon Nov 25 18:30:11 2013
+#                    dlm: Mon Apr  2 18:31:18 2018
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 42 44 NIL 0 0 72 11 2 4 NIL ofnI
+#                    uE-Info: 43 61 NIL 0 0 72 11 2 4 NIL ofnI
 #======================================================================
 
 # Extract Bottom-Track Data
@@ -40,6 +40,7 @@
 #	Nov  1, 2008: - BUG: sig(u) was reported instead of sig(v)
 #	Jul 30, 2009: - NaN => nan
 #	Nov 25, 2013: - checkEnsemble() expunged
+#	Apr  2, 2018: - BUG: velBeamToInstrument() used old usage
 
 # NOTES:
 #	- the RDI BT data contains ranges that are greater than the
@@ -164,7 +165,7 @@ sub w($)
 					 $dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$b][2] < 100 ||
 					 $dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$b][3] < 100);
 			@v = velInstrumentToEarth(\%dta,$ens,
-					velBeamToInstrument(\%dta,
+					velBeamToInstrument(\%dta,$ens,
 	                    @{$dta{ENSEMBLE}[$ens]->{VELOCITY}[$b]}));
 	    } else {
 			next if ($dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$b][0] > 0 ||
@@ -298,7 +299,7 @@ sub dumpEns(@)										# write profile
 		last if ($dta{ENSEMBLE}[$e]->{BT_MEAN_RANGE}-$dz <= $slc);
 		my(@v) = $beamCoords
 			   ? velInstrumentToEarth(\%dta,$e,
-					velBeamToInstrument(\%dta,
+					velBeamToInstrument(\%dta,$e,
 						@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]}))
 			   : velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
 		next unless defined($v[0]);
@@ -338,7 +339,7 @@ sub binEns($)
 		last if ($dta{ENSEMBLE}[$e]->{BT_MEAN_RANGE}-$dz <= $slc);
 		my(@v) = $beamCoords
 			   ? velInstrumentToEarth(\%dta,$e,
-					velBeamToInstrument(\%dta,
+					velBeamToInstrument(\%dta,$e,
 						@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]}))
 			   : velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
 		next unless defined($v[0]);
@@ -484,7 +485,7 @@ for ($e=$start_e; $e<=$end_e; $e++) {
 
 	@{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}} = $beamCoords	# xform BT vel
 	    ? velInstrumentToEarth(\%dta,$e,
-			velBeamToInstrument(\%dta,@{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}}))
+			velBeamToInstrument(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}}))
 		: velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}});
 
  	$dta{ENSEMBLE}[$e]->{BT_MEAN_RANGE} =				# mean vals
@@ -555,7 +556,7 @@ for ($e=$start_e; $e<=$end_e; $e++) {
 		my($btm_e) = int($btm_e[0]/4+$btm_e[1]/4+$btm_e[2]/4+$btm_e[3]/4+0.5);
 		@{$dta{ENSEMBLE}[$btm_e]->{BTFWT_VELOCITY}} = $beamCoords # BT from WT
 			? velInstrumentToEarth(\%dta,$e,
-				velBeamToInstrument(\%dta,@{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}}))
+				velBeamToInstrument(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}}))
 	        : velApplyHdgBias(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}});
 	}
 

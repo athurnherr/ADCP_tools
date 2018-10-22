@@ -66,6 +66,10 @@
 #				  - BUG: 3-beam %ages were incorrect: 1) they were based on goodvels instead of the
 #						 entire ensemble range; 2) pings-per-ensemble were not considered
 #				  - BUG: output layout was all messed up for non-valid velocities
+#	Feb  6, 2018: - added support for PD0_IO first_ens, last_ens
+#	Apr 10, 2018: - added day number to output
+#				  - added -l)ast bin
+#				  - activate output files
 #	Aug 29, 2018: - added error message on -r decoding failures
 
 # General Notes:
@@ -102,20 +106,26 @@
 
 use Getopt::Std;
 
-$ADCP_tools_minVersion = 2.1;
+$ADCP_tools_minVersion = 2.2;
 ($ADCP_TOOLS) = ($0 =~ m{(.*/)[^/]+});
 require "$ADCP_TOOLS/ADCP_tools_lib.pl";
 
-die("Usage: $0 [-r)ange <first_ens,last_ens>] [-R)enumber ensembles] " .
+$antsMinLibVersion = 7.0;
+($ANTS) = (`which ANTSlib` =~ m{^(.*)/[^/]*$});
+require "$ANTS/ants.pl";
+require "$ANTS/libconv.pl";
+
+die("Usage: $0 [-r)ange <first_ens,last_ens>] [-l)ast <bin>] [-R)enumber ensembles from 1] " .
 			  "[-o)utput <redirection[>bin%d.raw]>] " .
 			  "[output -a)ll ens (not just those with good vels)] " .
 			  "[-M)agnetic <declination>] " .
 			  "[-S)oundspeed correction <salin|*,temp|*,depth|*> " .
+			  "[Instrument -T)ransformation Matrix <file>] " .
 			  "[-P)itch/Roll <bias/bias>] [-B)eamvel <bias/bias/bias/bias>] " .
 		 	  "[require -4)-beam solutions] [-d)iscard <beam#>] " .
 		 	  "[-p)ct-good <min>] " .
 			  "<RDI file>\n")
-	unless (&getopts("4aB:d:M:o:p:r:P:RS:") && @ARGV == 1);
+	unless (&getopts("4aB:d:l:M:o:p:r:P:RS:T:") && @ARGV == 1);
 
 ($P{pitch_bias},$P{roll_bias}) = split('[,/]',$opt_P);
 ($P{velbias_b1},$P{velbias_b2},$P{velbias_b3},$P{velbias_b4}) = split('[,/]',$opt_B);
@@ -146,6 +156,9 @@ if (defined($opt_S)) {
 	print(STDERR "WARNING: no soundspeed correction applied!\n");
 }
 
+loadInstrumentTransformation($opt_T)				# load instrument-transformation matrix
+	if (defined($opt_T));
+
 #----------------------------------------------------------------------
 
 sub min(@)								# return minimum
@@ -163,6 +176,8 @@ sub dumpBin($$$)						# write time series of single bin
 	my($out) = sprintf($opt_o,$b+1);
 
 	open(P,"$out") || die("$out: $!\n");
+	print(P "#!/usr/bin/perl -S list\n");
+	chmod(0777&~umask,*P);																	# activate output
 	print(P "#ANTS#PARAMS# ");
 	foreach my $k (keys(%P)) {
 		print(P "$k\{$P{$k}\} ");
@@ -182,7 +197,7 @@ sub dumpBin($$$)						# write time series of single bin
 	print( P "\n");
 
 	print(P "#ANTS#FIELDS# " .
-			"{ensemble} {date} {time} {elapsed} " .
+			"{ensemble} {date} {time} {elapsed} {dn} " .
 			"{heading} {pitch} {roll} " .
 			"{sig_heading} {sig_pitch} {sig_roll} " .
 			"{xmit_current} {xmit_voltage} " .
@@ -205,7 +220,8 @@ sub dumpBin($$$)						# write time series of single bin
 		print(P "$dta{ENSEMBLE}[$e]->{NUMBER} ");
 		print(P "$dta{ENSEMBLE}[$e]->{DATE} ");
 		print(P "$dta{ENSEMBLE}[$e]->{TIME} ");
-		printf(P "%d ",$dta{ENSEMBLE}[$e]->{UNIX_TIME}-$t0);		# elapsed time
+		printf(P "%d ",$dta{ENSEMBLE}[$e]->{UNIX_TIME}-$t0);												# elapsed time
+		printf(P "%g ",str2dec_time($dta{ENSEMBLE}[$e]->{DATE},$dta{ENSEMBLE}[$e]->{TIME}));				# decimal day 
 		print(P defined($dta{ENSEMBLE}[$e]->{HEADING}) ? "$dta{ENSEMBLE}[$e]->{HEADING} " : 'nan ');
 		print(P defined($dta{ENSEMBLE}[$e]->{PITCH}) ? "$dta{ENSEMBLE}[$e]->{PITCH} " : 'nan ');
 		print(P defined($dta{ENSEMBLE}[$e]->{ROLL}) ? "$dta{ENSEMBLE}[$e]->{ROLL} " : 'nan ');
@@ -269,7 +285,7 @@ sub dumpBin($$$)						# write time series of single bin
 $P{RDI_file} = $ifn;
 $P{mag_decl} = $opt_M if defined($opt_M);
 
-readData($ifn,\%dta);
+readData($ifn,\%dta,$first_ens,$last_ens,$opt_l);
 printf(STDERR "%d complete ensembles...\n",scalar(@{$dta{ENSEMBLE}}));
 $dta{HEADING_BIAS} = -$opt_M;						# magnetic declination
 

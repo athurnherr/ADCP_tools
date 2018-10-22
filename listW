@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T W 
 #                    doc: Wed Mar 24 06:45:09 2004
-#                    dlm: Thu Mar 17 07:45:02 2016
+#                    dlm: Mon Apr  2 18:32:03 2018
 #                    (c) 2004 A.M. Thurnherr
-#                    uE-Info: 24 49 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 25 61 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # dump vertical velocities
@@ -22,6 +22,7 @@
 #   Nov 25, 2013: - checkEnsemble() expunged
 #	Mar 17, 2016: - removed warning
 #				  - updated ancient library names
+#	Apr  2, 2018: - BUG: velBeamToInstrument() used old usage
 
 $0 =~ m{(.*)/[^/]+}; 
 require "$1/RDI_PD0_IO.pl";
@@ -102,7 +103,7 @@ sub ref_lr_w($)
 					 $dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][2] < 100 ||
 					 $dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][3] < 100);
 			@v = velInstrumentToEarth(\%dta,$ens,
-					velBeamToInstrument(\%dta,
+					velBeamToInstrument(\%dta,$ens,
 						@{$dta{ENSEMBLE}[$ens]->{VELOCITY}[$i]}));
 		} else {
 			next if ($dta{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][0] > 0 ||
