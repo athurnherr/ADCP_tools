@@ -1,9 +1,9 @@
 ======================================================================
                     H I S T O R Y 
                     doc: Tue May 15 18:04:39 2012
-                    dlm: Wed Mar 28 12:21:58 2018
+                    dlm: Tue Nov 27 13:28:01 2018
                     (c) 2012 A.M. Thurnherr
-                    uE-Info: 237 60 NIL 0 0 72 3 2 4 NIL ofnI
+                    uE-Info: 268 14 NIL 0 0 72 3 2 4 NIL ofnI
 ======================================================================
 
 --------------------------------------
@@ -235,3 +235,34 @@ Mar 14-20, 2018:
 Mar 28, 2018:
 	- added &loadInstrumentTransformation() to [RDI_Coords.pl]
 	- added support for &loadInstrumentTransformation() to [listBins]
+
+Mar 15 - Jun 12, 2018:
+	- made [RDI_PD0_IO.pl] more permissive of files with garbage bytes
+
+Apr 1-10, 2018:
+	- improvements to [listEns]
+
+Apr  2, 2018:
+	- bugfix in [listBT] [listW]
+	- imoprovements to [splitPD0]
+
+Apr 2-10, 2018:
+	- improvements to [meanProf]	
+
+Apr 10-29, 2018:
+	- improvements to [listBins]
+
+Apr 2 & 24, 2018:
+	- bug fixes to [mkProfile]	
+
+May 31, 2018:
+	- bugfix in [listEns]	
+
+Jun  9, 2018:
+	- added support for ENV{NO_GAP_WARNINGS} in [RDI_Utils.pl]
+
+Aug 24, 2018:
+	- bugfix in [meanProf]
+
+Nov 27, 2018:
+	- updated [.hg/hgrc] [HISTORY]
