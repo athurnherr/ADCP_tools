@@ -2,9 +2,9 @@
 #======================================================================
 #                    M K P R O F I L E 
 #                    doc: Sun Jan 19 18:55:26 2003
-#                    dlm: Tue May  1 10:12:56 2018
+#                    dlm: Thu Apr 18 16:28:13 2019
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 395 0 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 98 54 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Make an LADCP Profile by Integrating W (similar to Firing's scan*).
@@ -95,6 +95,7 @@
 #	Oct 13, 2017: - added instrument orientation
 #	Apr  2, 2018: - BUG: velBeamToInstrument() used old usage
 #	Apr 24, 2018: - BUG: bin1 was used even with zero blanking
+#	Apr 18, 2019: - added coord-transformation %PARAMs
 
 # NOTES:
 #	- the battery values are based on transmission voltages (different
@@ -722,34 +723,37 @@ print("#ANTS#FIELDS# {ens} {time} {elapsed} {secno} {downcast} " .
 					"{pitch} {roll} {tilt} {hdg} {rotation} " .
 					"$uFields $addFields\n");
 
-printf("#ANTS#PARAMS# date{$dta{ENSEMBLE}[$firstgood]->{DATE}} " .
-			   "start_time{$dta{ENSEMBLE}[$firstgood]->{TIME}} " .
-			  "bottom_time{$dta{ENSEMBLE}[$atbottom]->{TIME}} " .
-				 "end_time{$dta{ENSEMBLE}[$lastgood]->{TIME}} " .
-	  "bottom_xmit_voltage{$dta{ENSEMBLE}[$atbottom]->{ADC_XMIT_VOLTAGE}} " .
-	  "bottom_xmit_current{$dta{ENSEMBLE}[$atbottom]->{ADC_XMIT_CURRENT}} " .
-				 "PD0_file{$ARGV[0]} " .
-		 "pinging_duration{%.1f} " .
-			"cast_duration{%.1f} " .
-		   "0.8_valid_bins{%.1f} " .
-		  "0.8_valid_range{%.1f} " .
-				"max_depth{%.1f} " .
-			  "depth_error{%.1f} " .
-				  "min_range{%d} " .
-				"n_ensembles{%d} " .
-                 "w_gap_time{%d} " .
-				 "stderr_w{%.4f} " .
-				 "rms_tilt{%.1f} " .
-		"downcast_rms_tilt{%.1f} " .
-          "upcast_rms_tilt{%.1f} " .
-			 "rms_rotation{%.2f} " .
-	   "deployment_rotations{%d} " .
-		 "downcast_rotations{%d} " .
-		   "upcast_rotations{%d} " .
-         "recovery_rotations{%d} " .
-   "rms_heave_acceleration{%.2f} " .
-				"bin1_dist{%.1f} " .
-			   "bin_length{%.1f} " .
+printf(     "#ANTS#PARAMS# date{$dta{ENSEMBLE}[$firstgood]->{DATE}} " .
+			        "start_time{$dta{ENSEMBLE}[$firstgood]->{TIME}} " .
+			       "bottom_time{$dta{ENSEMBLE}[$atbottom]->{TIME}} " .
+		   		      "end_time{$dta{ENSEMBLE}[$lastgood]->{TIME}} " .
+	       "bottom_xmit_voltage{$dta{ENSEMBLE}[$atbottom]->{ADC_XMIT_VOLTAGE}} " .
+	       "bottom_xmit_current{$dta{ENSEMBLE}[$atbottom]->{ADC_XMIT_CURRENT}} " .
+	    			  "PD0_file{$ARGV[0]} " .
+      "RDI_Coords::minValidVels{$RDI_Coords::minValidVels} " .
+        "RDI_Coords::binMapping{$RDI_Coords::binMapping} " .
+"RDI_Coords::beamTransformation{$RDI_Coords::beamTransformation} " .
+			  "pinging_duration{%.1f} " .
+				 "cast_duration{%.1f} " .
+				"0.8_valid_bins{%.1f} " .
+			   "0.8_valid_range{%.1f} " .
+					 "max_depth{%.1f} " .
+				   "depth_error{%.1f} " .
+				     "min_range{%d} " .
+				   "n_ensembles{%d} " .
+				    "w_gap_time{%d} " .
+					  "stderr_w{%.4f} " .
+					  "rms_tilt{%.1f} " .
+			 "downcast_rms_tilt{%.1f} " .
+			   "upcast_rms_tilt{%.1f} " .
+				  "rms_rotation{%.2f} " .
+   		  "deployment_rotations{%d} " .
+		    "downcast_rotations{%d} " .
+		   	  "upcast_rotations{%d} " .
+			"recovery_rotations{%d} " .
+		"rms_heave_acceleration{%.2f} " .
+					 "bin1_dist{%.1f} " .
+                    "bin_length{%.1f} " .
 					 "\n",
 			($dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{UNIX_TIME} -
 					$dta{ENSEMBLE}[0]->{UNIX_TIME}),

@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Sat Jun  9 12:11:01 2018
+#                    dlm: Thu Jun 13 11:37:30 2019
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 61 58 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 274 16 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -271,6 +271,7 @@ sub soundSpeed($$$)
 sub ambiguity_velocity($$$$)
 {
 	my($xd_freq,$beam_angle,$speed_of_sound,$TL_distance) = @_;
+	return 'nan' unless ($TL_distance > 0);
 	my($lambda) = $speed_of_sound / (1000*$xd_freq);
 	my($D) = $speed_of_sound * cos(rad($beam_angle)) / 2;
 	return $lambda * $D / (4 * $TL_distance);
