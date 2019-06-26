@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T H D R 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Tue Mar 20 12:18:03 2018
+#                    dlm: Thu Jun 13 21:56:00 2019
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 74 9 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 46 51 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the RDI BB header
@@ -43,6 +43,7 @@
 #	Aug  7, 2017: - added LAG_LENGTH
 #				  - added AMBIGUITY_VELOCITY
 #	Aug  8, 2017: - added -l)ong listing
+# 	Jun 13, 2019: - removed BT_PRESENT flag support
 
 use Getopt::Std;
 
@@ -140,8 +141,6 @@ while ($ARGV[0] ne '') {
 			if defined($hdr{ECHO_INTENSITY_DATA_BYTES});
 		printf("\tPERCENT_GOOD_DATA_BYTES\t\t= %3d bytes\n",$hdr{PERCENT_GOOD_DATA_BYTES})
 			if defined($hdr{PERCENT_GOOD_DATA_BYTES});
-		printf("\tBT_DATA_BYTES\t\t\t= %3d bytes\n",$hdr{BT_DATA_BYTES})
-	        if ($hdr{BT_PRESENT});
 	}
 
 	print("    Coordinate System:\n");
@@ -208,7 +207,7 @@ while ($ARGV[0] ne '') {
 
 #----------------------------------------------------------------------
 
-	if ($hdr{BT_PRESENT}) {
+	if (defined($hdr{BT_MODE})) {
 		print("    Bottom-Track Setup:\n");
 		printf("\tBT_MODE\t\t\t\t= %d\n", 		$hdr{BT_MODE});
 		printf("\tBT_PINGS_PER_ENSEMBLE\t\t= %d\n",

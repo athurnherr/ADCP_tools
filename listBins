@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B I N S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Wed Aug 29 07:23:21 2018
+#                    dlm: Thu Jun 13 22:17:02 2019
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 136 20 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 75 58 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -71,6 +71,8 @@
 #				  - added -l)ast bin
 #				  - activate output files
 #	Aug 29, 2018: - added error message on -r decoding failures
+#	Jun 13, 2018: - adpated to RTI files (disabled BIT error check)
+#				  - BUG: dn did not have sufficient digits
 
 # General Notes:
 #	- everything (e.g. beams) is numbered from 1
@@ -221,7 +223,7 @@ sub dumpBin($$$)						# write time series of single bin
 		print(P "$dta{ENSEMBLE}[$e]->{DATE} ");
 		print(P "$dta{ENSEMBLE}[$e]->{TIME} ");
 		printf(P "%d ",$dta{ENSEMBLE}[$e]->{UNIX_TIME}-$t0);												# elapsed time
-		printf(P "%g ",str2dec_time($dta{ENSEMBLE}[$e]->{DATE},$dta{ENSEMBLE}[$e]->{TIME}));				# decimal day 
+		printf(P "%.5f ",str2dec_time($dta{ENSEMBLE}[$e]->{DATE},$dta{ENSEMBLE}[$e]->{TIME}));				# decimal day 
 		print(P defined($dta{ENSEMBLE}[$e]->{HEADING}) ? "$dta{ENSEMBLE}[$e]->{HEADING} " : 'nan ');
 		print(P defined($dta{ENSEMBLE}[$e]->{PITCH}) ? "$dta{ENSEMBLE}[$e]->{PITCH} " : 'nan ');
 		print(P defined($dta{ENSEMBLE}[$e]->{ROLL}) ? "$dta{ENSEMBLE}[$e]->{ROLL} " : 'nan ');
@@ -326,8 +328,8 @@ for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {				# check/transform velocities
 
 	die("3-beams used in ensemble #$dta{ENSEMBLE}[$e]->{NUMBER}\n")
 		if ($dta{ENSEMBLE}[$e]->{N_BEAMS_USED} < 4);
-	die("BIT error in ensemble $dta{ENSEMBLE}[$e]->{NUMBER}\n")
-		if defined($dta{ENSEMBLE}[$e]->{BUILT_IN_TEST_ERROR});
+#	die("BIT error in ensemble $dta{ENSEMBLE}[$e]->{NUMBER}\n")
+#		if defined($dta{ENSEMBLE}[$e]->{BUILT_IN_TEST_ERROR});
 	die("Low gain in ensemble #$dta{ENSEMBLE}[$e]->{NUMBER}\n")
         if ($dta{ENSEMBLE}[$e]->{LOW_GAIN});
 

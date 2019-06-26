@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Tue Jun 12 19:10:08 2018
+#                    dlm: Thu Jun 13 22:13:12 2019
 #                    (c) 2003 A.M. Thurnherr
-#					 uE-Info: 115 72 NIL 0 0 72 2 2 4 NIL ofnI
+#					 uE-Info: 116 45 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 	
 # Read RDI PD0 binary data files (*.[0-9][0-9][0-9])
@@ -58,7 +58,7 @@
 #	Mar  4, 2014: - added support for DATA_SOURCE_ID
 #	Apr 24, 2014: - added debug statements to log %-GOOD values
 #	May  6, 2014: - loosened input format checks
-#	May  7, 2014: - removed BT_present flag
+#	May  7, 2014: - removed BT_PRESENT flag
 #	Sep  6, 2014: - adapted WBRhdr to >7 data types
 #	Oct 15, 2014: - implemented work-around for readData() not recognizing
 #					incomplete ensemble at the end, which seems to imply that there is
@@ -112,7 +112,9 @@
 #	Apr 30, 2018: - added support for repeated ensembles
 #				  - added warning on wrong ensemble length
 #	Jun  9, 2018: - removed double \n from warnings
-#	Jun 12, 2018: - BUG: IMPed files did not pass the garbage detection 
+#	Jun 12, 2018: - BUG: IMPed files did not pass the garbage detection
+#	Jun 13, 2019: - adapted reading routines to RTI files (free order of data types)
+#				  - removed old BT_PRESENT code
 	
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -189,7 +191,6 @@
 #	CORRELATION_DATA_BYTES			scalar		?
 #	ECHO_INTENSITY_DATA_BYTES		scalar		?
 #	PERCENT_GOOD_DATA_BYTES 		scalar		?
-#	BT_PRESENT						bool		NUMBER_OF_DATA_TYPES == 7
 #	BT_DATA_BYTES					scalar		undefined, ? if BT_PRESENT
 #	CPU_FW_VER						scalar		0--255
 #	CPU_FW_REV						scalar		0--255
@@ -440,9 +441,9 @@ sub readHeader(@)
     }
 }
 
-sub WBRhdr(@)
+sub WBRhdr($)
 {
-	my($dta,$checkFmt) = @_;
+	my($dta) = @_;
 	my($start_ens,$buf,$hid,$did,$Ndt,$B,$W,$i,$dummy,$id,@WBRofs);
 	my($B1,$B2,$B3,$B4,$B5,$B6,$B7,$W1,$W2,$W3,$W4,$W5);
 	my($BT_dt);
@@ -477,14 +478,6 @@ sub WBRhdr(@)
 		$dta->{PRODUCER} = sprintf('unknown (0x%02X)');
 	}
 
-	if ($checkFmt) {
-		printf(STDERR "WARNING: unexpected number of data types (%d)\n",
-			$dta->{NUMBER_OF_DATA_TYPES})
-				unless ($dta->{NUMBER_OF_DATA_TYPES} == 6 ||
-						$dta->{NUMBER_OF_DATA_TYPES} == 7);
-		$dta->{BT_PRESENT} = ($dta->{NUMBER_OF_DATA_TYPES} >= 7);
-	}
-					  
 	sysread(WBRF,$buf,2*$dta->{NUMBER_OF_DATA_TYPES})
 		== 2*$dta->{NUMBER_OF_DATA_TYPES}
 			|| die("$WBRcfn: $!");
@@ -497,17 +490,6 @@ sub WBRhdr(@)
 	$dta->{HEADER_BYTES}					= $WBRofs[0];
 	$dta->{FIXED_LEADER_BYTES}				= $WBRofs[1] - $WBRofs[0];
 	$dta->{VARIABLE_LEADER_BYTES}			= $WBRofs[2] - $WBRofs[1];
-    if ($checkFmt) {
-		$dta->{VELOCITY_DATA_BYTES} 			= $WBRofs[3] - $WBRofs[2];
-		$dta->{CORRELATION_DATA_BYTES}			= $WBRofs[4] - $WBRofs[3];
-		$dta->{ECHO_INTENSITY_DATA_BYTES}		= $WBRofs[5] - $WBRofs[4];
-		if ($dta->{BT_PRESENT}) {
-			$dta->{PERCENT_GOOD_DATA_BYTES} 	= $WBRofs[6] - $WBRofs[5];
-			$dta->{BT_DATA_BYTES}				= $dta->{ENSEMBLE_BYTES} - 4 - $WBRofs[6];
-		} else {
-			$dta->{PERCENT_GOOD_DATA_BYTES} 	= $dta->{ENSEMBLE_BYTES} - 4 - $WBRofs[5];
-	    }
-    }
 
 	if ($dta->{FIXED_LEADER_BYTES} == 42) { 			# Eric Firing's old instrument I used in 2004
 		$dta->{INSTRUMENT_TYPE} = 'BB150';
@@ -539,46 +521,6 @@ sub WBRhdr(@)
 	sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 	$dta->{SPEED_OF_SOUND} = unpack('v',$buf);
 	
-	#----------------------------------
-	# Check Data Format of 1st Ensemble
-	#----------------------------------
-
-	if ($checkFmt) {
-		sysseek(WBRF,$start_ens+$WBRofs[2],0) || die("$WBRcfn: $!");
-		sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
-		$id = unpack('v',$buf);
-		$id == 0x0100 || printf(STDERR $FmtErr."\n",$WBRcfn,"Velocity Data",$id,1);
-	
-		sysseek(WBRF,$start_ens+$WBRofs[3],0) || die("$WBRcfn: $!");
-		sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
-		$id = unpack('v',$buf);
-		$id == 0x0200 || printf(STDERR $FmtErr."\n",$WBRcfn,"Correlation Data",$id,1);
-	    
-		sysseek(WBRF,$start_ens+$WBRofs[4],0) || die("$WBRcfn: $!");
-		sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
-		$id = unpack('v',$buf);
-		$id == 0x0300 || printf(STDERR $FmtErr."\n",$WBRcfn,"Echo Intensity",$id,1);
-	
-		sysseek(WBRF,$start_ens+$WBRofs[5],0) || die("$WBRcfn: $!");
-		sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
-		$id = unpack('v',$buf);
-		$id == 0x0400 || printf(STDERR $FmtErr."\n",$WBRcfn,"Percent-Good Data",$id,1);
-	
-		if ($dta->{BT_PRESENT}) {
-			for ($BT_dt=6; $BT_dt<$dta->{NUMBER_OF_DATA_TYPES}; $BT_dt++) { 									# scan until BT found
-				sysseek(WBRF,$start_ens+$WBRofs[$BT_dt],0) || die("$WBRcfn: $!");
-				sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
-				$id = unpack('v',$buf);
-				last if ($id == 0x0600);
-			}
-	
-			if ($BT_dt == $dta->{NUMBER_OF_DATA_TYPES}) {
-				printf(STDERR "WARNING: no BT data found\n");die;
-				undef($dta->{BT_PRESENT});
-			}
-	    }
-    }
-
 	#--------------------
 	# FIXED LEADER
 	#--------------------
@@ -696,39 +638,6 @@ sub WBRhdr(@)
 		$dta->{WIDE_BANDWIDTH}	 = ($W5 == 0);
     }
 
-	#-----------------------
-	# 1st ENSEMBLE, BT Setup
-	#-----------------------
-
-	if ($dta->{BT_PRESENT}) {
-		sysseek(WBRF,$start_ens+$WBRofs[$BT_dt],0) || die("$WBRcfn: $!");
-		sysread(WBRF,$buf,12) == 12 || die("$WBRcfn: $!");
-		($id,$dta->{BT_PINGS_PER_ENSEMBLE},$dta->{BT_DELAY_BEFORE_REACQUIRE},
-		 $dta->{BT_MIN_CORRELATION},$dta->{BT_MIN_EVAL_AMPLITUDE},
-		 $dta->{BT_MIN_PERCENT_GOOD},$dta->{BT_MODE},
-		 $dta->{BT_MAX_ERROR_VELOCITY}) = unpack('vvvCCCCv',$buf);
-		 
-		$id == 0x0600 ||
-			printf(STDERR $FmtErr."\n",$WBRcfn,"Bottom Track",$id,0,tell(WBRF));
-	
-		$dta->{BT_MAX_ERROR_VELOCITY} =
-			$dta->{BT_MAX_ERROR_VELOCITY} ? $dta->{BT_MAX_ERROR_VELOCITY} / 1000
-										  : undef;
-	
-		sysseek(WBRF,28,1) || die("$WBRcfn: $!");
-		sysread(WBRF,$buf,6) == 6 || die("$WBRcfn: $!");
-		($dta->{BT_RL_MIN_SIZE},$dta->{BT_RL_NEAR},$dta->{BT_RL_FAR})
-			= unpack('vvv',$buf);
-	
-		$dta->{BT_RL_MIN_SIZE} /= 10;
-		$dta->{BT_RL_NEAR} /= 10;
-		$dta->{BT_RL_FAR} /= 10;
-	    
-		sysseek(WBRF,20,1) || die("$WBRcfn: $!");		# skip data
-		sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
-	    $dta->{BT_MAX_TRACKING_DEPTH} = unpack('v',$buf) / 10;
-    }
-    
     return $dta;
 }
 
@@ -744,7 +653,7 @@ sub readData(@)
 	my($fn,$dta,$fe,$le,$lb) = @_;
 	$WBRcfn = $fn;
     open(WBRF,$WBRcfn) || die("$WBRcfn: $!\n");
-    WBRhdr($dta,1) || die("$WBRcfn: Insufficient Data\n");
+    WBRhdr($dta) || die("$WBRcfn: Insufficient Data\n");
     $lb = $dta->{N_BINS}
 		unless (numberp($lb) && $lb>=1 && $lb<=$dta->{N_BINS});
 	WBRens($lb,$dta->{FIXED_LEADER_BYTES},\@{$dta->{ENSEMBLE}},$fe,$le);
@@ -755,8 +664,9 @@ sub readData(@)
 sub WBRens(@)
 {
 	my($nbins,$fixed_leader_bytes,$E,$fe,$le) = @_;
-	my($start_ens,$B1,$B2,$B3,$B4,$I,$id,$bin,$beam,$buf,$dummy,@dta,$i,$cs,@WBRofs);
-	my($ens,$ensNo,$dayStart,$ens_length,$hid,$did,$ndt,$el);
+	my($B1,$B2,$B3,$B4,$I,$bin,$beam,$dummy,@dta,$i,$cs);
+	my($ens,$ensNo,$dayStart,$ens_length,$hid,$did,$el);
+	local our($ndt,$buf,$id,$start_ens,@WBRofs);
 
     sysseek(WBRF,0,0) || die("$WBRcfn: $!");
 ENSEMBLE:
@@ -997,13 +907,14 @@ ENSEMBLE:
 
 		my($ndata) = $nbins * 4;
 
-		sysseek(WBRF,$start_ens+$WBRofs[2],0) || die("$WBRcfn: $!");
+		my($vel_di) = WBRdtaIndex(0x0100);
+		die("no velocity data in ensemble #$ensNo\n")
+			unless defined($vel_di);
+		
+		sysseek(WBRF,$start_ens+$WBRofs[$vel_di],0) || die("$WBRcfn: $!");
 		sysread(WBRF,$buf,2+$ndata*2) == 2+$ndata*2 || die("$WBRcfn: $!");
 		($id,@dta) = unpack("vv$ndata",$buf);
 
-		$id == 0x0100 ||
-			die(sprintf($FmtErr,$WBRcfn,"Velocity Data",$id,$ensNo));
-		
 		for ($i=0,$bin=0; $bin<$nbins; $bin++) {
 			for ($beam=0; $beam<4; $beam++,$i++) {
 				${$E}[$ens]->{VELOCITY}[$bin][$beam] =
@@ -1016,13 +927,14 @@ ENSEMBLE:
 		# Correlation Data
 		#--------------------
 
-		sysseek(WBRF,$start_ens+$WBRofs[3],0) || die("$WBRcfn: $!");
+		my($corr_di) = WBRdtaIndex(0x0200);
+		die("no correlation data in ensemble #$ensNo\n")
+			unless defined($corr_di);
+		
+		sysseek(WBRF,$start_ens+$WBRofs[$corr_di],0) || die("$WBRcfn: $!");
 		sysread(WBRF,$buf,2+$ndata) == 2+$ndata || die("$WBRcfn: $!");
 		($id,@dta) = unpack("vC$ndata",$buf);
 
-		$id == 0x0200 ||
-			die(sprintf($FmtErr,$WBRcfn,"Correlation Data",$id,$ensNo));
-		
 		for ($i=0,$bin=0; $bin<$nbins; $bin++) {
 			for ($beam=0; $beam<4; $beam++,$i++) {
 				${$E}[$ens]->{CORRELATION}[$bin][$beam] = $dta[$i]
@@ -1034,7 +946,11 @@ ENSEMBLE:
 		# Echo Intensity Data
 		#--------------------
 
-		sysseek(WBRF,$start_ens+$WBRofs[4],0) || die("$WBRcfn: $!");
+		my($echo_di) = WBRdtaIndex(0x0300);
+		die("no echo intensity data in ensemble #$ensNo\n")
+			unless defined($echo_di);
+		
+		sysseek(WBRF,$start_ens+$WBRofs[$echo_di],0) || die("$WBRcfn: $!");
 		sysread(WBRF,$buf,2+$ndata) == 2+$ndata || die("$WBRcfn: $!");
 		($id,@dta) = unpack("vC$ndata",$buf);
 
@@ -1051,7 +967,11 @@ ENSEMBLE:
 		# Percent Good Data
 		#--------------------
 
-		sysseek(WBRF,$start_ens+$WBRofs[5],0) || die("$WBRcfn: $!");
+		my($pctg_di) = WBRdtaIndex(0x0400);
+		die("no percent good data in ensemble #$ensNo\n")
+			unless defined($pctg_di);
+		
+		sysseek(WBRF,$start_ens+$WBRofs[$pctg_di],0) || die("$WBRcfn: $!");
 		sysread(WBRF,$buf,2+$ndata) == 2+$ndata || die("$WBRcfn: $!");
 		($id,@dta) = unpack("vC$ndata",$buf);
 
@@ -1069,19 +989,11 @@ ENSEMBLE:
 		#	- scan through remaining data types
 		#-----------------------------------------
 
-		my($nxt);
-		for ($nxt=6; $nxt<$ndt; $nxt++) {										# scan until BT found
-			sysseek(WBRF,$start_ens+$WBRofs[$nxt],0) || die("$WBRcfn: $!");
-			sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
-			$id = unpack('v',$buf);
-			last if ($id == 0x0600);
-		}
-
-		if ($nxt == $ndt) {														# no BT found => next ens
-#			sysseek(WBRF,4,1) || die("$WBRcfn: $!");							# skip over remainder of ensemble
+		my($bt_di) = WBRdtaIndex(0x0600);
+		unless (defined($pctg_di)) {											# no BT found => next ens
 			sysseek(WBRF,$start_ens+$ens_length+2,0) || die("$WBRcfn: $!");
 			next;
-		}
+        }		
 
 		sysseek(WBRF,14,1) || die("$WBRcfn: $!");								# BT range, velocity, corr, %-good, ...
 		sysread(WBRF,$buf,28) == 28 || die("$WBRcfn: $!");
@@ -1142,6 +1054,20 @@ ENSEMBLE:
         }
         sysseek(WBRF,$start_ens+$ens_length+2,0) || die("$WBRcfn: $!");
 	} # ens loop
+}
+
+sub WBRdtaIndex($)
+{
+	my($trgid) = @_;
+	our($ndt,$buf,$id,$start_ens,@WBRofs);
+	
+	for (my($di)=2; $di<$ndt; $di++) {
+		sysseek(WBRF,$start_ens+$WBRofs[$di],0) || die("$WBRcfn: $!");
+		sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
+		$id = unpack('v',$buf);
+		return $di if ($id == $trgid);
+    }
+    return undef;
 }
 
 #----------------------------------------------------------------------

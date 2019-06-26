@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Sat Jun  9 12:11:01 2018
+#                    dlm: Wed Jun 26 09:05:05 2019
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 61 58 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 300 27 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -59,6 +59,12 @@
 #	Nov 27, 2017: - BUG: profile-restart heuristic did not work with P6#001
 #	Mar 18, 2018: - added -ve dt consistency check
 #	Jun  9, 2018: - added support for ENV{NO_GAP_WARNINGS}
+#	Jun 16, 2019: - adapted (partiall) to support RTI ADCPs:
+#					- made ambiguity_velocity() return nan (missing TL_distance)
+#					- skip missing velocities in reference-layer calculation
+#					- disable %-good screening with $min_pctg == 0
+# 	Jun 26, 2019: - increased short-gap in mk_prof from 5s to 6s to allow processing
+#					of RTi test file with 5s ensembles
 
 use strict;
 
@@ -271,6 +277,7 @@ sub soundSpeed($$$)
 sub ambiguity_velocity($$$$)
 {
 	my($xd_freq,$beam_angle,$speed_of_sound,$TL_distance) = @_;
+	return 'nan' unless ($TL_distance > 0);
 	my($lambda) = $speed_of_sound / (1000*$xd_freq);
 	my($D) = $speed_of_sound * cos(rad($beam_angle)) / 2;
 	return $lambda * $D / (4 * $TL_distance);
@@ -290,6 +297,7 @@ sub mk_prof_ref_lr_w($$$$$$$)
 	my($w,$e,$nvi,$vi12,$vi43,@vbp,@velbp,@nbp,$w12,$w34,@w12,@w34);
 
 	for ($i=$rl_b0; $i<=$rl_b1; $i++) {
+		next unless defined($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i]);
 		undef($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][0])
 			if ($dta->{ENSEMBLE}[$ens]->{CORRELATION}[$i][0] < $min_corr);
 		undef($dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i][1])
@@ -311,10 +319,12 @@ sub mk_prof_ref_lr_w($$$$$$$)
 			@v = velInstrumentToEarth($dta,$ens,@vi);
 			@vbp = velBeamToBPEarth($dta,$ens,@{$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i]});
 		} else {
-			next if ($dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][0] > 0 ||
-					 $dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][1] > 0 ||
-					 $dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][2] > 0 ||
-					 $dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][3] < $min_pctg);
+			if ($min_pctg > 0) {
+				next if ($dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][0] > 0 ||
+						 $dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][1] > 0 ||
+						 $dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][2] > 0 ||
+	                     $dta->{ENSEMBLE}[$ens]->{PERCENT_GOOD}[$i][3] < $min_pctg);
+            }
 			@v = @{$dta->{ENSEMBLE}[$ens]->{VELOCITY}[$i]};
 		}
 		next if (defined($v[3]) && abs($v[3]) > $max_e);		# allow 3-beam solutions
@@ -496,7 +506,7 @@ sub mk_prof(...)											# make profile
 		# The current ensemble has a valid w
 		#-----------------------------------
 
-		if ($dt < 5) {												# no or short gap
+		if ($dt < 6) {												# no or short gap
 			$z += $dta->{ENSEMBLE}[$lastgood]->{W} * $dt;			# integrate w to get depth
 			$zErr += ($dta->{ENSEMBLE}[$lastgood]->{W_ERR} * $dt)**2;
 			$rms_heave_accel_ssq += (($dta->{ENSEMBLE}[$e]->{W}-$dta->{ENSEMBLE}[$lastgood]->{W})/$dt)**2;
