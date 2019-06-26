@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T H D R 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Thu Jun 13 21:56:00 2019
+#                    dlm: Wed Jun 26 09:29:09 2019
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 46 51 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 48 46 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the RDI BB header
@@ -44,6 +44,8 @@
 #				  - added AMBIGUITY_VELOCITY
 #	Aug  8, 2017: - added -l)ong listing
 # 	Jun 13, 2019: - removed BT_PRESENT flag support
+#	Jun 26, 2019: - added comment to the effect that BT setup cannot be listed
+#					with this utility any more
 
 use Getopt::Std;
 
@@ -205,11 +207,13 @@ while ($ARGV[0] ne '') {
 	printf("TRANSMIT_POWER_HIGH ")				if ($hdr{TRANSMIT_POWER_HIGH});
 	print("\n");
 
-#----------------------------------------------------------------------
+	#----------------------------------------------------------------------
+	# BT code is never executed since BT_MODE is not set any more
+	#----------------------------------------------------------------------
 
 	if (defined($hdr{BT_MODE})) {
 		print("    Bottom-Track Setup:\n");
-		printf("\tBT_MODE\t\t\t\t= %d\n", 		$hdr{BT_MODE});
+		printf("\tBT_MODE\t\t\t\t= %d\n", 			$hdr{BT_MODE});
 		printf("\tBT_PINGS_PER_ENSEMBLE\t\t= %d\n",
 													$hdr{BT_PINGS_PER_ENSEMBLE});
 		printf("\tBT_TIME_BEFORE_REACQUIRE\t= %g s\n",

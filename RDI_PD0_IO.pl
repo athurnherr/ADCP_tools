@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Thu Jun 13 22:13:12 2019
+#                    dlm: Wed Jun 26 09:27:46 2019
 #                    (c) 2003 A.M. Thurnherr
-#					 uE-Info: 116 45 NIL 0 0 72 2 2 4 NIL ofnI
+#					 uE-Info: 645 39 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 	
 # Read RDI PD0 binary data files (*.[0-9][0-9][0-9])
@@ -191,7 +191,6 @@
 #	CORRELATION_DATA_BYTES			scalar		?
 #	ECHO_INTENSITY_DATA_BYTES		scalar		?
 #	PERCENT_GOOD_DATA_BYTES 		scalar		?
-#	BT_DATA_BYTES					scalar		undefined, ? if BT_PRESENT
 #	CPU_FW_VER						scalar		0--255
 #	CPU_FW_REV						scalar		0--255
 #	BEAM_FREQUENCY					scalar		75, 150, 300, 600, 1200, 2400 [kHz]
@@ -638,6 +637,42 @@ sub WBRhdr($)
 		$dta->{WIDE_BANDWIDTH}	 = ($W5 == 0);
     }
 
+	#-----------------------
+	# 1st ENSEMBLE, BT Setup
+	#-----------------------
+
+# 	CODE DISABLED BECAUSE BT_PRESENT FLAG WAS REMOVED. WITHOUT THIS CODE,
+#	[listHdr] DOES NOT LIST ANY BT INFO
+#
+#	if ($dta->{BT_PRESENT}) {
+#		sysseek(WBRF,$start_ens+$WBRofs[$BT_dt],0) || die("$WBRcfn: $!");
+#		sysread(WBRF,$buf,12) == 12 || die("$WBRcfn: $!");
+#		($id,$dta->{BT_PINGS_PER_ENSEMBLE},$dta->{BT_DELAY_BEFORE_REACQUIRE},
+#		 $dta->{BT_MIN_CORRELATION},$dta->{BT_MIN_EVAL_AMPLITUDE},
+#		 $dta->{BT_MIN_PERCENT_GOOD},$dta->{BT_MODE},
+#		 $dta->{BT_MAX_ERROR_VELOCITY}) = unpack('vvvCCCCv',$buf);
+#		 
+#		$id == 0x0600 ||
+#			printf(STDERR $FmtErr."\n",$WBRcfn,"Bottom Track",$id,0,tell(WBRF));
+#	
+#		$dta->{BT_MAX_ERROR_VELOCITY} =
+#			$dta->{BT_MAX_ERROR_VELOCITY} ? $dta->{BT_MAX_ERROR_VELOCITY} / 1000
+#										  : undef;
+#	
+#		sysseek(WBRF,28,1) || die("$WBRcfn: $!");
+#		sysread(WBRF,$buf,6) == 6 || die("$WBRcfn: $!");
+#		($dta->{BT_RL_MIN_SIZE},$dta->{BT_RL_NEAR},$dta->{BT_RL_FAR})
+#			= unpack('vvv',$buf);
+#	
+#		$dta->{BT_RL_MIN_SIZE} /= 10;
+#		$dta->{BT_RL_NEAR} /= 10;
+#		$dta->{BT_RL_FAR} /= 10;
+#	    
+#		sysseek(WBRF,20,1) || die("$WBRcfn: $!");		# skip data
+#		sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
+#	    $dta->{BT_MAX_TRACKING_DEPTH} = unpack('v',$buf) / 10;
+#    }
+    
     return $dta;
 }
 
