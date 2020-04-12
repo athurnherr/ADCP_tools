@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B I N S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Thu Jun 13 22:17:02 2019
+#                    dlm: Thu Feb 13 10:36:24 2020
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 75 58 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 133 33 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -73,6 +73,7 @@
 #	Aug 29, 2018: - added error message on -r decoding failures
 #	Jun 13, 2018: - adpated to RTI files (disabled BIT error check)
 #				  - BUG: dn did not have sufficient digits
+#	Feb 13, 2020: - added -z
 
 # General Notes:
 #	- everything (e.g. beams) is numbered from 1
@@ -117,7 +118,7 @@ $antsMinLibVersion = 7.0;
 require "$ANTS/ants.pl";
 require "$ANTS/libconv.pl";
 
-die("Usage: $0 [-r)ange <first_ens,last_ens>] [-l)ast <bin>] [-R)enumber ensembles from 1] " .
+die("Usage: $0 [-z) progress dots] [-r)ange <first_ens,last_ens>] [-l)ast <bin>] [-R)enumber ensembles from 1] " .
 			  "[-o)utput <redirection[>bin%d.raw]>] " .
 			  "[output -a)ll ens (not just those with good vels)] " .
 			  "[-M)agnetic <declination>] " .
@@ -127,7 +128,9 @@ die("Usage: $0 [-r)ange <first_ens,last_ens>] [-l)ast <bin>] [-R)enumber ensembl
 		 	  "[require -4)-beam solutions] [-d)iscard <beam#>] " .
 		 	  "[-p)ct-good <min>] " .
 			  "<RDI file>\n")
-	unless (&getopts("4aB:d:l:M:o:p:r:P:RS:T:") && @ARGV == 1);
+	unless (&getopts("4aB:d:l:M:o:p:r:P:RS:T:z") && @ARGV == 1);
+
+$global::readDataProgress = 10000 if defined($opt_z);
 
 ($P{pitch_bias},$P{roll_bias}) = split('[,/]',$opt_P);
 ($P{velbias_b1},$P{velbias_b2},$P{velbias_b3},$P{velbias_b4}) = split('[,/]',$opt_B);

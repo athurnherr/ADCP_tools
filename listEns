@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T E N S 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Thu May 31 11:10:51 2018
+#                    dlm: Thu Feb 13 10:36:50 2020
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 62 51 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 96 54 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 $synopsis = 'list ensemble summaries (default), dump ensembles (-E), time-average ensembles (-T)';
@@ -60,6 +60,7 @@ $synopsis = 'list ensemble summaries (default), dump ensembles (-E), time-averag
 #				  - removed support for multiple input files
 #	Apr 10, 2018: - added -l)ast bin
 #	May 31, 2018: - BUG: -A was disabled by default
+#	Feb 13, 2020: - added support for $readDataProgress
 
 # Notes:
 #	- -E/-B outputs data in earth coordinates, unless -b is set also
@@ -92,14 +93,17 @@ die("\n$self [-4ABbdEfiMprSTw] <PD0 file> -- $synopsis\n\nCommand-Line Options:\
 				  "[require min -p)ercent-good <#>]\n\t\t" .
 				  "[keep -b)eam coords (do not transform to earth coordinates)]\n\t" .
 			  "Common Options:\n\t\t" .
+			  	  "[-z print progress dots every 10000 ens\n\t\t" .
 				  "[add -f)ields <[name=]FIELD[,...]>]\n\t\t" .
 				  "[require -4)-beam solutions] [-d)iscard <beam#>]\n\t\t" .
 				  "[-r)ange <first_ens,last_ens>] [-l)ast <bin>]\n\t\t" .
 				  "[in-w)ater ensembles only]\n")
-	unless (&getopts("4AB:bd:E:f:i:l:M:p:r:S:T:w") && @ARGV == 1);
+	unless (&getopts('4AB:bd:E:f:i:l:M:p:r:S:T:wz') && @ARGV == 1);
 
 die("$ARGV[0]: no such file\n")
 	unless (-f $ARGV[0]);
+
+$global::readDataProgress = 10000 if defined($opt_z);
 
 $dump_ens = defined($opt_E) + defined($opt_T);
 die("$self: cannot combine -E with -T\n") if ($dump_ens > 1);

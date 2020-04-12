@@ -1,9 +1,9 @@
 #======================================================================
-#                    R D I _ P D 0 _ I O . P L 
+#                    / D A T A / S R C / O C E A N O G R A P H Y / A D C P _ T O O L S / R D I _ B B _ R E A D . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Wed Jun 26 09:27:46 2019
+#                    dlm: Thu Feb 27 10:28:29 2020
 #                    (c) 2003 A.M. Thurnherr
-#					 uE-Info: 645 39 NIL 0 0 72 2 2 4 NIL ofnI
+#					 uE-Info: 716 1 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 	
 # Read RDI PD0 binary data files (*.[0-9][0-9][0-9])
@@ -115,6 +115,9 @@
 #	Jun 12, 2018: - BUG: IMPed files did not pass the garbage detection
 #	Jun 13, 2019: - adapted reading routines to RTI files (free order of data types)
 #				  - removed old BT_PRESENT code
+#	Jun 28, 2019: - renamed SECONDS to SECOND for consistency
+#	Jun 30, 2019: - added dirty flag to prevent bad PD0 patching
+#	Feb 13, 2020: - added support for $readDataProgress
 	
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -292,7 +295,7 @@
 #		TIME						string		HH:MM:SS.hh
 #		HOUR						scalar		0--23
 #		MINUTE						scalar		0--59
-#		SECONDS 					scalar		0--59.99
+#		SECOND	 					scalar		0--59.99
 #		UNIX_TIME					scalar		0--?
 #		SECNO						scalar		0--? (number of seconds since daystart)
 #		DAYNO						double		fractional day number since start of current year (1.0 is midnight Jan 1st)
@@ -452,8 +455,10 @@ sub WBRhdr($)
 	#--------------------
 
 	my($skipped) = goto_next_ens(\*WBRF,1);	
-   	printf(STDERR "WARNING: %d bytes of initial garbage\n",$skipped)
-		if ($skipped > 0);
+	if ($skipped > 0) {
+		$RDI_PD0_IO::File_Dirty = 1;
+	   	printf(STDERR "WARNING: %d bytes of initial garbage\n",$skipped);
+	}
 	
 	sysread(WBRF,$buf,6) == 6 || return undef;
 	($hid,$did,$dta->{ENSEMBLE_BYTES},$dummy,$dta->{NUMBER_OF_DATA_TYPES})
@@ -681,6 +686,8 @@ sub WBRhdr($)
 # 	- read ensembles
 #	- read all ensembles unless first_ens and last_ens are given
 #	- read all bins unless last_bin is given
+#	- if global var $readDataProgress > 0, a . is printed
+#	  every $readaDataProgress ensembles
 #----------------------------------------------------------------------
 
 sub readData(@)
@@ -706,6 +713,8 @@ sub WBRens(@)
     sysseek(WBRF,0,0) || die("$WBRcfn: $!");
 ENSEMBLE:
 	for ($ens=0; 1; $ens++) {
+#		die unless defined($global::readDataProgress);
+		print(STDERR '.') if ($global::readDataProgress>0 && ($ens%$global::readDataProgress)==0);
 		$start_ens = goto_next_ens(\*WBRF);
 		last unless defined($start_ens);
 
@@ -742,6 +751,7 @@ ENSEMBLE:
 	    }
 
 		if (defined($ens_length) && ($el != $ens_length)) {
+			$RDI_PD0_IO::File_Dirty = 1;
 			print(STDERR "WARNING (RDI_PD0_IO): ensemble ${$E}[$#{$E}]->{NUMBER} skipped (unexpected length)\n");
 			pop(@{$E});
 			$ens--;
@@ -752,7 +762,14 @@ ENSEMBLE:
 
 ##		printf(STDERR "$WBRcfn: WARNING: unexpected number of data types (%d, ens=$ens)\n",$ndt),last
 ##				unless ($ndt == 6 || $ndt == 7);
-		sysread(WBRF,$buf,2*$ndt) == 2*$ndt || die("$WBRcfn: $!");
+		my($nread) = sysread(WBRF,$buf,2*$ndt);						# 2019 EPR test
+		if ($nread != 2*$ndt) {
+			printf(STDERR "$WBRcfn: WARNING: expected to read %d bytes, got only %d in ensemble %d\n",
+							2*$ndt,$nread,${$E}[$ens]->{NUMBER});
+			last;							
+        }
+
+
 		@WBRofs = unpack("v$ndt",$buf);
 		$fixed_leader_bytes = $WBRofs[1] - $WBRofs[0];
 #		print(STDERR "@WBRofs\n");
@@ -800,8 +817,8 @@ ENSEMBLE:
 			sysread(WBRF,$buf,7) == 7 || die("$WBRcfn: $!");					# always read pre-Y2K clock
 			(${$E}[$ens]->{YEAR},${$E}[$ens]->{MONTH},
 			 ${$E}[$ens]->{DAY},${$E}[$ens]->{HOUR},${$E}[$ens]->{MINUTE},
-			 ${$E}[$ens]->{SECONDS},$B4) = unpack('CCCCCCC',$buf);
-			${$E}[$ens]->{SECONDS} += $B4/100;
+			 ${$E}[$ens]->{SECOND},$B4) = unpack('CCCCCCC',$buf);
+			${$E}[$ens]->{SECOND} += $B4/100;
 			${$E}[$ens]->{YEAR} += (${$E}[$ens]->{YEAR} > 80) ? 1900 : 2000;
 #		} else {
 #			sysseek(WBRF,7,1) || die("$WBRcfn: $!");							# use Y2K RTC instead
@@ -812,6 +829,7 @@ ENSEMBLE:
 
 		for (my($i)=$ens; $i>0; $i--) {											# check for duplicate ens; e.g. 2018 S4P 24UL
 			if (${$E}[$i]->{NUMBER} == $ensNo) {									
+				$RDI_PD0_IO::File_Dirty = 1;
 				print(STDERR "WARNING (RDI_PD0_IO): duplicate ensemble $ensNo skipped\n");
 				pop(@{$E});
 				$ens--;
@@ -868,13 +886,13 @@ ENSEMBLE:
 		 	 $dummy,${$E}[$ens]->{PRESSURE},${$E}[$ens]->{PRESSURE_STDDEV},
 			 $dummy,${$E}[$ens]->{YEAR},$B3,${$E}[$ens]->{MONTH},
 			 ${$E}[$ens]->{DAY},${$E}[$ens]->{HOUR},${$E}[$ens]->{MINUTE},
-			 ${$E}[$ens]->{SECONDS},$B4)
+			 ${$E}[$ens]->{SECOND},$B4)
 				= unpack('VvVVCCCCCCCCC',$buf);
 
 			${$E}[$ens]->{PRESSURE} /= 1000;
 			${$E}[$ens]->{PRESSURE_STDDEV} /= 1000;
 			${$E}[$ens]->{YEAR} *= 100; ${$E}[$ens]->{YEAR} += $B3;
-			${$E}[$ens]->{SECONDS} += $B4/100;
+			${$E}[$ens]->{SECOND} += $B4/100;
 		}
 
 # 		THE FOLLOWING LINE OF CODE WAS REMOVED 7/30/2016 WHEN I ADDED A POP
@@ -899,10 +917,10 @@ ENSEMBLE:
 		${$E}[$ens]->{TIME}
 			= sprintf("%02d:%02d:%05.02f",${$E}[$ens]->{HOUR},
 										  ${$E}[$ens]->{MINUTE},
-									 	  ${$E}[$ens]->{SECONDS});
+									 	  ${$E}[$ens]->{SECOND});
 		${$E}[$ens]->{DAYNO}
 			= &_dayNo(${$E}[$ens]->{YEAR},${$E}[$ens]->{MONTH},${$E}[$ens]->{DAY},
-					  ${$E}[$ens]->{HOUR},${$E}[$ens]->{MINUTE},${$E}[$ens]->{SECONDS});
+					  ${$E}[$ens]->{HOUR},${$E}[$ens]->{MINUTE},${$E}[$ens]->{SECOND});
 
 		# when analyzing an STA file from an OS75 SADCP (Poseidon),
 		# I noticed that there is no time information. This causes
@@ -918,7 +936,7 @@ ENSEMBLE:
 						   ${$E}[$ens]->{DAY},
 						   ${$E}[$ens]->{MONTH}-1,			# timegm jan==0!!!
 						   ${$E}[$ens]->{YEAR})
-				  + ${$E}[$ens]->{SECONDS};
+				  + ${$E}[$ens]->{SECOND};
 	
 			$dayStart = timegm(0,0,0,${$E}[$ens]->{DAY},
 									 ${$E}[$ens]->{MONTH}-1,
@@ -1090,6 +1108,7 @@ ENSEMBLE:
         sysseek(WBRF,$start_ens+$ens_length+2,0) || die("$WBRcfn: $!");
 	} # ens loop
 }
+print(STDERR "\n") if ($global::readDataProgress > 0);
 
 sub WBRdtaIndex($)
 {
@@ -1121,8 +1140,10 @@ sub writeData(@)
 {
 	my($fn,$dta) = @_;
 
-	die("writeData() needs \$WBRcfn from previous readData()")
+	die("writeData() needs \$WBRcfn from previous readData()\n")
 		unless (length($WBRcfn) > 0);
+	die("writeData() only works with clean PD0 files\n")
+		if ($RDI_PD0_IO::File_Dirty);
 
     sysseek(WBRF,0,0) || die("$WBRcfn: $!");						# rewind input file
 	$WBPcfn = $fn;													# set patch file name for error messages
@@ -1244,9 +1265,9 @@ sub WBPens($$$)
 			 $dta->{ENSEMBLE}[$ens]->{DAY},
 			 $dta->{ENSEMBLE}[$ens]->{HOUR},
 			 $dta->{ENSEMBLE}[$ens]->{MINUTE},
-			 $dta->{ENSEMBLE}[$ens]->{SECONDS},$B4) =
+			 $dta->{ENSEMBLE}[$ens]->{SECOND},$B4) =
 				unpack('CCCCCCC',$buf);
-			$dta->{ENSEMBLE}[$ens]->{SECONDS} += $B4/100;
+			$dta->{ENSEMBLE}[$ens]->{SECOND} += $B4/100;
 			$dta->{ENSEMBLE}[$ens]->{YEAR} += ($dta->{ENSEMBLE}[$ens]->{YEAR} > 80) ? 1900 : 2000;
 		}
 		
@@ -1299,8 +1320,8 @@ sub WBPens($$$)
 
 		my($century) 	= int($dta->{ENSEMBLE}[$ens]->{YEAR} / 100);
 		my($year)	 	=     $dta->{ENSEMBLE}[$ens]->{YEAR} % 100;
-		my($seconds) 	= int($dta->{ENSEMBLE}[$ens]->{SECONDS});
-		my($hundredths) = 100 * ($dta->{ENSEMBLE}[$ens]->{SECONDS} - $seconds);
+		my($seconds) 	= int($dta->{ENSEMBLE}[$ens]->{SECOND});
+		my($hundredths) = 100 * ($dta->{ENSEMBLE}[$ens]->{SECOND} - $seconds);
 		$buf = pack('CCCCCCCC',$century,$year,$dta->{ENSEMBLE}[$ens]->{MONTH},
 							   $dta->{ENSEMBLE}[$ens]->{DAY},$dta->{ENSEMBLE}[$ens]->{HOUR},
 							   $dta->{ENSEMBLE}[$ens]->{MINUTE},$seconds,$hundredths);
