@@ -1,13 +1,13 @@
 #======================================================================
-#                    / D A T A / S R C / O C E A N O G R A P H Y / A D C P _ T O O L S / R D I _ B B _ R E A D . P L 
+#                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Thu Feb 27 10:28:29 2020
+#                    dlm: Sun Apr 12 20:02:30 2020
 #                    (c) 2003 A.M. Thurnherr
-#					 uE-Info: 716 1 NIL 0 0 72 0 2 4 NIL ofnI
+#					 uE-Info: 123 72 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
-	
+    
 # Read RDI PD0 binary data files (*.[0-9][0-9][0-9])
-	
+    
 # HISTORY:
 #	Jan 18, 2003: - incepted aboard the Aurora Australis (KAOS)
 #	Jan 19, 2003: - continued
@@ -117,8 +117,12 @@
 #				  - removed old BT_PRESENT code
 #	Jun 28, 2019: - renamed SECONDS to SECOND for consistency
 #	Jun 30, 2019: - added dirty flag to prevent bad PD0 patching
-#	Feb 13, 2020: - added support for $readDataProgress
+#				  - added $show_progress
+#	Feb 13, 2020: - added support for $readDataProgress (to Jun 13 version)
+#	Apr 12, 2020: - merged laptop and whoosher versions which both implemented
+#					progreass; not sure whether this merge is successful
 	
+    
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
 #	structures. Currently (Sep 2005) these routines have been tested
@@ -130,7 +134,7 @@
 #	16.12	WH300 (1)				FSU 	A0304		53
 #	16.21	WH300 (1)				LDEO	NBP0402 	53
 #	16.27	WH300 (2)				Nash	?			59
-	
+    
 # PD0 FILE FORMAT EXTENSIONS:
 #
 #	- file creator encoded in DATA_SOURCE_ID
@@ -148,7 +152,7 @@
 #			- HEADING can be missing (0xF000 badval, as 0x8000 is valid 327.68 heading)
 #
 #	- DATA_SOURCE_ID = 0xE0 					produced by editPD0
-	
+    
 # NOTES:
 #	- RDI stores data in VAX/Intel byte order (little endian)
 #	- the output data structure does not exactly mirror the file data
@@ -180,7 +184,7 @@
 #	- defining the variable "$RDI_PD0_IO::IGNORE_Y2K_CLOCK" before calling &readData()
 #	  makes the code ignore the Y2K clock and use the old clock instead; this 
 #	  is used for Dan Torres' KVH system
-	
+    
 # &readData() returns perl obj (ref to anonymous hash) with the following
 # structure:
 #
@@ -315,70 +319,72 @@
 #		BT_SIGNAL_STRENGTH[beam]	scalars 	0--255
 #		HIGH_GAIN					bool		1, undefined
 #		LOW_GAIN					bool		1, undefined
-	
-	use strict;
-	use Time::Local;						# timegm()
-	
+    
+use strict;
+use Time::Local;										# timegm()
+
+$RDI_PD0_IO::show_progress = 0;							# when set, print . every 1000 ens read
+    
 #----------------------------------------------------------------------
 # Time Conversion Subroutines
 #	- prepended with _ to avoid conflicts with [libconv.pl]
 #----------------------------------------------------------------------
-	
-	sub _monthLength($$) 									# of days in month
-	{
-		my($Y,$M) = @_;
-	
-		return 31 if ($M==1 || $M==3 || $M==5 || $M==7 ||
-					  $M==8 || $M==10 || $M==12);
-		return 30 if ($M==4 || $M==6 || $M==9 || $M==11);
-		return 28 if ($Y%4 != 0);
-		return 29 if ($Y%100 != 0);
-		return 28 if ($Y%400 > 0);
-		return 29;
-	}
-	
-	{ my($epoch,$lM,$lD,$lY,$ldn);							# static scope
-	
-	  sub _dayNo($$$$$$)
-	  {
-		  my($Y,$M,$D,$h,$m,$s) = @_;
-		  my($dn);
-	  
-		  if ($Y==$lY && $M==$lM && $D==$lD) {				# same day as last samp
-			  $dn = $ldn;
-		  } else {											# new day
-			  $epoch = $Y unless defined($epoch);			# 1st call
-			  $lY = $Y; $lM = $M; $lD = $D; 				# store
-	  
-			  for ($dn=0,my($cY)=$epoch; $cY<$Y; $cY++) {	# multiple years
-				  $dn += 337 + &_monthLength($Y,$M);
-			  }
-	  
-			  $dn += $D;									# day in month
-			  while (--$M > 0) {							# preceding months
-				  $dn += &_monthLength($Y,$M);
-			  }
-	
-			  $ldn = $dn;									# store
+    
+sub _monthLength($$)									# of days in month
+{
+	my($Y,$M) = @_;
+
+	return 31 if ($M==1 || $M==3 || $M==5 || $M==7 ||
+				  $M==8 || $M==10 || $M==12);
+	return 30 if ($M==4 || $M==6 || $M==9 || $M==11);
+	return 28 if ($Y%4 != 0);
+	return 29 if ($Y%100 != 0);
+	return 28 if ($Y%400 > 0);
+	return 29;
+}
+
+{ my($epoch,$lM,$lD,$lY,$ldn);							# static scope
+
+  sub _dayNo($$$$$$)
+  {
+	  my($Y,$M,$D,$h,$m,$s) = @_;
+	  my($dn);
+  
+	  if ($Y==$lY && $M==$lM && $D==$lD) {				# same day as last samp
+		  $dn = $ldn;
+	  } else {											# new day
+		  $epoch = $Y unless defined($epoch);			# 1st call
+		  $lY = $Y; $lM = $M; $lD = $D; 				# store
+  
+		  for ($dn=0,my($cY)=$epoch; $cY<$Y; $cY++) {	# multiple years
+			  $dn += 337 + &_monthLength($Y,$M);
 		  }
-		  return $dn + $h/24 + $m/24/60 + $s/24/3600;
+  
+		  $dn += $D;									# day in month
+		  while (--$M > 0) {							# preceding months
+			  $dn += &_monthLength($Y,$M);
+		  }
+
+		  $ldn = $dn;									# store
 	  }
-	
-	} # static scope
-	
+	  return $dn + $h/24 + $m/24/60 + $s/24/3600;
+  }
+
+} # static scope
+
 #----------------------------------------------------------------------
 # Read Data
 #----------------------------------------------------------------------
-	
-	my($WBRcfn,$WBPcfn);									# current file names for reading/patching
-	my($BIT_errors) = 0;									# built-in-test errors
-	
-	my($FmtErr) = "%s: illegal %s Id 0x%04x at ensemble %d";
-	
+
+my($WBRcfn,$WBPcfn);									# current file names for reading/patching
+my($BIT_errors) = 0;									# built-in-test errors
+
+my($FmtErr) = "%s: illegal %s Id 0x%04x at ensemble %d";
+    
 #----------------------------------------------------------------------
 # skip to next valid start of ensemble (skip over garbage)
 #----------------------------------------------------------------------
-	
+    
 sub goto_next_ens(@)
 {
 	my($fh,$return_skipped) = @_;							# if return_skipped not set, return file pos
@@ -392,7 +398,7 @@ sub goto_next_ens(@)
 		if ($dta == 0x7f) {
 			$found++;
 		} elsif ($found==1 &&
-					($dta==0xE0	||									# from editPD0
+					($dta==0xE0 ||									# from editPD0
 					 (($dta&0xF0)==0xA0 && ($dta&0x0F)<8))) {		# from IMP+LADCP or KVH+LADCP
 			$found++;
 		} elsif ($found == 0) {
@@ -406,7 +412,7 @@ sub goto_next_ens(@)
 	}
 	my($fpos) = ($found < 2) ? undef : sysseek($fh,-2,1);
 	return $skipped if ($return_skipped);
-	
+    
 	if ($skipped) {
 		if (eof($fh)) {
 #				04/18/18: disabled the following line of code because it is very common at
@@ -419,16 +425,16 @@ sub goto_next_ens(@)
 			print(STDERR "WARNING (RDI_PD0_IO): $skipped garbage bytes in PD0 file beginning at byte $garbage_start\n");
 		}
 	}
-	
+    
 	return $fpos;
 }
-	
+    
 #----------------------------------------------------------------------
 # readHeader(file_name,^dta) WBRhdr(^data)
 #	- read header data
 #	- also includes some data from 1st ens
 #----------------------------------------------------------------------
-	
+    
 sub readHeader(@)
 {
 	my($fn,$dta,$suppress_error) = @_;
@@ -436,11 +442,11 @@ sub readHeader(@)
 	open(WBRF,$WBRcfn) || die("$WBRcfn: $!");
 	if (WBRhdr($dta)) {
 		return 1;
-    } elsif ($suppress_error) {
+	} elsif ($suppress_error) {
 		return undef;
-    } else {
+	} else {
 		die("$WBRcfn: Insufficient data\n");
-    }
+	}
 }
 
 sub WBRhdr($)
@@ -505,9 +511,9 @@ sub WBRhdr($)
 		$dta->{INSTRUMENT_TYPE} = 'Explorer';
 	} elsif ($dta->{FIXED_LEADER_BYTES} == 60) {		# OS75
 		$dta->{INSTRUMENT_TYPE} = 'Ocean Surveyor';
-    } else {
+	} else {
 		$dta->{INSTRUMENT_TYPE} = 'unknown';
-    }
+	}
 
 	#--------------------------------
 	# Variable Leader: SPEED_OF_SOUND
@@ -518,13 +524,13 @@ sub WBRhdr($)
 	$id = unpack('v',$buf);
 	if ($dta->{INSTRUMENT_TYPE} eq 'Ocean Surveyor') {
 		$id == 0x0081 || printf(STDERR $FmtErr."\n",$WBRcfn,"Variable Leader",$id,1);
-    } else {
+	} else {
 		$id == 0x0080 || printf(STDERR $FmtErr."\n",$WBRcfn,"Variable Leader",$id,1);
-    }
+	}
 	sysseek(WBRF,12,1) || die("$WBRcfn: $!");							# skip up to speed of sound
 	sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 	$dta->{SPEED_OF_SOUND} = unpack('v',$buf);
-	
+    
 	#--------------------
 	# FIXED LEADER
 	#--------------------
@@ -546,36 +552,36 @@ sub WBRhdr($)
 
 	if ($dta->{INSTRUMENT_TYPE} eq 'Ocean Surveyor') {
 		$id == 0x0001 || printf(STDERR $FmtErr."\n",$WBRcfn,"Fixed Leader",$id,0);
-    } else {
+	} else {
 		$id == 0x0000 || printf(STDERR $FmtErr."\n",$WBRcfn,"Fixed Leader",$id,0);
-    }
+	}
 
-#   $dta->{BEAM_FREQUENCY} = 2**($B1 & 0x07) * 75;						# nominal
-	if    (($B1&0x07) == 0b000) { $dta->{BEAM_FREQUENCY} =   76.8; }		# actual
-	elsif (($B1&0x07) == 0b001) { $dta->{BEAM_FREQUENCY} =  153.6; }
-	elsif (($B1&0x07) == 0b010) { $dta->{BEAM_FREQUENCY} =  307.2; }
-	elsif (($B1&0x07) == 0b011) { $dta->{BEAM_FREQUENCY} =  614.4; }
+#	$dta->{BEAM_FREQUENCY} = 2**($B1 & 0x07) * 75;						# nominal
+	if	  (($B1&0x07) == 0b000) { $dta->{BEAM_FREQUENCY} =	 76.8; }		# actual
+	elsif (($B1&0x07) == 0b001) { $dta->{BEAM_FREQUENCY} =	153.6; }
+	elsif (($B1&0x07) == 0b010) { $dta->{BEAM_FREQUENCY} =	307.2; }
+	elsif (($B1&0x07) == 0b011) { $dta->{BEAM_FREQUENCY} =	614.4; }
 	elsif (($B1&0x07) == 0b100) { $dta->{BEAM_FREQUENCY} = 1228.8; }
 	elsif (($B1&0x07) == 0b101) { $dta->{BEAM_FREQUENCY} = 2457.6; }
 	else { die(sprintf("$WBRcfn: cannot decode BEAM_FREQUENCY (%03b)\n",$B1&0x07)); }
 
-    $dta->{CONVEX_BEAM_PATTERN} = 1 if ($B1 & 0x08);
-    $dta->{CONCAVE_BEAM_PATTERN} = 1 if (!($B1 & 0x08));
-    $dta->{SENSOR_CONFIG} = ($B1 & 0x30) >> 4;
-    $dta->{XDUCER_HEAD_ATTACHED} = 1 if ($B1 & 0x40);
+	$dta->{CONVEX_BEAM_PATTERN} = 1 if ($B1 & 0x08);
+	$dta->{CONCAVE_BEAM_PATTERN} = 1 if (!($B1 & 0x08));
+	$dta->{SENSOR_CONFIG} = ($B1 & 0x30) >> 4;
+	$dta->{XDUCER_HEAD_ATTACHED} = 1 if ($B1 & 0x40);
 
 	if	  (($B2 & 0x03) == 0x00) { $dta->{BEAM_ANGLE} = 15; }
 	elsif (($B2 & 0x03) == 0x01) { $dta->{BEAM_ANGLE} = 20; }
 	elsif (($B2 & 0x03) == 0x02) { $dta->{BEAM_ANGLE} = 30; }
 	if	  (($B2 & 0xF0) == 0x40) { $dta->{N_BEAMS} = 4; }
 	elsif (($B2 & 0xF0) == 0x50) { $dta->{N_BEAMS} = 5; $dta->{N_DEMODS} = 3; }
-    elsif (($B2 & 0xF0) == 0xF0) { $dta->{N_BEAMS} = 5; $dta->{N_DEMODS} = 2; }
+	elsif (($B2 & 0xF0) == 0xF0) { $dta->{N_BEAMS} = 5; $dta->{N_DEMODS} = 2; }
     
-    $dta->{BIN_LENGTH} /= 100;
-    $dta->{BLANKING_DISTANCE} /= 100;
+	$dta->{BIN_LENGTH} /= 100;
+	$dta->{BLANKING_DISTANCE} /= 100;
 
-    $dta->{MAX_ERROR_VELOCITY} /= 1000;
-    $dta->{TIME_BETWEEN_PINGS} *= 60;
+	$dta->{MAX_ERROR_VELOCITY} /= 1000;
+	$dta->{TIME_BETWEEN_PINGS} *= 60;
 	$dta->{TIME_BETWEEN_PINGS} += $B3 + $B4/100;
 
 	$dta->{BEAM_COORDINATES}		  = 1 if (($B5 & 0x18) == 0x00);
@@ -584,8 +590,8 @@ sub WBRhdr($)
 	$dta->{EARTH_COORDINATES}		  = 1 if (($B5 & 0x18) == 0x18);
 	$dta->{PITCH_AND_ROLL_USED} 	  = 1 if ($B5 & 0x04);
 	$dta->{USE_3_BEAM_ON_LOW_CORR}	  = 1 if ($B5 & 0x02);
-    $dta->{BIN_MAPPING_ALLOWED}       = 1 if ($B5 & 0x01);
-        
+	$dta->{BIN_MAPPING_ALLOWED} 	  = 1 if ($B5 & 0x01);
+	    
 	$dta->{HEADING_ALIGNMENT} =
 		($dta->{EARTH_COORDINATES} || $dta->{SHIP_COORDINATES}) ?
 			$dta->{HEADING_ALIGNMENT} / 100 : undef;
@@ -599,7 +605,7 @@ sub WBRhdr($)
 	$dta->{USE_PITCH_SENSOR}		  = 1 if ($B6 & 0x08); 
 	$dta->{USE_ROLL_SENSOR} 		  = 1 if ($B6 & 0x04); 
 	$dta->{USE_CONDUCTIVITY_SENSOR}   = 1 if ($B6 & 0x02); 
-    $dta->{USE_TEMPERATURE_SENSOR}    = 1 if ($B6 & 0x01); 
+	$dta->{USE_TEMPERATURE_SENSOR}	  = 1 if ($B6 & 0x01); 
 
 	$dta->{SPEED_OF_SOUND_CALCULATED}	  = 1 if ($B7 & 0x40); 
 	$dta->{PRESSURE_SENSOR_AVAILABLE}	  = 1 if ($B7 & 0x20); 
@@ -607,14 +613,14 @@ sub WBRhdr($)
 	$dta->{PITCH_SENSOR_AVAILABLE}		  = 1 if ($B7 & 0x08); 
 	$dta->{ROLL_SENSOR_AVAILABLE}		  = 1 if ($B7 & 0x04); 
 	$dta->{CONDUCTIVITY_SENSOR_AVAILABLE} = 1 if ($B7 & 0x02); 
-    $dta->{TEMPERATURE_SENSOR_AVAILABLE}  = 1 if ($B7 & 0x01); 
+	$dta->{TEMPERATURE_SENSOR_AVAILABLE}  = 1 if ($B7 & 0x01); 
 
-    $dta->{DISTANCE_TO_BIN1_CENTER}  /= 100;
-    $dta->{TRANSMITTED_PULSE_LENGTH} /= 100;
+	$dta->{DISTANCE_TO_BIN1_CENTER}  /= 100;
+	$dta->{TRANSMITTED_PULSE_LENGTH} /= 100;
 
-    $dta->{FALSE_TARGET_THRESHOLD} = undef
+	$dta->{FALSE_TARGET_THRESHOLD} = undef
 		if ($dta->{FALSE_TARGET_THRESHOLD} == 255);
-    $dta->{TRANSMIT_LAG_DISTANCE} /= 100;
+	$dta->{TRANSMIT_LAG_DISTANCE} /= 100;
 
 	if ($dta->{INSTRUMENT_TYPE} eq 'Workhorse') {
 		sysread(WBRF,$buf,11) == 11 || die("$WBRcfn: $!");
@@ -622,17 +628,17 @@ sub WBRhdr($)
 			unpack('vvvvvC',$buf);
 
 		$dta->{CPU_SERIAL_NUMBER} = sprintf("%04X%04X%04X%04X",$W1,$W2,$W3,$W4);
-	
+    
 		$dta->{NARROW_BANDWIDTH} = ($W5 == 1);
 		$dta->{WIDE_BANDWIDTH}	 = ($W5 == 0);
-	    $dta->{TRANSMIT_POWER_HIGH} = ($dta->{TRANSMIT_POWER} == 255);
+		$dta->{TRANSMIT_POWER_HIGH} = ($dta->{TRANSMIT_POWER} == 255);
 
-		if ($dta->{FIXED_LEADER_BYTES} == 59) {					# new style with serial number
+		if ($dta->{FIXED_LEADER_BYTES} == 59) { 				# new style with serial number
 			sysread(WBRF,$buf,6) == 6 || die("$WBRcfn: $!");
-			($dummy,$dta->{SERIAL_NUMBER},$dummy) =				# last bytes is beam angle, but that info has
-				unpack('CVC',$buf);								# already been provided above
+			($dummy,$dta->{SERIAL_NUMBER},$dummy) = 			# last bytes is beam angle, but that info has
+				unpack('CVC',$buf); 							# already been provided above
 		}
-    }
+	}
 
 	if ($dta->{INSTRUMENT_TYPE} eq 'Explorer') {
 		sysread(WBRF,$buf,16) == 16 || die("$WBRcfn: $!");
@@ -640,13 +646,13 @@ sub WBRhdr($)
 			unpack('VVvvV',$buf);
 		$dta->{NARROW_BANDWIDTH} = ($W5 == 1);
 		$dta->{WIDE_BANDWIDTH}	 = ($W5 == 0);
-    }
+	}
 
 	#-----------------------
 	# 1st ENSEMBLE, BT Setup
 	#-----------------------
 
-# 	CODE DISABLED BECAUSE BT_PRESENT FLAG WAS REMOVED. WITHOUT THIS CODE,
+#	CODE DISABLED BECAUSE BT_PRESENT FLAG WAS REMOVED. WITHOUT THIS CODE,
 #	[listHdr] DOES NOT LIST ANY BT INFO
 #
 #	if ($dta->{BT_PRESENT}) {
@@ -659,44 +665,43 @@ sub WBRhdr($)
 #		 
 #		$id == 0x0600 ||
 #			printf(STDERR $FmtErr."\n",$WBRcfn,"Bottom Track",$id,0,tell(WBRF));
-#	
+#   
 #		$dta->{BT_MAX_ERROR_VELOCITY} =
 #			$dta->{BT_MAX_ERROR_VELOCITY} ? $dta->{BT_MAX_ERROR_VELOCITY} / 1000
 #										  : undef;
-#	
+#   
 #		sysseek(WBRF,28,1) || die("$WBRcfn: $!");
 #		sysread(WBRF,$buf,6) == 6 || die("$WBRcfn: $!");
 #		($dta->{BT_RL_MIN_SIZE},$dta->{BT_RL_NEAR},$dta->{BT_RL_FAR})
 #			= unpack('vvv',$buf);
-#	
+#   
 #		$dta->{BT_RL_MIN_SIZE} /= 10;
 #		$dta->{BT_RL_NEAR} /= 10;
 #		$dta->{BT_RL_FAR} /= 10;
 #	    
 #		sysseek(WBRF,20,1) || die("$WBRcfn: $!");		# skip data
 #		sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
-#	    $dta->{BT_MAX_TRACKING_DEPTH} = unpack('v',$buf) / 10;
-#    }
+#		$dta->{BT_MAX_TRACKING_DEPTH} = unpack('v',$buf) / 10;
+#	 }
     
-    return $dta;
+	return $dta;
 }
 
 #----------------------------------------------------------------------
 # readData(file_name,^data[,first_ens,last_ens[,last_bin]]) 
-# 	- read ensembles
+#	- read ensembles
 #	- read all ensembles unless first_ens and last_ens are given
 #	- read all bins unless last_bin is given
-#	- if global var $readDataProgress > 0, a . is printed
-#	  every $readaDataProgress ensembles
+#	- NB: CODE GETS PROGRESSIVELY SLOWER => HUGE PAIN FOR LARGE FILES
 #----------------------------------------------------------------------
 
 sub readData(@)
 {
 	my($fn,$dta,$fe,$le,$lb) = @_;
 	$WBRcfn = $fn;
-    open(WBRF,$WBRcfn) || die("$WBRcfn: $!\n");
-    WBRhdr($dta) || die("$WBRcfn: Insufficient Data\n");
-    $lb = $dta->{N_BINS}
+	open(WBRF,$WBRcfn) || die("$WBRcfn: $!\n");
+	WBRhdr($dta) || die("$WBRcfn: Insufficient Data\n");
+	$lb = $dta->{N_BINS}
 		unless (numberp($lb) && $lb>=1 && $lb<=$dta->{N_BINS});
 	WBRens($lb,$dta->{FIXED_LEADER_BYTES},\@{$dta->{ENSEMBLE}},$fe,$le);
 	print(STDERR "$WBRcfn: $BIT_errors built-in-test errors\n")
@@ -710,11 +715,10 @@ sub WBRens(@)
 	my($ens,$ensNo,$dayStart,$ens_length,$hid,$did,$el);
 	local our($ndt,$buf,$id,$start_ens,@WBRofs);
 
-    sysseek(WBRF,0,0) || die("$WBRcfn: $!");
+	sysseek(WBRF,0,0) || die("$WBRcfn: $!");
 ENSEMBLE:
 	for ($ens=0; 1; $ens++) {
-#		die unless defined($global::readDataProgress);
-		print(STDERR '.') if ($global::readDataProgress>0 && ($ens%$global::readDataProgress)==0);
+		print(STDERR '.') if ($RDI_PD0_IO::show_progress && $ens % 1000 == 0);
 		$start_ens = goto_next_ens(\*WBRF);
 		last unless defined($start_ens);
 
@@ -748,7 +752,7 @@ ENSEMBLE:
 			${$E}[$ens]->{PRODUCER} = 'editPD0 (Thurnherr software)';
 		} else {
 			${$E}[$ens]->{PRODUCER} = 'unknown';
-	    }
+		}
 
 		if (defined($ens_length) && ($el != $ens_length)) {
 			$RDI_PD0_IO::File_Dirty = 1;
@@ -757,7 +761,7 @@ ENSEMBLE:
 			$ens--;
 			next;
 		}
-		
+	    
 		$ens_length = $el;
 
 ##		printf(STDERR "$WBRcfn: WARNING: unexpected number of data types (%d, ens=$ens)\n",$ndt),last
@@ -773,7 +777,7 @@ ENSEMBLE:
 		@WBRofs = unpack("v$ndt",$buf);
 		$fixed_leader_bytes = $WBRofs[1] - $WBRofs[0];
 #		print(STDERR "@WBRofs\n");
-	
+    
 		#-------------------------------
 		# Make Sure Ensemble is Complete
 		#-------------------------------
@@ -794,12 +798,12 @@ ENSEMBLE:
 #			print(STDERR "BAD CHECKSUM\n");
 			pop(@{$E}); $ens--;
 			next;
-		}		
+		}	    
 
 		#------------------------------
 		# Variable Leader
 		#------------------------------
-	
+    
 		my($lastEns) = $ensNo;
 		sysseek(WBRF,$start_ens+$WBRofs[1],0) || die("$WBRcfn: $!");
 		sysread(WBRF,$buf,4) == 4 || die("$WBRcfn: $!");
@@ -808,10 +812,10 @@ ENSEMBLE:
 		if (${$E}[$ens]->{INSTRUMENT_TYPE} eq 'Ocean Surveyor') {
 			$id == 0x0081 ||
 				die(sprintf($FmtErr,$WBRcfn,"Variable Leader",$id,$ensNo + ($lastEns - ($lastEns & 0xFFFF))));
-        } else {
+		} else {
 			$id == 0x0080 ||
 				die(sprintf($FmtErr,$WBRcfn,"Variable Leader",$id,$ensNo + ($lastEns - ($lastEns & 0xFFFF))));
-        }
+		}
 
 #		if ($fixed_leader_bytes==42 || $fixed_leader_bytes==58) {				# BB150 & Explorer DVL (if DISABLED!)
 			sysread(WBRF,$buf,7) == 7 || die("$WBRcfn: $!");					# always read pre-Y2K clock
@@ -836,9 +840,9 @@ ENSEMBLE:
 				next ENSEMBLE;
 			}
 		}
-			
+		    
 		${$E}[$ens]->{NUMBER} = $ensNo;
-		
+	    
 		sysread(WBRF,$buf,30) == 30 || die("$WBRcfn: $!");
 		(${$E}[$ens]->{BUILT_IN_TEST_ERROR},${$E}[$ens]->{SPEED_OF_SOUND},
 		 ${$E}[$ens]->{XDUCER_DEPTH},${$E}[$ens]->{HEADING},
@@ -862,7 +866,7 @@ ENSEMBLE:
 		#-------------------------------------------------
 		# IMP EXTENSION: PITCH/ROLL/HEADING CAN BE MISSING
 		#-------------------------------------------------
-		
+	    
 		${$E}[$ens]->{HEADING} = (${$E}[$ens]->{HEADING} == 0xF000)
 							   ? undef
 							   : ${$E}[$ens]->{HEADING} / 100;
@@ -870,9 +874,9 @@ ENSEMBLE:
 							 ? undef
 							 : unpack('s',pack('S',${$E}[$ens]->{PITCH})) / 100;
 		${$E}[$ens]->{ROLL}  = (${$E}[$ens]->{ROLL} == 0x8000)
-                             ? undef
-                             : unpack('s',pack('S',${$E}[$ens]->{ROLL})) / 100;
-                             
+							 ? undef
+							 : unpack('s',pack('S',${$E}[$ens]->{ROLL})) / 100;
+							 
 		${$E}[$ens]->{TEMPERATURE} = unpack('s',pack('S',${$E}[$ens]->{TEMPERATURE})) / 100;
 		${$E}[$ens]->{MIN_PRE_PING_WAIT_TIME} *= 60;
 		${$E}[$ens]->{MIN_PRE_PING_WAIT_TIME} += $B1 + $B2/100;
@@ -883,7 +887,7 @@ ENSEMBLE:
 			!defined($RDI_PD0_IO::IGNORE_Y2K_CLOCK)) {
 			sysread(WBRF,$buf,23) == 23 || die("$WBRcfn: $!");
 			(${$E}[$ens]->{ERROR_STATUS_WORD},
-		 	 $dummy,${$E}[$ens]->{PRESSURE},${$E}[$ens]->{PRESSURE_STDDEV},
+			 $dummy,${$E}[$ens]->{PRESSURE},${$E}[$ens]->{PRESSURE_STDDEV},
 			 $dummy,${$E}[$ens]->{YEAR},$B3,${$E}[$ens]->{MONTH},
 			 ${$E}[$ens]->{DAY},${$E}[$ens]->{HOUR},${$E}[$ens]->{MINUTE},
 			 ${$E}[$ens]->{SECOND},$B4)
@@ -895,7 +899,7 @@ ENSEMBLE:
 			${$E}[$ens]->{SECOND} += $B4/100;
 		}
 
-# 		THE FOLLOWING LINE OF CODE WAS REMOVED 7/30/2016 WHEN I ADDED A POP
+#		THE FOLLOWING LINE OF CODE WAS REMOVED 7/30/2016 WHEN I ADDED A POP
 #		TO THE last STATEMENT ABOVE (INCOMPLETE ENSEMBLE)
 #		THE LINE WAS RE-ENABLED ON 12/23/2017 BECAUSE OTHERWISE THE
 #		ANSLOPE II PROFILES IN THE HOWTO CANNOT BE READ.
@@ -904,12 +908,12 @@ ENSEMBLE:
 		if ($fixed_leader_bytes == 58) {									# Explorer DVL
 			sysread(WBRF,$buf,14) == 14 || die("$WBRcfn: $!");
 			(${$E}[$ens]->{ERROR_STATUS_WORD},
-		 	 $dummy,${$E}[$ens]->{PRESSURE},${$E}[$ens]->{PRESSURE_STDDEV})
+			 $dummy,${$E}[$ens]->{PRESSURE},${$E}[$ens]->{PRESSURE_STDDEV})
 				= unpack('VvVV',$buf);
 			${$E}[$ens]->{PRESSURE} /= 1000;
 			${$E}[$ens]->{PRESSURE_STDDEV} /= 1000;
 		}
-		
+	    
 		${$E}[$ens]->{DATE}
 			= sprintf("%02d/%02d/%d",${$E}[$ens]->{MONTH},
 									 ${$E}[$ens]->{DAY},
@@ -928,7 +932,7 @@ ENSEMBLE:
 		if (${$E}[$ens]->{MONTH} == 0) {					# no time info
 			${$E}[$ens]->{UNIX_TIME} = 0;
 			${$E}[$ens]->{SECNO} = 0;
-        } else {
+		} else {
 #			print(STDERR "[$ens]->${$E}[$ens]->{MINUTE}:${$E}[$ens]->{HOUR},${$E}[$ens]->{DAY},${$E}[$ens]->{MONTH},${$E}[$ens]->{YEAR}-<\n");
 			${$E}[$ens]->{UNIX_TIME}
 				= timegm(0,${$E}[$ens]->{MINUTE},
@@ -942,16 +946,16 @@ ENSEMBLE:
 									 ${$E}[$ens]->{MONTH}-1,
 									 ${$E}[$ens]->{YEAR})
 				unless defined($dayStart);
-	        ${$E}[$ens]->{SECNO} = ${$E}[$ens]->{UNIX_TIME} - $dayStart;
-        }
+			${$E}[$ens]->{SECNO} = ${$E}[$ens]->{UNIX_TIME} - $dayStart;
+		}
 
-		sysseek(WBRF,$start_ens+$WBRofs[0]+4,0)		# System Config / Fixed Leader
+		sysseek(WBRF,$start_ens+$WBRofs[0]+4,0) 	# System Config / Fixed Leader
 			|| die("$WBRcfn: $!");
 
 		sysread(WBRF,$buf,5) == 5 || die("$WBRcfn: $!");
 		($B1,$dummy,$dummy,$dummy,${$E}[$ens]->{N_BEAMS_USED})
-			= unpack('CCCCC',$buf);		
-		${$E}[$ens]->{XDUCER_FACING_UP}   = 1 if     ($B1 & 0x80);
+			= unpack('CCCCC',$buf);     
+		${$E}[$ens]->{XDUCER_FACING_UP}   = 1 if	 ($B1 & 0x80);
 		${$E}[$ens]->{XDUCER_FACING_DOWN} = 1 unless ($B1 & 0x80);
 
 		#--------------------
@@ -963,7 +967,7 @@ ENSEMBLE:
 		my($vel_di) = WBRdtaIndex(0x0100);
 		die("no velocity data in ensemble #$ensNo\n")
 			unless defined($vel_di);
-		
+	    
 		sysseek(WBRF,$start_ens+$WBRofs[$vel_di],0) || die("$WBRcfn: $!");
 		sysread(WBRF,$buf,2+$ndata*2) == 2+$ndata*2 || die("$WBRcfn: $!");
 		($id,@dta) = unpack("vv$ndata",$buf);
@@ -983,7 +987,7 @@ ENSEMBLE:
 		my($corr_di) = WBRdtaIndex(0x0200);
 		die("no correlation data in ensemble #$ensNo\n")
 			unless defined($corr_di);
-		
+	    
 		sysseek(WBRF,$start_ens+$WBRofs[$corr_di],0) || die("$WBRcfn: $!");
 		sysread(WBRF,$buf,2+$ndata) == 2+$ndata || die("$WBRcfn: $!");
 		($id,@dta) = unpack("vC$ndata",$buf);
@@ -1002,7 +1006,7 @@ ENSEMBLE:
 		my($echo_di) = WBRdtaIndex(0x0300);
 		die("no echo intensity data in ensemble #$ensNo\n")
 			unless defined($echo_di);
-		
+	    
 		sysseek(WBRF,$start_ens+$WBRofs[$echo_di],0) || die("$WBRcfn: $!");
 		sysread(WBRF,$buf,2+$ndata) == 2+$ndata || die("$WBRcfn: $!");
 		($id,@dta) = unpack("vC$ndata",$buf);
@@ -1023,7 +1027,7 @@ ENSEMBLE:
 		my($pctg_di) = WBRdtaIndex(0x0400);
 		die("no percent good data in ensemble #$ensNo\n")
 			unless defined($pctg_di);
-		
+	    
 		sysseek(WBRF,$start_ens+$WBRofs[$pctg_di],0) || die("$WBRcfn: $!");
 		sysread(WBRF,$buf,2+$ndata) == 2+$ndata || die("$WBRcfn: $!");
 		($id,@dta) = unpack("vC$ndata",$buf);
@@ -1046,7 +1050,7 @@ ENSEMBLE:
 		unless (defined($pctg_di)) {											# no BT found => next ens
 			sysseek(WBRF,$start_ens+$ens_length+2,0) || die("$WBRcfn: $!");
 			next;
-        }		
+		}	    
 
 		sysseek(WBRF,14,1) || die("$WBRcfn: $!");								# BT range, velocity, corr, %-good, ...
 		sysread(WBRF,$buf,28) == 28 || die("$WBRcfn: $!");
@@ -1072,7 +1076,10 @@ ENSEMBLE:
 		}
 
 		sysseek(WBRF,6,1) || die("$WBRcfn: $!");								# BT ref level stuff
-		sysread(WBRF,$buf,20) == 20 || die("$WBRcfn: $!");
+		if (sysread(WBRF,$buf,20) != 20) {										# EN642/PITA1
+			pop(@{$E});
+			last;
+		}
 		@dta = unpack('v4C4C4C4',$buf);
 		for ($beam=0; $beam<4; $beam++) {
 			${$E}[$ens]->{BT_RL_VELOCITY}[$beam] =
@@ -1107,8 +1114,8 @@ ENSEMBLE:
         }
         sysseek(WBRF,$start_ens+$ens_length+2,0) || die("$WBRcfn: $!");
 	} # ens loop
+	print(STDERR "\n") if ($RDI_PD0_IO::show_progress);
 }
-print(STDERR "\n") if ($global::readDataProgress > 0);
 
 sub WBRdtaIndex($)
 {

@@ -2,9 +2,9 @@
 #======================================================================
 #                    M E A N P R O F 
 #                    doc: Fri Feb 22 08:40:18 2008
-#                    dlm: Fri Aug 24 13:45:21 2018
+#                    dlm: Sat Jul 27 08:27:45 2019
 #                    (c) 2008 A.M. Thurnherr
-#                    uE-Info: 15 71 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 56 36 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # extract time-averaged mean profile from ADCP data
@@ -40,8 +40,9 @@ die("Usage: $0 [-r)ange <first_ens,last_ens>] [-l)ast <bin>] " .
 		 	  "[output -b)eam coordinates] " .
 			  "[-M)agnetic <declination>] " .
 			  "[-D)epth <depth>] " .
+			  "[-v)erbose (show progress) " .
 			  "<RDI file>\n")
-	unless (&getopts("4bd:D:l:M:p:r:QS:") && @ARGV == 1);
+	unless (&getopts("4bd:D:l:M:p:r:QS:v") && @ARGV == 1);
 
 die("$0: -4 and -d are mutually exclusive\n")
 	if ($opt_4 && defined($opt_d));
@@ -52,6 +53,7 @@ die("$0: -p and -b are mutually exclusive\n")
 $opt_p = 0 unless defined($opt_p);
 
 $RDI_Coords::minValidVels = 4 if ($opt_4);			# no 3-beam solutions
+$RDI_PD0_IO::show_progress = $opt_v;
 
 print(STDERR "WARNING: magnetic declination not set!\n")
 	unless defined($opt_M) || defined($opt_b);
