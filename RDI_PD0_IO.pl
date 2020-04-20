@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Sun Apr 12 20:02:30 2020
+#                    dlm: Tue Apr 14 21:43:23 2020
 #                    (c) 2003 A.M. Thurnherr
-#					 uE-Info: 123 72 NIL 0 0 72 0 2 4 NIL ofnI
+#					 uE-Info: 126 73 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
     
 # Read RDI PD0 binary data files (*.[0-9][0-9][0-9])
@@ -121,7 +121,9 @@
 #	Feb 13, 2020: - added support for $readDataProgress (to Jun 13 version)
 #	Apr 12, 2020: - merged laptop and whoosher versions which both implemented
 #					progreass; not sure whether this merge is successful
-	
+#				  - disabled duplicate ens detection, which turns reading into
+#					O(N^2) process
+#	Apr 14, 2020: - BUG: WBPens did not work for ens# > 65535 (high byte)	
     
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -831,15 +833,18 @@ ENSEMBLE:
 		sysread(WBRF,$buf,1) == 1 || die("$WBRcfn: $!");
 		$ensNo += unpack('C',$buf) << 16;
 
-		for (my($i)=$ens; $i>0; $i--) {											# check for duplicate ens; e.g. 2018 S4P 24UL
-			if (${$E}[$i]->{NUMBER} == $ensNo) {									
-				$RDI_PD0_IO::File_Dirty = 1;
-				print(STDERR "WARNING (RDI_PD0_IO): duplicate ensemble $ensNo skipped\n");
-				pop(@{$E});
-				$ens--;
-				next ENSEMBLE;
-			}
-		}
+##		CODE DISABLED BECAUSE IT TAKES TOO MUCH TIME ON LARGE FILES.
+##		NOT SURE HOW COMMON DUPLICATE ENSEMBLES ARE.		
+##
+##		for (my($i)=$ens; $i>0; $i--) {											# check for duplicate ens; e.g. 2018 S4P 24UL
+##			if (${$E}[$i]->{NUMBER} == $ensNo) {									
+##				$RDI_PD0_IO::File_Dirty = 1;
+##				print(STDERR "WARNING (RDI_PD0_IO): duplicate ensemble $ensNo skipped\n");
+##				pop(@{$E});
+##				$ens--;
+##				next ENSEMBLE;
+##			}
+##		}
 		    
 		${$E}[$ens]->{NUMBER} = $ensNo;
 	    
@@ -1117,8 +1122,8 @@ ENSEMBLE:
 	print(STDERR "\n") if ($RDI_PD0_IO::show_progress);
 }
 
-sub WBRdtaIndex($)
-{
+sub WBRdtaIndex($)																# return index of particular data type
+{																				#	where index refers to data sections inside PD0 files
 	my($trgid) = @_;
 	our($ndt,$buf,$id,$start_ens,@WBRofs);
 	
@@ -1250,7 +1255,7 @@ sub WBPens($$$)
 		sysseek(WBPF,$start_ens+$WBPofs[1]+2,0) || die("$WBPcfn: $!");
 		sysread(WBPF,$buf,2) == 2 || die("$WBPcfn: $!");
 		my($ensNo) = unpack("v",$buf);											# only lower two bytes!!!
-		sysseek(WBPF,$start_ens+$WBPofs[1]+13,0) || die("$WBPcfn: $!");			# jump to high byte
+		sysseek(WBPF,$start_ens+$WBPofs[1]+11,0) || die("$WBPcfn: $!");			# jump to high byte
 		sysread(WBPF,$buf,1) == 1 || die("$WBPcfn: $!");
 		$ensNo += unpack('C',$buf) << 16;
 		die("ensNo = $ensNo (should be $dta->{ENSEMBLE}[$ens]->{NUMBER})\n")

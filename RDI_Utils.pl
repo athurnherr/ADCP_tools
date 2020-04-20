@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Wed Jun 26 09:05:05 2019
+#                    dlm: Mon Apr 13 14:07:54 2020
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 300 27 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 68 53 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -65,8 +65,11 @@
 #					- disable %-good screening with $min_pctg == 0
 # 	Jun 26, 2019: - increased short-gap in mk_prof from 5s to 6s to allow processing
 #					of RTi test file with 5s ensembles
+#	Apr 13, 2020: - added $RDI_Utils::No_Gap_Warnings
 
 use strict;
+
+$RDI_Utils::No_Gap_Warnings = 0;		# set to 1 to suppress gap warnings
 
 #======================================================================
 # fake_BT_RANGE(dta ptr)
@@ -514,7 +517,7 @@ sub mk_prof(...)											# make profile
 		} elsif ($dt > 15) {
 	       	printf(STDERR "WARNING: long-ish w gap at ens#%d-%d (dt=%.1fs)\n",
 				$dta->{ENSEMBLE}[$lastgood+1]->{NUMBER},$dta->{ENSEMBLE}[$e-1]->{NUMBER},$dt)
-					unless defined($ENV{NO_GAP_WARNINGS});
+					unless defined($ENV{NO_GAP_WARNINGS}) || $RDI_Utils::No_Gap_Warnings;
 		}
 	
 		$dta->{ENSEMBLE}[$e]->{DEPTH} = $z;

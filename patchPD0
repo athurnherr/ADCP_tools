@@ -2,9 +2,9 @@
 #======================================================================
 #                    P A T C H P D 0 
 #                    doc: Tue Aug 23 20:00:15 2016
-#                    dlm: Mon Jul  1 16:56:51 2019
+#                    dlm: Tue Apr 14 21:28:49 2020
 #                    (c) 2010 A.M. Thurnherr
-#                    uE-Info: 189 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 103 26 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 $antsSummary = 'patch TRDI PD0 file with external attitude data';
@@ -20,11 +20,12 @@ $antsSummary = 'patch TRDI PD0 file with external attitude data';
 #	Jun 13, 2017: - added pitch and roll to -o
 #				  - BUG: ??? does -o handle pitch and roll ANOMALIES correctly?
 #	Jun 30, 2019: - -o did not work with single argument
+#	Apr 14, 2020: - adapted to use for moored ADCP data as well
 
 # PATCH-FILE REQUIREMENTS (ANTS format)
-#	- %LADCP_pitch.mu %LADCP_roll.mu		mean LADCP pitch and roll
-#	- %IMU_hdg_offset						heading offset of external IMU
-#	- LADCP_ens								ADCP ensemble number
+#	- %[L]ADCP_pitch.mu %[L]ADCP_roll.mu	mean ADCP pitch and roll
+#	- %IM[UP]_hdg_offset					heading offset of external IMU
+#	- [L]ADCP_ens							ADCP ensemble number
 #	- pitch, roll							external pitch/roll *anomalies* 
 #	- hdg									external heading rotated into ADCP coord system
 
@@ -73,14 +74,14 @@ $opt_p = $opt_r = $opt_h = 1
 
 $RDI_PD0_IO::OVERRIDE_Y2K_CLOCK = $opt_c;
 
-$LADCP_file  = &antsFileArg();
+$ADCP_file  = &antsFileArg();
 $outPD0 = $ARGV[0]; shift;
 
 #----------------------------------------------------------------------
-# Step 1: Read LADCP Data
+# Step 1: Read ADCP Data
 #----------------------------------------------------------------------
 
-readData($LADCP_file,\%LADCP);												# TRDI PD0 file
+readData($ADCP_file,\%ADCP);												# TRDI PD0 file
 
 #----------------------------------------------------------------------
 # Step 2: Process External Attidue Input to Patch PD0 file
@@ -88,13 +89,20 @@ readData($LADCP_file,\%LADCP);												# TRDI PD0 file
 
 &antsIn();																	# load first IMP record
 
-my($ensF) 	= &fnr('LADCP_ens');
+my($ensF) = &fnrNoErr('ADCP_ens');
+$ensF = &fnr('LADCP_ens') unless defined($ensF);
+
 my($pitchF) = &fnr('pitch');
 my($rollF)	= &fnr('roll');
 my($hdgF)	= &fnr('hdg');
-my($LADCP_pitch_mean)	= &antsRequireParam('LADCP_pitch.mu');
-my($LADCP_roll_mean)	= &antsRequireParam('LADCP_roll.mu');
 
+my($ADCP_pitch_mean) = $P{'ADCP_pitch.mu'};
+$ADCP_pitch_mean = &antsRequireParam('LADCP_pitch.mu')
+	unless numberp($ADCP_pitch_mean);
+
+my($ADCP_roll_mean) = $P{'ADCP_roll.mu'};
+$ADCP_roll_mean = &antsRequireParam('LADCP_roll.mu')
+	unless numberp($ADCP_roll_mean);
 
 my($pofs,$rofs) = (0,0);													# apply externally supplied offset(s)
 my($rho,$crho,$srho);												
@@ -117,13 +125,13 @@ if (defined($opt_o)) {
 	$crho = cos(rad($rho));
 	$srho = sin(rad($rho));
 
-	if (defined($pofs)) {													# rotate IMP pitch and roll offsets into new LADCP frame
+	if (defined($pofs)) {													# rotate IMP pitch and roll offsets into new ADCP frame
 		my($IMP_pitch_mean) =  &antsRequireParam('IMP_pitch.mu') * $crho
 									+ &antsRequireParam('IMP_roll.mu') * $srho;
 		my($IMP_roll_mean)  = -&antsRequireParam('IMP_pitch.mu') * $srho
 									+ &antsRequireParam('IMP_roll.mu') * $crho;
-		$LADCP_pitch_mean = $IMP_pitch_mean - $pofs;						# apply externally supplied offsets
-		$LADCP_roll_mean  = $IMP_roll_mean  - $rofs;
+		$ADCP_pitch_mean = $IMP_pitch_mean - $pofs;						# apply externally supplied offsets
+		$ADCP_roll_mean  = $IMP_roll_mean  - $rofs;
 	}
 }
 
@@ -133,11 +141,11 @@ my($missing_pr_block_len,$missing_hdg_block_len);
 do {
 	my($ADCP_deployed);
 	my($ens) = $P{RECNO};
-	die("assertion failed [$ants_[0][$ensF] != $LADCP{ENSEMBLE}[$ens]->{NUMBER} --- 1-$LADCP{ENSEMBLE}[0]->{NUMBER} + $P{RECNO} + $d]")
-		unless ($ants_[0][$ensF] == $LADCP{ENSEMBLE}[$ens]->{NUMBER});
-	$LADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID} = 0xA0;
+	die("assertion failed [$ants_[0][$ensF] != $ADCP{ENSEMBLE}[$ens]->{NUMBER} --- 1-$ADCP{ENSEMBLE}[0]->{NUMBER} + $P{RECNO} + $d]")
+		unless ($ants_[0][$ensF] == $ADCP{ENSEMBLE}[$ens]->{NUMBER});
+	$ADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID} = 0xA0;
 	
-	if (numbersp($ants_[0][$pitchF],$ants_[0][$rollF])) {					# valid IMP data -> patch LADCP ensemble
+	if (numbersp($ants_[0][$pitchF],$ants_[0][$rollF])) {					# valid IMP data -> patch ADCP ensemble
 		$ADCP_deployed = 1;
 		$missing_pr_block_len = 0;
 		if (defined($opt_o)) {												# -o set: rotate pitch and roll into correct coordinates
@@ -149,49 +157,49 @@ do {
 			$ants_[$r][$rollF]	= $rot_r;
         } 
 		if ($opt_p) {														# patch pitch
-			$LADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID} |= ($opt_p<<2);
-			$LADCP{ENSEMBLE}[$ens]->{PITCH} = RDI_pitch($LADCP_pitch_mean + $ants_[0][$pitchF],
-														$LADCP_roll_mean  + $ants_[0][$rollF]);
+			$ADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID} |= ($opt_p<<2);
+			$ADCP{ENSEMBLE}[$ens]->{PITCH} = RDI_pitch($ADCP_pitch_mean + $ants_[0][$pitchF],
+														$ADCP_roll_mean  + $ants_[0][$rollF]);
 		}
 		if ($opt_r) {														# patch roll
-			$LADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID} |= ($opt_r<<1);
-			$LADCP{ENSEMBLE}[$ens]->{ROLL} = $LADCP_roll_mean + $ants_[0][$rollF];
+			$ADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID} |= ($opt_r<<1);
+			$ADCP{ENSEMBLE}[$ens]->{ROLL} = $ADCP_roll_mean + $ants_[0][$rollF];
 		}
-    } else {																# no valid IMP pitch and roll => invalidate LADCP data
+    } else {																# no valid IMP pitch and roll => invalidate ADCP data
     	$pr_missing++ if $ADCP_deployed;									# don't count missing before deployment
     	$missing_pr_block_len++;
 		unless ($opt_k)  {
-	    	clearEns(\%LADCP,$ens);
-	    	$LADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID}= 0xA0;
+	    	clearEns(\%ADCP,$ens);
+	    	$ADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID}= 0xA0;
 	    }
     }
 	    
     if (numberp($ants_[0][$hdgF])) {										# valid IMP heading
-    	$LADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID} |= $opt_h;
+    	$ADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID} |= $opt_h;
 		$missing_hdg_block_len = 0;
    		if (defined($opt_o)) {												# apply offset on -o; otherwise, data are correctly rotated
 	    	$ants_[0][$hdgF] -= $rho;
 	    	$ants_[0][$hdgF] += 360 if ($ants_[0][$hdgF] < 0);
 	    }
-		$LADCP{ENSEMBLE}[$ens]->{HEADING} = $ants_[0][$hdgF]				# patch heading
+		$ADCP{ENSEMBLE}[$ens]->{HEADING} = $ants_[0][$hdgF]				# patch heading
 			if $opt_h;
-	} else {																# no valid IMP heading => invalidate LADCP data
+	} else {																# no valid IMP heading => invalidate ADCP data
 		$hdg_missing++ if $ADCP_deployed;
 		$missing_hdg_block_len++;
 		unless ($opt_k)  {
-	    	clearEns(\%LADCP,$ens);
-	    	$LADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID}= 0xA0;
+	    	clearEns(\%ADCP,$ens);
+	    	$ADCP{ENSEMBLE}[$ens]->{DATA_SOURCE_ID}= 0xA0;
 	    }
 	}
 } while (&antsIn());
 $pr_missing  -= missing_pr_block_len;										# don't count final block (post recovery)
 $hdg_missing -= missing_hdg_block_len;
 
-$LADCP{ENSEMBLE}[0]->{DATA_SOURCE_ID} = 0x7F;								# ensure correct DSID (1st ens: orig; 2nd ens: this prog)
-$LADCP{ENSEMBLE}[1]->{DATA_SOURCE_ID} = 0xA0
-	unless ($LADCP{ENSEMBLE}[1]->{DATA_SOURCE_ID}&0xF0 == 0xA0);
+$ADCP{ENSEMBLE}[0]->{DATA_SOURCE_ID} = 0x7F;								# ensure correct DSID (1st ens: orig; 2nd ens: this prog)
+$ADCP{ENSEMBLE}[1]->{DATA_SOURCE_ID} = 0xA0
+	unless ($ADCP{ENSEMBLE}[1]->{DATA_SOURCE_ID}&0xF0 == 0xA0);
 
-writeData($outPD0,\%LADCP);													# write new PD0
+writeData($outPD0,\%ADCP);													# write new PD0
 
 my($verb) = $opt_k ? 'retained' : 'cleared';
 printf(STDERR "$outPD0: %d pitch/roll & %d heading values $verb\n",$pr_missing,$hdg_missing)
