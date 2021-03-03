@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T E N S 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Thu Feb 13 10:36:50 2020
+#                    dlm: Sun Feb 28 15:46:21 2021
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 96 54 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 351 1 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 $synopsis = 'list ensemble summaries (default), dump ensembles (-E), time-average ensembles (-T)';
@@ -61,6 +61,7 @@ $synopsis = 'list ensemble summaries (default), dump ensembles (-E), time-averag
 #	Apr 10, 2018: - added -l)ast bin
 #	May 31, 2018: - BUG: -A was disabled by default
 #	Feb 13, 2020: - added support for $readDataProgress
+#	Feb 19, 2021: - BUG: -T did not handle new years correctly
 
 # Notes:
 #	- -E/-B outputs data in earth coordinates, unless -b is set also
@@ -311,19 +312,18 @@ if ($opt_A) {										# select output fmt: ANTS
 } elsif (defined($opt_T)) { 									# time-average ensembles
 
 	my(@tmp) = split(',',$opt_T);								# decode -T 
-	my($Tstart,$deltaT,$Tend,$month,$day,$year);
+	my($Tstart,$deltaT,$Tend,$month,$day);						# NB: $yearbase needs to be global!
 	if (@tmp == 3) {
 		($Tstart,$deltaT,$Tend) = @tmp;
 	} elsif (@tmp == 2) {
 		($Tstart,$deltaT) = @tmp;
-		($month,$day,$year) = split('/',$dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{DATE});
-		$Tend = str2dec_time($dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{DATE},$dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{TIME},$year);
+		($month,$day,$yearbase) = split('/',$dta{ENSEMBLE}[0]->{DATE});
+		$Tend = str2dec_time($dta{ENSEMBLE}[0]->{DATE},$dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{TIME},$yearbase);
 	} else {
-		($month,$day,$year) = split('/',$dta{ENSEMBLE}[0]->{DATE});
-		$Tstart = str2dec_time($dta{ENSEMBLE}[0]->{DATE},$dta{ENSEMBLE}[0]->{TIME},$year);
+		($month,$day,$yearbase) = split('/',$dta{ENSEMBLE}[0]->{DATE});
+		$Tstart = str2dec_time($dta{ENSEMBLE}[0]->{DATE},$dta{ENSEMBLE}[0]->{TIME},$yearbase);
 		($deltaT) = @tmp;
-		($month,$day,$year) = split('/',$dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{DATE});
-		$Tend = str2dec_time($dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{DATE},$dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{TIME},$year);
+		$Tend = str2dec_time($dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{DATE},$dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{TIME},$yearbase);
 	}
 	$Tstart = &{&antsCompileConstExpr($')} if ($Tstart =~ m{^=});
 	$deltaT = &{&antsCompileConstExpr($')} if ($deltaT =~ m{^=});
@@ -346,11 +346,12 @@ if ($opt_A) {										# select output fmt: ANTS
 		my($e) = @_;
 		my($b,$i);
 
-		my($month,$day,$year) = ($e >= 0) ? split('/',$dta{ENSEMBLE}[$e]->{DATE}) : (undef,undef,undef);
-		my($dn) = ($e >= 0) ? str2dec_time($dta{ENSEMBLE}[$e]->{DATE},$dta{ENSEMBLE}[$e]->{TIME},$year) : undef;
+		my($dn) = ($e >= 0) ? str2dec_time($dta{ENSEMBLE}[$e]->{DATE},$dta{ENSEMBLE}[$e]->{TIME},$yearbase) : undef;
 
+#		print(STDERR "ens#$e at $dn (cbin = $cbin)\n");
 		if ($e<0 || $dn>=$Tstart+$cbin*$deltaT) {				# dump full bin
 			my($file) = sprintf("$basename.T$fnfmt",$cbin); 	# file name: <basename>.T0001
+#			print(STDERR "dumping average to $file...\n");
 
 			do {												# skip empy bins
 				$cbin++;
@@ -529,6 +530,8 @@ if ($opt_A) {										# select output fmt: ANTS
 		print("\n");
 	}
 } # define output format
+
+die("$yearbase") unless ($yearbase > 1900);
 
 #----------------------------------------------------------------------
 # Loop Over Ensembles

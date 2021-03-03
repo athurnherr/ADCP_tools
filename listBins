@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B I N S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Thu Feb 13 10:36:24 2020
+#                    dlm: Fri Jun  5 13:45:23 2020
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 133 33 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 367 103 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -74,6 +74,7 @@
 #	Jun 13, 2018: - adpated to RTI files (disabled BIT error check)
 #				  - BUG: dn did not have sufficient digits
 #	Feb 13, 2020: - added -z
+#	May 11, 2020: - removed -z, added -t -m
 
 # General Notes:
 #	- everything (e.g. beams) is numbered from 1
@@ -118,19 +119,18 @@ $antsMinLibVersion = 7.0;
 require "$ANTS/ants.pl";
 require "$ANTS/libconv.pl";
 
-die("Usage: $0 [-z) progress dots] [-r)ange <first_ens,last_ens>] [-l)ast <bin>] [-R)enumber ensembles from 1] " .
+die("Usage: $0 [-r)ange <first_ens,last_ens>] [-l)ast <bin>] [-R)enumber ensembles from 1] " .
 			  "[-o)utput <redirection[>bin%d.raw]>] " .
 			  "[output -a)ll ens (not just those with good vels)] " .
 			  "[-M)agnetic <declination>] " .
 			  "[-S)oundspeed correction <salin|*,temp|*,depth|*> " .
 			  "[Instrument -T)ransformation Matrix <file>] " .
+			  '[disable bin -m)apping] [use TRDI beam-to-earth -t)ransformation] ' .
 			  "[-P)itch/Roll <bias/bias>] [-B)eamvel <bias/bias/bias/bias>] " .
 		 	  "[require -4)-beam solutions] [-d)iscard <beam#>] " .
 		 	  "[-p)ct-good <min>] " .
 			  "<RDI file>\n")
-	unless (&getopts("4aB:d:l:M:o:p:r:P:RS:T:z") && @ARGV == 1);
-
-$global::readDataProgress = 10000 if defined($opt_z);
+	unless (&getopts("4aB:d:l:mM:o:p:r:P:RS:tT:") && @ARGV == 1);
 
 ($P{pitch_bias},$P{roll_bias}) = split('[,/]',$opt_P);
 ($P{velbias_b1},$P{velbias_b2},$P{velbias_b3},$P{velbias_b4}) = split('[,/]',$opt_B);
@@ -140,7 +140,9 @@ die("$0: -4 and -d are mutually exclusive\n")
 
 $opt_p = 0 unless defined($opt_p);
 
-$RDI_Coords::minValidVels = 4 if ($opt_4);			# no 3-beam solutions
+$RDI_Coords::minValidVels 		= 4 if ($opt_4);			# no 3-beam solutions
+$RDI_Coords::binMapping 		= 'none' if ($opt_m);  		# 'linterp' is default
+$RDI_Coords::beamTransformation = 'RDI'  if ($opt_t);		# 'LHR90' is default
 
 print(STDERR "WARNING: magnetic declination not set!\n")
 	unless defined($opt_M);
@@ -362,7 +364,7 @@ for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {				# check/transform velocities
 			@{$dta{ENSEMBLE}[$e]->{BEAM_VELOCITY}[$b]} =					# save beam velocities
 				@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]};
 
-			@{$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b]} =				# calculate w12, w34
+			@{$dta{ENSEMBLE}[$e]->{BEAMPAIR_VELOCITY}[$b]} =				# calculate v12, w12, v34, w34
 				velBeamToBPEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{BEAM_VELOCITY}[$b]});
 
 			@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]} = 						# calculate earth velocities
