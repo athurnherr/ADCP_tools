@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Wed Mar  3 15:02:04 2021
+#                    dlm: Thu Mar  4 11:23:23 2021
 #                    (c) 2003 A.M. Thurnherr
-#					 uE-Info: 1047 82 NIL 0 0 72 2 2 4 NIL ofnI
+#					 uE-Info: 1157 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
     
 # Read RDI PD0 binary data files (*.[0-9][0-9][0-9])
@@ -456,9 +456,9 @@ sub readHeader(@)
 sub WBRhdr($)
 {
 	my($dta) = @_;
-	my($start_ens,$buf,$hid,$did,$Ndt,$B,$W,$i,$dummy,$id,@WBRofs);
+	my($hid,$did,$B,$W,$i,$dummy);
+	local our($ndt,$buf,$id,$start_ens,@WBRofs);
 	my($B1,$B2,$B3,$B4,$B5,$B6,$B7,$W1,$W2,$W3,$W4,$W5);
-	my($BT_dt);
     
 	#--------------------
 	# HEADER
@@ -475,6 +475,7 @@ sub WBRhdr($)
 		= unpack('CCvCC',$buf);
 	$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header (hid)",$hid,0));
 	$did == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header (did)",$did,0));
+	$ndt = $dta->{NUMBER_OF_DATA_TYPES};
 
 	$start_ens = sysseek(WBRF,$dta->{ENSEMBLE_BYTES}-6+2,1) || return undef;
 	sysread(WBRF,$buf,6) == 6 || return undef;
@@ -496,10 +497,10 @@ sub WBRhdr($)
 		== 2*$dta->{NUMBER_OF_DATA_TYPES}
 			|| die("$WBRcfn: $!");
 	@WBRofs = unpack("v$dta->{NUMBER_OF_DATA_TYPES}",$buf);
-#	for ($i=0; $i<$dta->{NUMBER_OF_DATA_TYPES}; $i++) {
-#		printf(STDERR "WBRofs[$i] = %d",$WBRofs[$i]);
-#	}
 
+#	for ($i=0; $i<$dta->{NUMBER_OF_DATA_TYPES}; $i++) {
+#		printf(STDERR "WBRofs[$i] = %d\n",$WBRofs[$i]);
+#	}
 
 	$dta->{HEADER_BYTES}					= $WBRofs[0];
 	$dta->{FIXED_LEADER_BYTES}				= $WBRofs[1] - $WBRofs[0];
@@ -518,6 +519,10 @@ sub WBRhdr($)
 	} else {
 		$dta->{INSTRUMENT_TYPE} = 'unknown';
 	}
+
+	my($BT_dt) = WBRdtaIndex(0x0600); 
+	$dta->{BT_PRESENT} = defined($BT_dt);
+	@{$dta->{DATA_TYPES}} = WBRdtaTypes();
 
 	#--------------------------------
 	# Variable Leader: SPEED_OF_SOUND
@@ -656,37 +661,34 @@ sub WBRhdr($)
 	# 1st ENSEMBLE, BT Setup
 	#-----------------------
 
-#	CODE DISABLED BECAUSE BT_PRESENT FLAG WAS REMOVED. WITHOUT THIS CODE,
-#	[listHdr] DOES NOT LIST ANY BT INFO
-#
-#	if ($dta->{BT_PRESENT}) {
-#		sysseek(WBRF,$start_ens+$WBRofs[$BT_dt],0) || die("$WBRcfn: $!");
-#		sysread(WBRF,$buf,12) == 12 || die("$WBRcfn: $!");
-#		($id,$dta->{BT_PINGS_PER_ENSEMBLE},$dta->{BT_DELAY_BEFORE_REACQUIRE},
-#		 $dta->{BT_MIN_CORRELATION},$dta->{BT_MIN_EVAL_AMPLITUDE},
-#		 $dta->{BT_MIN_PERCENT_GOOD},$dta->{BT_MODE},
-#		 $dta->{BT_MAX_ERROR_VELOCITY}) = unpack('vvvCCCCv',$buf);
-#		 
-#		$id == 0x0600 ||
-#			printf(STDERR $FmtErr."\n",$WBRcfn,"Bottom Track",$id,0,tell(WBRF));
-#   
-#		$dta->{BT_MAX_ERROR_VELOCITY} =
-#			$dta->{BT_MAX_ERROR_VELOCITY} ? $dta->{BT_MAX_ERROR_VELOCITY} / 1000
-#										  : undef;
-#   
-#		sysseek(WBRF,28,1) || die("$WBRcfn: $!");
-#		sysread(WBRF,$buf,6) == 6 || die("$WBRcfn: $!");
-#		($dta->{BT_RL_MIN_SIZE},$dta->{BT_RL_NEAR},$dta->{BT_RL_FAR})
-#			= unpack('vvv',$buf);
-#   
-#		$dta->{BT_RL_MIN_SIZE} /= 10;
-#		$dta->{BT_RL_NEAR} /= 10;
-#		$dta->{BT_RL_FAR} /= 10;
-#	    
-#		sysseek(WBRF,20,1) || die("$WBRcfn: $!");		# skip data
-#		sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
-#		$dta->{BT_MAX_TRACKING_DEPTH} = unpack('v',$buf) / 10;
-#	 }
+	if ($dta->{BT_PRESENT}) {
+		sysseek(WBRF,$start_ens+$WBRofs[$BT_dt],0) || die("$WBRcfn: $!");
+		sysread(WBRF,$buf,12) == 12 || die("$WBRcfn: $!");
+		($id,$dta->{BT_PINGS_PER_ENSEMBLE},$dta->{BT_DELAY_BEFORE_REACQUIRE},
+		 $dta->{BT_MIN_CORRELATION},$dta->{BT_MIN_EVAL_AMPLITUDE},
+		 $dta->{BT_MIN_PERCENT_GOOD},$dta->{BT_MODE},
+		 $dta->{BT_MAX_ERROR_VELOCITY}) = unpack('vvvCCCCv',$buf);
+		 
+		$id == 0x0600 ||
+			printf(STDERR $FmtErr."\n",$WBRcfn,"Bottom Track",$id,0,tell(WBRF));
+   
+		$dta->{BT_MAX_ERROR_VELOCITY} =
+			$dta->{BT_MAX_ERROR_VELOCITY} ? $dta->{BT_MAX_ERROR_VELOCITY} / 1000
+										  : undef;
+   
+		sysseek(WBRF,28,1) || die("$WBRcfn: $!");
+		sysread(WBRF,$buf,6) == 6 || die("$WBRcfn: $!");
+		($dta->{BT_RL_MIN_SIZE},$dta->{BT_RL_NEAR},$dta->{BT_RL_FAR})
+			= unpack('vvv',$buf);
+   
+		$dta->{BT_RL_MIN_SIZE} /= 10;
+		$dta->{BT_RL_NEAR} /= 10;
+		$dta->{BT_RL_FAR} /= 10;
+	    
+		sysseek(WBRF,20,1) || die("$WBRcfn: $!");		# skip data
+		sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
+		$dta->{BT_MAX_TRACKING_DEPTH} = unpack('v',$buf) / 10;
+	 }
     
 	return $dta;
 }
@@ -1141,6 +1143,28 @@ sub WBRdtaIndex($)																# return index of particular data type
 		return $di if ($id == $trgid);
     }
     return undef;
+}
+
+sub WBRdtaTypes()																# return list of data types
+{
+	my(@dt);
+	our($ndt,$buf,$id,$start_ens,@WBRofs);
+	
+	for (my($di)=2; $di<$ndt; $di++) {
+		sysseek(WBRF,$start_ens+$WBRofs[$di],0) || die("$WBRcfn: $!");
+		sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
+		$id = unpack('v',$buf);
+		if 	  ($id == 0x0000) { push(@dt,'FixedLeader'); }
+		elsif ($id == 0x0080) { push(@dt,'VariableLeader'); }
+		elsif ($id == 0x0081) { push(@dt,'VariableLeader'); }					# TRDI Ocean Surveyor
+		elsif ($id == 0x0100) { push(@dt,'VELOCITY'); }
+		elsif ($id == 0x0200) { push(@dt,'CORRELATION'); }
+		elsif ($id == 0x0300) { push(@dt,'ECHO_AMPLITUDE'); }
+		elsif ($id == 0x0400) { push(@dt,'PERCENT_GOOD'); }
+		elsif ($id == 0x0600) { push(@dt,'BOTTOM_TRACK'); }
+		else				  { push(@dt,'Unknown'); }
+    }
+    return @dt;
 }
 
 #----------------------------------------------------------------------
