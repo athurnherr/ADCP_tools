@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Tue Apr 14 21:43:23 2020
+#                    dlm: Wed Mar  3 15:02:04 2021
 #                    (c) 2003 A.M. Thurnherr
-#					 uE-Info: 126 73 NIL 0 0 72 0 2 4 NIL ofnI
+#					 uE-Info: 1047 82 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
     
 # Read RDI PD0 binary data files (*.[0-9][0-9][0-9])
@@ -123,7 +123,9 @@
 #					progreass; not sure whether this merge is successful
 #				  - disabled duplicate ens detection, which turns reading into
 #					O(N^2) process
-#	Apr 14, 2020: - BUG: WBPens did not work for ens# > 65535 (high byte)	
+#	Apr 14, 2020: - BUG: WBPens did not work for ens# > 65535 (high byte)
+#	Mar  3, 2021: - adapted to Nortek PD0 files
+# END OF HISTORY
     
 # FIRMWARE VERSIONS:
 #	It appears that different firmware versions generate different file
@@ -1030,21 +1032,26 @@ ENSEMBLE:
 		#--------------------
 
 		my($pctg_di) = WBRdtaIndex(0x0400);
-		die("no percent good data in ensemble #$ensNo\n")
-			unless defined($pctg_di);
-	    
-		sysseek(WBRF,$start_ens+$WBRofs[$pctg_di],0) || die("$WBRcfn: $!");
-		sysread(WBRF,$buf,2+$ndata) == 2+$ndata || die("$WBRcfn: $!");
-		($id,@dta) = unpack("vC$ndata",$buf);
-
-		$id == 0x0400 ||
-			die(sprintf($FmtErr,$WBRcfn,"Percent-Good Data",$id,$ensNo));
-
-		for ($i=0,$bin=0; $bin<$nbins; $bin++) {
-			for ($beam=0; $beam<4; $beam++,$i++) {
-				${$E}[$ens]->{PERCENT_GOOD}[$bin][$beam] = $dta[$i];
-			}
-		}
+		if (defined($pctg_di)) {
+			sysseek(WBRF,$start_ens+$WBRofs[$pctg_di],0) || die("$WBRcfn: $!");
+			sysread(WBRF,$buf,2+$ndata) == 2+$ndata || die("$WBRcfn: $!");
+			($id,@dta) = unpack("vC$ndata",$buf);
+			$id == 0x0400 ||
+	            die(sprintf($FmtErr,$WBRcfn,"Percent-Good Data",$id,$ensNo));
+			for ($i=0,$bin=0; $bin<$nbins; $bin++) {
+				for ($beam=0; $beam<4; $beam++,$i++) {
+					${$E}[$ens]->{PERCENT_GOOD}[$bin][$beam] = $dta[$i];
+				}
+	        }
+        } else {
+			printf(STDERR "\nWARNING (RDI_PD0_IO): Percent-Good data missing from PD0 file\n")
+				if ($ens == 0);
+			for ($i=0,$bin=0; $bin<$nbins; $bin++) {
+				for ($beam=0; $beam<4; $beam++,$i++) {
+					${$E}[$ens]->{PERCENT_GOOD}[$bin][$beam] = 100;				# fake it
+                }
+            }			
+        }	    
 
 		#-----------------------------------------
 		# Bottom-Track Data

@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T E N S 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Sun Feb 28 15:46:21 2021
+#                    dlm: Wed Mar  3 15:35:40 2021
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 351 1 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 239 14 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 $synopsis = 'list ensemble summaries (default), dump ensembles (-E), time-average ensembles (-T)';
@@ -62,6 +62,8 @@ $synopsis = 'list ensemble summaries (default), dump ensembles (-E), time-averag
 #	May 31, 2018: - BUG: -A was disabled by default
 #	Feb 13, 2020: - added support for $readDataProgress
 #	Feb 19, 2021: - BUG: -T did not handle new years correctly
+#	Mar  3, 2021: - BUG: debug statement left in place
+# END OF HISTORY
 
 # Notes:
 #	- -E/-B outputs data in earth coordinates, unless -b is set also
@@ -234,7 +236,7 @@ if ($opt_A) {										# select output fmt: ANTS
 
 		open(P,">$file") || die("$file: $!\n");
 		print(P "#!/usr/bin/perl -S list\n");
-		print(P "#ANTS#PARAMS# " .
+		printf(P "#ANTS#PARAMS# " .
 				"date{$dta{ENSEMBLE}[$e]->{DATE}} " .
 				"time{$dta{ENSEMBLE}[$e]->{TIME}} " .
 				"soundspeed_correction{%s} " .
@@ -530,8 +532,6 @@ if ($opt_A) {										# select output fmt: ANTS
 		print("\n");
 	}
 } # define output format
-
-die("$yearbase") unless ($yearbase > 1900);
 
 #----------------------------------------------------------------------
 # Loop Over Ensembles
