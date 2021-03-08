@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T H D R 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Thu Mar  4 09:42:59 2021
+#                    dlm: Sat Mar  6 14:19:53 2021
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 134 34 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 208 75 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the RDI BB header
@@ -97,7 +97,8 @@ while ($ARGV[0] ne '') {
 		printf("\tINSTRUMENT_TYPE\t\t\t= %s\n",$hdr{INSTRUMENT_TYPE});
     }
 	printf("\tCPU_SERIAL_NUMBER\t\t= %s\n",$hdr{CPU_SERIAL_NUMBER})
-		if ($opt_l && ($hdr{INSTRUMENT_TYPE} ne 'Explorer'));
+		if ($opt_l && ($hdr{INSTRUMENT_TYPE} ne 'Explorer')
+				   && ($hdr{INSTRUMENT_TYPE} ne 'Signature'));
 	printf("\tFIRMWARE\t\t\t= %d.%d\n",$hdr{CPU_FW_VER},$hdr{CPU_FW_REV});
 	printf("\tBEAM_FREQUENCY\t\t\t= %.1f kHz\n",$hdr{BEAM_FREQUENCY});
 	printf("\tBEAM_ANGLE\t\t\t= %d deg\n",$hdr{BEAM_ANGLE}) if $opt_l;
@@ -107,21 +108,22 @@ while ($ARGV[0] ne '') {
 	printf("\tN_DEMODS\t\t\t= %d\n",$hdr{N_DEMODS}) if $opt_l && defined($hdr{N_DEMODS});
 	printf("\tSPEED_OF_SOUND\t\t\t= %d m/s [%s]\n",
 				$hdr{SPEED_OF_SOUND},
-				$dta->{SPEED_OF_SOUND_CALCULATED} ? 'from sensors' : 'from settings');
-	printf("\tAMBIGUITY_VELOCITY\t\t= %g m/s\n",
-				ambiguity_velocity($hdr{BEAM_FREQUENCY},$hdr{BEAM_ANGLE},$hdr{SPEED_OF_SOUND},$hdr{TRANSMIT_LAG_DISTANCE}));
+				$hdr{SSPEED_CALCULATED} ? 'using measurements' : 'from settings');
+	printf("\tAMBIGUITY_VELOCITY\t\t= %.1f m/s\n",
+				ambiguity_velocity($hdr{BEAM_FREQUENCY},$hdr{BEAM_ANGLE},$hdr{SPEED_OF_SOUND},$hdr{TRANSMIT_LAG_DISTANCE}))
+					unless ($hdr{INSTRUMENT_TYPE} eq 'Signature');
 
-	printf("\tSensors\t\t\t\t: ");
-	printf("PRESSURE ") 						if ($hdr{PRESSURE_SENSOR_AVAILABLE});
-	printf("CONDUCTIVITY ") 					if ($hdr{CONDUCTIVITY_SENSOR_AVAILABLE});
-	printf("TEMPERATURE ") 						if ($hdr{TEMPERATURE_SENSOR_AVAILABLE});
-	printf("COMPASS ") 							if ($hdr{COMPASS_AVAILABLE});
-	printf("PITCH ") 							if ($hdr{PITCH_SENSOR_AVAILABLE});
-	printf("ROLL ") 							if ($hdr{ROLL_SENSOR_AVAILABLE});
+	printf("\tEnvironmental Sensors\t\t: ");
+	printf("PRESSURE ") 						if ($hdr{PRESSURE_SENSOR});
+	printf("CONDUCTIVITY ") 					if ($hdr{CONDUCTIVITY_SENSOR});
+	printf("TEMPERATURE ") 						if ($hdr{TEMPERATURE_SENSOR});
+	printf("COMPASS ") 							if ($hdr{COMPASS});
+	printf("PITCH ") 							if ($hdr{PITCH_SENSOR});
+	printf("ROLL ") 							if ($hdr{ROLL_SENSOR});
 	print("\n");
 
 	if ($opt_l) {
-		printf("\tFlags\t\t\t\t: ");
+		printf("\tHardware Flags\t\t\t: ");
 		printf("XDUCER_HEAD_ATTACHED ") 		if ($hdr{XDUCER_HEAD_ATTACHED});
 		printf("CONVEX_BEAM_PATTERN ")			if ($hdr{CONVEX_BEAM_PATTERN});
 		printf("CONCAVE_BEAM_PATTERN ") 		if ($hdr{CONCAVE_BEAM_PATTERN});
@@ -131,18 +133,18 @@ while ($ARGV[0] ne '') {
 	if ($opt_l) {
 		print("    File Format:\n");
 #		printf("\tNUMBER_OF_DATA_TYPES\t\t= %d\n",$hdr{NUMBER_OF_DATA_TYPES});
-		printf("\tDATA_TYPES\t\t\t= @{$hdr{DATA_TYPES}}\n");
-		printf("\tFIXED_LEADER_BYTES\t\t= %3d bytes\n",$hdr{FIXED_LEADER_BYTES});
-		printf("\tENSEMBLE_BYTES\t\t\t= %3d bytes\n",$hdr{ENSEMBLE_BYTES});
-		printf("\tHEADER_BYTES\t\t\t= %3d bytes\n",$hdr{HEADER_BYTES});
-		printf("\tVARIABLE_LEADER_BYTES\t\t= %3d bytes\n",$hdr{VARIABLE_LEADER_BYTES});
-		printf("\tVELOCITY_DATA_BYTES\t\t= %3d bytes\n",$hdr{VELOCITY_DATA_BYTES})
+		printf("\tDATA_TYPES\t\t\t: @{$hdr{DATA_TYPES}}\n");
+		printf("\tFIXED_LEADER_BYTES\t\t= %4d bytes\n",$hdr{FIXED_LEADER_BYTES});
+		printf("\tENSEMBLE_BYTES\t\t\t= %4d bytes\n",$hdr{ENSEMBLE_BYTES});
+		printf("\tHEADER_BYTES\t\t\t= %4d bytes\n",$hdr{HEADER_BYTES});
+		printf("\tVARIABLE_LEADER_BYTES\t\t= %4d bytes\n",$hdr{VARIABLE_LEADER_BYTES});
+		printf("\tVELOCITY_DATA_BYTES\t\t= %4d bytes\n",$hdr{VELOCITY_DATA_BYTES})
 			if defined($hdr{VELOCITY_DATA_BYTES});
-		printf("\tCORRELATION_DATA_BYTES\t\t= %3d bytes\n",$hdr{CORRELATION_DATA_BYTES})
+		printf("\tCORRELATION_DATA_BYTES\t\t= %4d bytes\n",$hdr{CORRELATION_DATA_BYTES})
 			if defined($hdr{CORRELATION_DATA_BYTES});
-		printf("\tECHO_INTENSITY_DATA_BYTES\t= %3d bytes\n",$hdr{ECHO_INTENSITY_DATA_BYTES})
+		printf("\tECHO_INTENSITY_DATA_BYTES\t= %4d bytes\n",$hdr{ECHO_INTENSITY_DATA_BYTES})
 			if defined($hdr{ECHO_INTENSITY_DATA_BYTES});
-		printf("\tPERCENT_GOOD_DATA_BYTES\t\t= %3d bytes\n",$hdr{PERCENT_GOOD_DATA_BYTES})
+		printf("\tPERCENT_GOOD_DATA_BYTES\t\t= %4d bytes\n",$hdr{PERCENT_GOOD_DATA_BYTES})
 			if defined($hdr{PERCENT_GOOD_DATA_BYTES});
 	}
 
@@ -167,14 +169,12 @@ while ($ARGV[0] ne '') {
 	
 	if ($hdr{SPEED_OF_SOUND_CALCULATED}) {
 		print("    Speed-of-Sound Sensors Used:\n");
-		printf("\tPRESSURE_SENSOR_USED\n")	if ($hdr{PRESSURE_SENSOR_USED});
-		printf("\tCOMPASS_USED\n")			if ($hdr{COMPASS_USED});
-		printf("\tPITCH_SENSOR_USED\n")		if ($hdr{PITCH_SENSOR_USED});
-		printf("\tROLL_SENSOR_USED\n")		if ($hdr{ROLL_SENSOR_USED});
-		printf("\tCONDUCTIVITY_SENSOR_USED\n")    
-												if ($hdr{CONDUCTIVITY_SENSOR_USED});
-		printf("\tTEMPERATURE_SENSOR_USED\n")
-												if ($hdr{TEMPERATURE_SENSOR_USED});
+		printf("\tPRESSURE\n")					if ($hdr{SSPEED_USING_PRESS});
+		printf("\tCOMPASS_USED\n")				if ($hdr{COMPASS_USED});
+		printf("\tPITCH_SENSOR_USED\n")			if ($hdr{PITCH_SENSOR_USED});
+		printf("\tROLL_SENSOR_USED\n")			if ($hdr{ROLL_SENSOR_USED});
+		printf("\tCONDUCTIVITY_SENSOR_USED\n")  if ($hdr{CONDUCTIVITY_SENSOR_USED});
+		printf("\tTEMPERATURE_SENSOR_USED\n")	if ($hdr{TEMPERATURE_SENSOR_USED});
 		print("\n");
 	}
 	
@@ -205,7 +205,7 @@ while ($ARGV[0] ne '') {
 	printf("\tFlags\t\t\t\t: ");
 	printf("NARROW_BANDWIDTH ") 				if ($hdr{NARROW_BANDWIDTH});
 	printf("WIDE_BANDWIDTH ")					if ($hdr{WIDE_BANDWIDTH});
-	printf("TRANSMIT_POWER_HIGH ")				if ($hdr{TRANSMIT_POWER_HIGH});
+	printf("TRANSMIT_POWER_MAX ")				if ($hdr{TRANSMIT_POWER_MAX});
 	print("\n");
 
 	#----------------------------------------------------------------------

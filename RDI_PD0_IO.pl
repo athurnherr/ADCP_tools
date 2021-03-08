@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Thu Mar  4 11:23:23 2021
+#                    dlm: Sat Mar  6 14:13:23 2021
 #                    (c) 2003 A.M. Thurnherr
-#					 uE-Info: 1157 0 NIL 0 0 72 2 2 4 NIL ofnI
+#					 uE-Info: 643 43 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
     
 # Read RDI PD0 binary data files (*.[0-9][0-9][0-9])
@@ -231,8 +231,8 @@
 #	BIN_MAPPING_ALLOWED 			bool		undefined,1
 #	HEADING_ALIGNMENT				scalar		-179.99..180 [deg]
 #	HEADING_BIAS					scalar		-179.99..180 [deg]
-#	CALCULATE_SPEED_OF_SOUND		bool		undefined,1
-#	USE_PRESSURE_SENSOR 			bool		undefined,1
+#	SSPEED_CALCULATED		bool		undefined,1
+#	SSPEED_USING_PRESS 			bool		undefined,1
 #	USE_COMPASS 					bool		undefined,1
 #	USE_PITCH_SENSOR				bool		undefined,1
 #	USE_ROLL_SENSOR 				bool		undefined,1
@@ -484,7 +484,7 @@ sub WBRhdr($)
 	$hid == 0x7f || die(sprintf($FmtErr,$WBRcfn,"Header (hid2)",$hid,0));
 	$dta->{DATA_SOURCE_ID} = $did;
 	if ($did == 0x7f) {
-		$dta->{PRODUCER} = 'TRDI ADCP';
+		$dta->{PRODUCER} = 'TRDI or Nortek ADCP';
 	} elsif (($did&0xF0) == 0xA0) {
 		$dta->{PRODUCER} = 'IMP+LADCP (Thurnherr software)';
 	} elsif (($did&0xF0) == 0xE0) {
@@ -511,7 +511,7 @@ sub WBRhdr($)
 	} elsif ($dta->{FIXED_LEADER_BYTES} == 53) {		# old firmware: no serial numbers
 		$dta->{INSTRUMENT_TYPE} = 'Workhorse';  
 	} elsif ($dta->{FIXED_LEADER_BYTES} == 59) {		# new firmware: with serial numbers
-		$dta->{INSTRUMENT_TYPE} = 'Workhorse';
+		$dta->{INSTRUMENT_TYPE} = 'Workhorse or Signature';
 	} elsif ($dta->{FIXED_LEADER_BYTES} == 58) {		# DVL
 		$dta->{INSTRUMENT_TYPE} = 'Explorer';
 	} elsif ($dta->{FIXED_LEADER_BYTES} == 60) {		# OS75
@@ -608,21 +608,21 @@ sub WBRhdr($)
 		($dta->{EARTH_COORDINATES} || $dta->{SHIP_COORDINATES}) ?
 			$dta->{HEADING_BIAS} / 100 : undef;
 
-	$dta->{CALCULATE_SPEED_OF_SOUND}  = 1 if ($B6 & 0x40); 
-	$dta->{USE_PRESSURE_SENSOR} 	  = 1 if ($B6 & 0x20); 
-	$dta->{USE_COMPASS} 			  = 1 if ($B6 & 0x10); 
-	$dta->{USE_PITCH_SENSOR}		  = 1 if ($B6 & 0x08); 
-	$dta->{USE_ROLL_SENSOR} 		  = 1 if ($B6 & 0x04); 
-	$dta->{USE_CONDUCTIVITY_SENSOR}   = 1 if ($B6 & 0x02); 
-	$dta->{USE_TEMPERATURE_SENSOR}	  = 1 if ($B6 & 0x01); 
+	$dta->{SSPEED_FROM_EC_SETTING}		= 1 unless ($B6 & 0x40); 	# these are the aspirations
+	$dta->{DEPTH_FROM_ED_SETTING}	   	= 1 unless ($B6 & 0x20); 
+	$dta->{HEADING_FROM_EH_SETTING}		= 1 unless ($B6 & 0x10); 
+	$dta->{PITCH_FROM_EP_SETTING}	  	= 1 unless ($B6 & 0x08); 
+	$dta->{ROLL_FROM_ER_SETTING} 		= 1 unless ($B6 & 0x04); 
+	$dta->{SALIN_FROM_ES_SETTING}		= 1 unless ($B6 & 0x02); 
+	$dta->{TEMP_FROM_ET_SETTING}  		= 1 unless ($B6 & 0x01); 
 
-	$dta->{SPEED_OF_SOUND_CALCULATED}	  = 1 if ($B7 & 0x40); 
-	$dta->{PRESSURE_SENSOR_AVAILABLE}	  = 1 if ($B7 & 0x20); 
-	$dta->{COMPASS_AVAILABLE}			  = 1 if ($B7 & 0x10); 
-	$dta->{PITCH_SENSOR_AVAILABLE}		  = 1 if ($B7 & 0x08); 
-	$dta->{ROLL_SENSOR_AVAILABLE}		  = 1 if ($B7 & 0x04); 
-	$dta->{CONDUCTIVITY_SENSOR_AVAILABLE} = 1 if ($B7 & 0x02); 
-	$dta->{TEMPERATURE_SENSOR_AVAILABLE}  = 1 if ($B7 & 0x01); 
+	$dta->{SSPEED_CALCULATED}			= 1 if ($B7 & 0x40); 		# and this is how it is in practice
+	$dta->{PRESSURE_SENSOR}				= 1 if ($B7 & 0x20); 
+	$dta->{COMPASS}			  			= 1 if ($B7 & 0x10); 
+	$dta->{PITCH_SENSOR}				= 1 if ($B7 & 0x08); 
+	$dta->{ROLL_SENSOR}		  			= 1 if ($B7 & 0x04); 
+	$dta->{CONDUCTIVITY_SENSOR} 		= 1 if ($B7 & 0x02); 
+	$dta->{TEMPERATURE_SENSOR}  		= 1 if ($B7 & 0x01); 
 
 	$dta->{DISTANCE_TO_BIN1_CENTER}  /= 100;
 	$dta->{TRANSMITTED_PULSE_LENGTH} /= 100;
@@ -631,16 +631,25 @@ sub WBRhdr($)
 		if ($dta->{FALSE_TARGET_THRESHOLD} == 255);
 	$dta->{TRANSMIT_LAG_DISTANCE} /= 100;
 
-	if ($dta->{INSTRUMENT_TYPE} eq 'Workhorse') {
+	if ($dta->{INSTRUMENT_TYPE} eq 'Workhorse or Signature') {
 		sysread(WBRF,$buf,11) == 11 || die("$WBRcfn: $!");
 		($W1,$W2,$W3,$W4,$W5,$dta->{TRANSMIT_POWER}) = 
 			unpack('vvvvvC',$buf);
 
-		$dta->{CPU_SERIAL_NUMBER} = sprintf("%04X%04X%04X%04X",$W1,$W2,$W3,$W4);
+		if ($W1 == 0x6953 && $W2 == 0x6E67 &&
+			$W3 == 0x7461 && $W4 == 0x0075) {
+				$dta->{INSTRUMENT_TYPE} = 'Signature';
+				$dta->{TRANSMIT_POWER_MAX} = ($dta->{TRANSMIT_POWER} == 122);
+				$dta->{PRODUCER} = 'Nortek ADCP' if ($dta->{PRODUCER} eq 'TRDI or Nortek ADCP');
+		} else {
+			$dta->{INSTRUMENT_TYPE} = 'Workhorse';
+			$dta->{CPU_SERIAL_NUMBER} = sprintf("%04X%04X%04X%04X",$W1,$W2,$W3,$W4);
+			$dta->{TRANSMIT_POWER_MAX} = ($dta->{TRANSMIT_POWER} == 255);
+			$dta->{PRODUCER} = 'TRDI ADCP' if ($dta->{PRODUCER} eq 'TRDI or Nortek ADCP');
+		}
     
 		$dta->{NARROW_BANDWIDTH} = ($W5 == 1);
 		$dta->{WIDE_BANDWIDTH}	 = ($W5 == 0);
-		$dta->{TRANSMIT_POWER_HIGH} = ($dta->{TRANSMIT_POWER} == 255);
 
 		if ($dta->{FIXED_LEADER_BYTES} == 59) { 				# new style with serial number
 			sysread(WBRF,$buf,6) == 6 || die("$WBRcfn: $!");
