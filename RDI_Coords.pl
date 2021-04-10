@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ C O O R D S . P L 
 #                    doc: Sun Jan 19 17:57:53 2003
-#                    dlm: Mon Jun 29 10:59:01 2020
+#                    dlm: Wed Mar 17 23:20:13 2021
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 61 83 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 66 9 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # RDI Workhorse Coordinate Transformations
@@ -59,6 +59,15 @@
 #	Mar 28, 2018: - added &loadInstrumentTransformation()
 #	Jun  5, 2020: - added sscorr_w & sscorr_w_mooring
 #   Jun 29, 2020: - added comments for sscorr_w, which conflicts with LADCP_w_ocean
+#	Mar 17, 2021: - adapted velBeamToInstrument() to Nortek (checked w only)
+#				  - adapted velInstrumentToEarth() to Nortek, assuming Nortek pitch is gimbal pitch
+# HISTORY END
+
+# NORTEK TODO:
+#	- check u, v sign convention for Nortek
+#	- verify that gimbal pitch for Nortek gives better results
+#		for A20 test profile 900, the differences in w have a stddev of 1.3e-5 m/s
+#	- update gimbal pitch for Nortek in other routines
 
 use strict;
 use POSIX;
@@ -135,7 +144,7 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 					   		 defined($v3) + defined($v4)
 								>= $RDI_Coords::minValidVels);
 
-		unless (@B2I) {
+		unless (@B2I) {															# nominal transformation matrix
 			my($a) = 1 / (2 * sin(rad($ADCP->{BEAM_ANGLE})));
 			my($b) = 1 / (4 * cos(rad($ADCP->{BEAM_ANGLE})));
 			my($c) = $ADCP->{CONVEX_BEAM_PATTERN} ? 1 : -1;
@@ -146,7 +155,14 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 				    [$d,	$d,		-$d,	-$d	 ]);
 		}
 
-		if (!defined($v1)) {					# 3-beam solutions
+		if ($ADCP->{PRODUCER} =~ '^Nortek') {									# Nortek ADCPs use different coord system
+			$v1 *= -1 if defined($v1);
+			$v2 *= -1 if defined($v2);
+			$v3 *= -1 if defined($v3);
+			$v4 *= -1 if defined($v4);
+		}
+
+		if (!defined($v1)) {													# 3-beam solutions
 			$RDI_Coords::threeBeamFlag = 1;
 			$RDI_Coords::threeBeam_1++;
 			$v1 = -($v2*$B2I[3][1]+$v3*$B2I[3][2]+$v4*$B2I[3][3])/$B2I[3][0];
@@ -211,7 +227,13 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 				if defined($ADCP->{ENSEMBLE}[$ens]->{HEADING});
 			$pitch = $ADCP->{ENSEMBLE}[$ens]->{PITCH};
 			$roll  = $ADCP->{ENSEMBLE}[$ens]->{ROLL};
-			my($rad_gimbal_pitch) = atan(tan(rad($pitch)) * cos(rad($roll)));
+			my($rad_gimbal_pitch);
+			if ($ADCP->{PRODUCER} =~ '^Nortek') {
+				$rad_gimbal_pitch = rad($pitch);									# I am assuming that this is correct
+			} else {
+				$rad_gimbal_pitch = atan(tan(rad($pitch)) * cos(rad($roll)));
+			}
+				
 			my($rad_calc_pitch) = ($RDI_Coords::beamTransformation eq 'RDI') ? $rad_gimbal_pitch : 
 								  asin(sin($rad_gimbal_pitch)*cos(rad($roll)) /
 									   sqrt(1-sin(rad($roll))**2*sin($rad_gimbal_pitch)**2));

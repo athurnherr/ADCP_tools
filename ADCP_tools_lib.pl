@@ -1,9 +1,9 @@
 #======================================================================
 #                    A D C P _ T O O L S _ L I B . P L 
 #                    doc: Tue Jan  5 10:45:47 2016
-#                    dlm: Mon Apr 20 15:47:30 2020
+#                    dlm: Tue Mar 23 09:15:16 2021
 #                    (c) 2016 A.M. Thurnherr
-#                    uE-Info: 19 25 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 18 0 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # HISTORY:
@@ -15,8 +15,9 @@
 #	Dec  7, 2017: - updated to V2.1 for improvements to listHdr
 #	Feb  6, 2018: - updated to V2.2 for changes to PD0_IO
 #	Apr 20, 2020: - updated to V2.3 after adaptating to work with IMPed moored ADCP data
+#	Mar 23, 2021: - updated to V2.4 after starting adaption to Nortek produced PD0 files
 
-$ADCP_tools_version = 2.3;
+$ADCP_tools_version = 2.4;
 
 die(sprintf("$0: obsolete ADCP_tools V%.1f; V%.1f required\n",
     $ADCP_tools_version,$ADCP_tools_minVersion))

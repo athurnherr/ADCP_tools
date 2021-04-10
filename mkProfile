@@ -2,9 +2,9 @@
 #======================================================================
 #                    M K P R O F I L E 
 #                    doc: Sun Jan 19 18:55:26 2003
-#                    dlm: Thu Apr 18 16:28:13 2019
+#                    dlm: Sat Apr 10 05:51:48 2021
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 98 54 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 99 35 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Make an LADCP Profile by Integrating W (similar to Firing's scan*).
@@ -96,6 +96,8 @@
 #	Apr  2, 2018: - BUG: velBeamToInstrument() used old usage
 #	Apr 24, 2018: - BUG: bin1 was used even with zero blanking
 #	Apr 18, 2019: - added coord-transformation %PARAMs
+#	Apr 10, 2021: - adapted to V2.4
+# HISTORY END
 
 # NOTES:
 #	- the battery values are based on transmission voltages (different
@@ -226,7 +228,7 @@ unless ($dta{NARROW_BANDWIDTH}) {
 	print(STDERR "WARNING: $0 WIDE BANDWIDTH!\n");
 }
 
-unless ($dta{TRANSMIT_POWER_HIGH}) {
+unless ($dta{TRANSMIT_POWER_MAX}) {
 	print(STDERR "WARNING: $0 LOW TRANSMIT POWER!\n");
 }
 

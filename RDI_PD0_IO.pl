@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Sat Mar  6 14:13:23 2021
+#                    dlm: Wed Mar 17 22:54:27 2021
 #                    (c) 2003 A.M. Thurnherr
-#					 uE-Info: 643 43 NIL 0 0 72 2 2 4 NIL ofnI
+#					 uE-Info: 129 35 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
     
 # Read RDI PD0 binary data files (*.[0-9][0-9][0-9])
@@ -125,6 +125,8 @@
 #					O(N^2) process
 #	Apr 14, 2020: - BUG: WBPens did not work for ens# > 65535 (high byte)
 #	Mar  3, 2021: - adapted to Nortek PD0 files
+#	Mar 13, 2021: - finished adaptation to Nortek files
+#	Mar 17, 2021: - updated HISTORY
 # END OF HISTORY
     
 # FIRMWARE VERSIONS:
@@ -983,59 +985,65 @@ ENSEMBLE:
 		my($ndata) = $nbins * 4;
 
 		my($vel_di) = WBRdtaIndex(0x0100);
-		die("no velocity data in ensemble #$ensNo\n")
-			unless defined($vel_di);
-	    
-		sysseek(WBRF,$start_ens+$WBRofs[$vel_di],0) || die("$WBRcfn: $!");
-		sysread(WBRF,$buf,2+$ndata*2) == 2+$ndata*2 || die("$WBRcfn: $!");
-		($id,@dta) = unpack("vv$ndata",$buf);
-
-		for ($i=0,$bin=0; $bin<$nbins; $bin++) {
-			for ($beam=0; $beam<4; $beam++,$i++) {
-				${$E}[$ens]->{VELOCITY}[$bin][$beam] =
-					unpack('s',pack('S',$dta[$i])) / 1000
-						if ($dta[$i] != 0x8000);
-			}
-		}
+		if (defined($vel_di)) {
+			sysseek(WBRF,$start_ens+$WBRofs[$vel_di],0) || die("$WBRcfn: $!");
+			sysread(WBRF,$buf,2+$ndata*2) == 2+$ndata*2 || die("$WBRcfn: $!");
+			($id,@dta) = unpack("vv$ndata",$buf);
+	
+			for ($i=0,$bin=0; $bin<$nbins; $bin++) {
+				for ($beam=0; $beam<4; $beam++,$i++) {
+					${$E}[$ens]->{VELOCITY}[$bin][$beam] =
+						unpack('s',pack('S',$dta[$i])) / 1000
+							if ($dta[$i] != 0x8000);
+				}
+	        }
+	    } else {
+#   		die("no velocity data in ensemble #$ensNo\n");
+			print(STDERR "WARNING: no velocity data in ensemble #$ensNo\n");
+        }	    
 
 		#--------------------
 		# Correlation Data
 		#--------------------
 
 		my($corr_di) = WBRdtaIndex(0x0200);
-		die("no correlation data in ensemble #$ensNo\n")
-			unless defined($corr_di);
-	    
-		sysseek(WBRF,$start_ens+$WBRofs[$corr_di],0) || die("$WBRcfn: $!");
-		sysread(WBRF,$buf,2+$ndata) == 2+$ndata || die("$WBRcfn: $!");
-		($id,@dta) = unpack("vC$ndata",$buf);
-
-		for ($i=0,$bin=0; $bin<$nbins; $bin++) {
-			for ($beam=0; $beam<4; $beam++,$i++) {
-				${$E}[$ens]->{CORRELATION}[$bin][$beam] = $dta[$i]
-					if ($dta[$i]);
-			}
-		}
+		if (defined($corr_di)) {
+			sysseek(WBRF,$start_ens+$WBRofs[$corr_di],0) || die("$WBRcfn: $!");
+			sysread(WBRF,$buf,2+$ndata) == 2+$ndata || die("$WBRcfn: $!");
+			($id,@dta) = unpack("vC$ndata",$buf);
+	
+			for ($i=0,$bin=0; $bin<$nbins; $bin++) {
+				for ($beam=0; $beam<4; $beam++,$i++) {
+					${$E}[$ens]->{CORRELATION}[$bin][$beam] = $dta[$i]
+						if ($dta[$i]);
+				}
+	        }
+	    } else {
+#  			die("no correlation data in ensemble #$ensNo\n")
+  			print(STDERR "WARNING: no correlation data in ensemble #$ensNo\n")
+  		}
 
 		#--------------------
 		# Echo Intensity Data
 		#--------------------
 
 		my($echo_di) = WBRdtaIndex(0x0300);
-		die("no echo intensity data in ensemble #$ensNo\n")
-			unless defined($echo_di);
-	    
-		sysseek(WBRF,$start_ens+$WBRofs[$echo_di],0) || die("$WBRcfn: $!");
-		sysread(WBRF,$buf,2+$ndata) == 2+$ndata || die("$WBRcfn: $!");
-		($id,@dta) = unpack("vC$ndata",$buf);
-
-		$id == 0x0300 ||
-			die(sprintf($FmtErr,$WBRcfn,"Echo Intensity",$id,$ensNo));
-
-		for ($i=0,$bin=0; $bin<$nbins; $bin++) {
-			for ($beam=0; $beam<4; $beam++,$i++) {
-				${$E}[$ens]->{ECHO_AMPLITUDE}[$bin][$beam] = $dta[$i];
-			}
+		if (defined($echo_di)) {
+			sysseek(WBRF,$start_ens+$WBRofs[$echo_di],0) || die("$WBRcfn: $!");
+			sysread(WBRF,$buf,2+$ndata) == 2+$ndata || die("$WBRcfn: $!");
+			($id,@dta) = unpack("vC$ndata",$buf);
+	
+			$id == 0x0300 ||
+				die(sprintf($FmtErr,$WBRcfn,"Echo Intensity",$id,$ensNo));
+	
+			for ($i=0,$bin=0; $bin<$nbins; $bin++) {
+				for ($beam=0; $beam<4; $beam++,$i++) {
+					${$E}[$ens]->{ECHO_AMPLITUDE}[$bin][$beam] = $dta[$i];
+				}
+	        }
+	    } else {
+#			die("no echo intensity data in ensemble #$ensNo\n");
+			print(STDERR "WARNING: no echo intensity data in ensemble #$ensNo\n");
 		}
 
 		#--------------------
@@ -1145,10 +1153,12 @@ sub WBRdtaIndex($)																# return index of particular data type
 	my($trgid) = @_;
 	our($ndt,$buf,$id,$start_ens,@WBRofs);
 	
+#	printf(STDERR "WBRdtaIndex(%04X)\n",$trgid);
 	for (my($di)=2; $di<$ndt; $di++) {
 		sysseek(WBRF,$start_ens+$WBRofs[$di],0) || die("$WBRcfn: $!");
 		sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 		$id = unpack('v',$buf);
+#		printf(STDERR "\tid = %04X\n",$id);
 		return $di if ($id == $trgid);
     }
     return undef;
