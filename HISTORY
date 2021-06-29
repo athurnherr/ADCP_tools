@@ -1,9 +1,9 @@
 ======================================================================
                     H I S T O R Y 
                     doc: Tue May 15 18:04:39 2012
-                    dlm: Mon Apr 20 15:48:24 2020
+                    dlm: Tue Jun 29 12:20:59 2021
                     (c) 2012 A.M. Thurnherr
-                    uE-Info: 274 19 NIL 0 0 72 3 2 4 NIL ofnI
+                    uE-Info: 281 36 NIL 0 0 72 2 2 4 NIL ofnI
 ======================================================================
 
 --------------------------------------
@@ -272,3 +272,39 @@ Nov 27, 2018:
 Apr 20, 2020:
 	- COVID-19 version
 	- released V2.3
+
+----------------------------------------------------------------------
+V2.4
+	- New Features:
+		- support for Nortek PD0 files
+		- patchPD0 support for moored ADCP data
+	- bug fixes	& minor improvements
+----------------------------------------------------------------------
+	
+[RDI_BB_Read.pl] [RDI_PD0_IO.pl]
+#   Mar  3, 2021: - adapted to Nortek PD0 files
+#   Mar 13, 2021: - finished adaptation to Nortek files
+#   Mar 17, 2021: - updated HISTORY
+
+[RDI_Coords.pl] [libRDI_Coords.pl]
+#   Mar 17, 2021: - adapted velBeamToInstrument() to Nortek (checked w only)
+#                 - adapted velInstrumentToEarth() to Nortek, assuming Nortek pitch is gimbal pitch
+
+[listBins]
+#   May 11, 2020: - removed -z, added -t -m
+
+[listEns]
+#   Feb 13, 2020: - added support for $readDataProgress
+#   Feb 19, 2021: - BUG: -T did not handle new years correctly
+#   Mar  3, 2021: - BUG: debug statement left in place
+
+[listHdr]
+#   Mar  6, 2021: - adapted to Nortek Signature data files
+#   Mar 17, 2021: - updated HISTORY
+
+[mkProfile]
+#   Apr 10, 2021: - adapted to V2.4
+
+[patchPD0]
+#   Apr 14, 2020: - adapted to use for moored ADCP data as well
+
