@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Mon Apr 13 14:07:54 2020
+#                    dlm: Fri Jul  1 16:27:05 2022
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 68 53 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 69 70 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
@@ -66,6 +66,7 @@
 # 	Jun 26, 2019: - increased short-gap in mk_prof from 5s to 6s to allow processing
 #					of RTi test file with 5s ensembles
 #	Apr 13, 2020: - added $RDI_Utils::No_Gap_Warnings
+#	Jul  1, 2020: - replaced PANIC on dt<0 with ensemble-skipping code
 
 use strict;
 
@@ -482,9 +483,14 @@ sub mk_prof(...)											# make profile
 		my($dt) = $dta->{ENSEMBLE}[$e]->{UNIX_TIME} -		# time step since
 				  $dta->{ENSEMBLE}[$lastgood]->{UNIX_TIME}; # ... last good ens
 
-		die(sprintf("PANIC: negative dt = $dt between ensembles %d and %d\n",
-			$dta->{ENSEMBLE}[$lastgood]->{NUMBER},$dta->{ENSEMBLE}[$e]->{NUMBER}))
-				if ($dt < 0);
+#		die(sprintf("PANIC: negative dt = $dt between ensembles %d and %d\n",
+#			$dta->{ENSEMBLE}[$lastgood]->{NUMBER},$dta->{ENSEMBLE}[$e]->{NUMBER}))
+#				if ($dt < 0);
+		if ($dt < 0) {
+			printf(STDERR "WARNING: negative dt; ensemble #%d ignored\n",
+				$dta->{ENSEMBLE}[$e]->{NUMBER});
+			next;
+        }
 	
 		if ($dt > $max_gap) {
 			# 2nd heuristic test added Nov 2017 for P06 profile #001
