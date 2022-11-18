@@ -2,14 +2,14 @@
 #======================================================================
 #                    P A T C H P D 0 
 #                    doc: Tue Aug 23 20:00:15 2016
-#                    dlm: Tue Apr 14 21:28:49 2020
+#                    dlm: Mon Jul 12 20:43:08 2021
 #                    (c) 2010 A.M. Thurnherr
-#                    uE-Info: 103 26 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 24 37 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 $antsSummary = 'patch TRDI PD0 file with external attitude data';
 
-# History:
+# HISTORY:
 #	Aug 23, 2016: - exported from IMP+LADCP
 #	Aug 25, 2016: - completed basic structure
 #	Nov 20, 2017: - major code cleanup
@@ -21,6 +21,7 @@ $antsSummary = 'patch TRDI PD0 file with external attitude data';
 #				  - BUG: ??? does -o handle pitch and roll ANOMALIES correctly?
 #	Jun 30, 2019: - -o did not work with single argument
 #	Apr 14, 2020: - adapted to use for moored ADCP data as well
+#	Jul 12, 2021: - beautified output
 
 # PATCH-FILE REQUIREMENTS (ANTS format)
 #	- %[L]ADCP_pitch.mu %[L]ADCP_roll.mu	mean ADCP pitch and roll
@@ -201,9 +202,16 @@ $ADCP{ENSEMBLE}[1]->{DATA_SOURCE_ID} = 0xA0
 
 writeData($outPD0,\%ADCP);													# write new PD0
 
-my($verb) = $opt_k ? 'retained' : 'cleared';
-printf(STDERR "$outPD0: %d pitch/roll & %d heading values $verb\n",$pr_missing,$hdg_missing)
-       if ($pr_missing+$hdg_missing);
+if ($pr_missing+$hdg_missing) {
+	my($verb) = $opt_k ? 'retained' : 'cleared';
+	printf(STDERR "$outPD0: ");
+	if ($pr_missing) {
+		printf(STDERR "%d pitch/roll ",$pr_missing);
+		printf(STDERR "and ") if ($hdg_missing);
+	}
+	printf(STDERR "%d heading ",$hdg_missing) if ($hdg_missing);
+	printf(STDERR "values $verb\n");
+}
         
 exit(0);
 

@@ -2,9 +2,9 @@
 #======================================================================
 #                    E D I T P D 0 
 #                    doc: Mon Nov 25 20:24:31 2013
-#                    dlm: Wed Mar 14 21:15:51 2018
+#                    dlm: Mon Oct 18 11:46:58 2021
 #                    (c) 2013 A.M. Thurnherr
-#                    uE-Info: 417 0 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 45 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 # edit RDI PD0 file, e.g. to replace pitch/roll/heading with external values
@@ -40,8 +40,9 @@
 #		ensure_UL()				correct data for wrong transducer orientation
 #		ensure_DL()					- sets correct flag & negates roll value
 #
-#		dealias(<WV lim[m/s]>) 	correct data for erroneously low WV setting
-#									- HEURISTIC, i.e. may not work
+#		dealias_attempt(<WV lim[m/s]>) 	correct data for erroneously low WV setting
+#									- LIKELY DOES NOT WORK AT ALL
+#									- DOES DEFINITELY NOT WORK FOR DATA WITH DOUBLE WRAPS
 #
 #	- -x notes:
 #		- multiple perl expressions can be combined with ,
@@ -76,6 +77,11 @@
 #	Nov 15, 2016: - BUG: ensure_{DL,UL} routines did not negate heading data
 #	Jul 27, 2017: - began working on dealias()
 #	Dec  6, 2017: - cosmetics
+#	Oct 18, 2021: - played around with dealias() with data from BLT and came 
+#					to the conclusion that it does not work; although, the
+#				    problem with the BLT data is that there are probably lots
+#					of double wraps
+# END OF HISTORY
 
 use Getopt::Std;
 
@@ -120,7 +126,7 @@ sub h($) { $dta{ENSEMBLE}[$e]->{HEADING} = $_[0]; return 1;}
 
 { my(@target);												# static scope, undef initially
 
-sub dealias_V0($)
+sub dealias_attempt($)
 {
 	my($WV) = @_;
 
@@ -133,10 +139,11 @@ sub dealias_V0($)
 					if ($dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam] > 0);
 				$dealiased = ($dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam] + 2*$WV)
 					if ($dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam] < 0);
+#				printf(STDERR "ens=$e beam=$beam bin=$bin: target=$target[$beam] vel=$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam] vd=$dealiased\n");
 				if (abs($target[$beam]-$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam]) >
 					abs($target[$beam]-$dealiased)) {
-						$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam] = undef; #$dealiased;
-						$dealiased++;
+#						print(STDERR "DEALIASED\n");
+						$dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam] = $dealiased;
 				}
 			}
     	}
@@ -145,12 +152,17 @@ sub dealias_V0($)
     }
 
 	@target = (0,0,0,0);									# calc ref-lr average target for next ens
+	@nSamp  = (0,0,0,0);
 	for (my($bin)=1; $bin<=5; $bin++) {						# should work even if N_BINS < 5
 		for (my($beam)=0; $beam<4; $beam++) {
-			$target[$beam] += $dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam]/4
-				if defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam]);
+			next unless defined($dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam]);
+			$target[$beam] += $dta{ENSEMBLE}[$e]->{VELOCITY}[$bin][$beam];
+			$nSamp[$beam]++;
 		}
     }
+	for (my($beam)=0; $beam<4; $beam++) {
+		$target[$beam] = $nSamp[$beam] ? ($target[$beam] / $nSamp[$beam]) : nan;
+	}
 
     return 1;
 }

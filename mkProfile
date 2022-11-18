@@ -2,9 +2,9 @@
 #======================================================================
 #                    M K P R O F I L E 
 #                    doc: Sun Jan 19 18:55:26 2003
-#                    dlm: Sat Apr 10 05:51:48 2021
+#                    dlm: Mon Oct 18 11:02:31 2021
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 99 35 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 101 76 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Make an LADCP Profile by Integrating W (similar to Firing's scan*).
@@ -97,6 +97,8 @@
 #	Apr 24, 2018: - BUG: bin1 was used even with zero blanking
 #	Apr 18, 2019: - added coord-transformation %PARAMs
 #	Apr 10, 2021: - adapted to V2.4
+#	Oct 12, 2021: - added speed to output on -M
+#	Oct 18, 2021: - BUG: speed bombed with zero valid velocities in ensemble
 # HISTORY END
 
 # NOTES:
@@ -369,6 +371,8 @@ sub ref_lr_uv($$$)									# calc ref-level u/v
 		my(@sumsq) = (0,0);
 		$dta{ENSEMBLE}[$ens]->{U} /= $n;
 		$dta{ENSEMBLE}[$ens]->{V} /= $n;
+		$dta{ENSEMBLE}[$ens]->{SPEED} = sqrt($dta{ENSEMBLE}[$ens]->{U}**2 +
+											 $dta{ENSEMBLE}[$ens]->{V}**2);
 		for ($i=0; $i<$n; $i++) {
 			$sumsq[0] += ($dta{ENSEMBLE}[$ens]->{U}-$goodU[$i])**2;
 			$sumsq[1] += ($dta{ENSEMBLE}[$ens]->{V}-$goodV[$i])**2;
@@ -382,8 +386,10 @@ sub ref_lr_uv($$$)									# calc ref-level u/v
 }
 
 #----------------------------------------------------------------------
+# Create Progressive Vector Diagram
+#----------------------------------------------------------------------
 
-($x,$y) = (0,0);											# init
+($x,$y,$cAvg,$ngood) = (0,0,0,0);										# init
 
 $dta{ENSEMBLE}[$firstgood]->{X} = $dta{ENSEMBLE}[$firstgood]->{X_ERR} = 0;
 $dta{ENSEMBLE}[$firstgood]->{Y} = $dta{ENSEMBLE}[$firstgood]->{Y_ERR} = 0;
@@ -410,6 +416,8 @@ for ($e=$firstgood+1; defined($opt_M)&&$e<=$lastgood; $e++) {
 	#-----------------------------------
 	# The current ensemble has valid u/v
 	#-----------------------------------
+
+	$cAvg += $dta{ENSEMBLE}[$e]->{SPEED}; $ngood++;
 
 	$x -= $dta{ENSEMBLE}[$prevgood]->{U} * $dt;			# integrate
 	$xErr += ($dta{ENSEMBLE}[$prevgood]->{U_ERR} * $dt)**2;
@@ -441,6 +449,8 @@ unless (defined($dta{ENSEMBLE}[$lastgood]->{X})) {		# last is bad in u/v
 
 $firstgood++ if ($firstgood == 0);							# centered diff
 $lastgood-- if ($lastgood == $#{$dta{ENSEMBLE}});			# in step 6
+
+$cAvg = $ngood ? ($cAvg / $ngood) : nan;
 
 #======================================================================
 # Step 3: Calculate Uncertainties
@@ -718,7 +728,7 @@ print("#!/usr/bin/perl -S list\n");
 chmod(0777&~umask,*STDOUT);
 
 print("#ANTS# [] $USAGE\n");
-$uFields = "{u} {u_err} {v} {v_err} {x} {x_err} {y} {y_err}"
+$uFields = "{u} {u_err} {v} {v_err} {x} {x_err} {y} {y_err} {speed}"
 	if defined($opt_M);
 print("#ANTS#FIELDS# {ens} {time} {elapsed} {secno} {downcast} " .
 					"{w} {w_err} {err_vel} {depth} {depth_err} {seabed} " .
@@ -775,14 +785,15 @@ printf(     "#ANTS#PARAMS# date{$dta{ENSEMBLE}[$firstgood]->{DATE}} " .
 	  );
 printf("#ANTS#PARAMS# magnetic_declination{$opt_M} " .
 							  "uv_gap_time{%d} " .
-								   "mean_u{%.4f} " .
-								 "stderr_u{%.4f} " .
+								   "u.mean{%.4f} " .
+								 "u.sterrr{%.4f} " .
 									   "dx{%d} " .
-								   "dx_err{%d} " .
-								   "mean_v{%.4f} " .
-								 "stderr_v{%.4f} " .
+								   "dx.err{%d} " .
+								   "v.mean{%.4f} " .
+								 "v.stderr{%.4f} " .
 									   "dy{%d} " .
-								   "dy_err{%d}\n",
+								   "dy.err{%d} " .
+							   "speed.mean{%.2f}\n",
 	$uv_gap_time,
 	$dta{ENSEMBLE}[$lastgood]->{X} /
 		$dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME},
@@ -790,6 +801,7 @@ printf("#ANTS#PARAMS# magnetic_declination{$opt_M} " .
 	$dta{ENSEMBLE}[$lastgood]->{Y} /
 		$dta{ENSEMBLE}[$lastgood]->{ELAPSED_TIME},
 	$vErr, $dta{ENSEMBLE}[$lastgood]->{Y}, $y_err,
+	$cAvg
 ) if defined ($opt_M);
 if ($dta{TIME_BETWEEN_PINGS} == 0) {
 	 print("#ANTS#PARAMS# pinging_rate{staggered}\n");
@@ -829,6 +841,7 @@ for ($e=$firstgood; $e<=$lastgood; $e++) {
 		p($dta{ENSEMBLE}[$e]->{V}); p($dta{ENSEMBLE}[$e]->{V_ERR});
 		p($dta{ENSEMBLE}[$e]->{X}); p($dta{ENSEMBLE}[$e]->{X_ERR});
 		p($dta{ENSEMBLE}[$e]->{Y}); p($dta{ENSEMBLE}[$e]->{Y_ERR});
+		p($dta{ENSEMBLE}[$e]->{SPEED});
 	}
 	if (@f) {
 		foreach $f (@f) {

@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Wed Mar 17 22:54:27 2021
+#                    dlm: Fri Nov 19 12:09:58 2021
 #                    (c) 2003 A.M. Thurnherr
-#					 uE-Info: 129 35 NIL 0 0 72 2 2 4 NIL ofnI
+#					 uE-Info: 131 28 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
     
 # Read RDI PD0 binary data files (*.[0-9][0-9][0-9])
@@ -127,6 +127,9 @@
 #	Mar  3, 2021: - adapted to Nortek PD0 files
 #	Mar 13, 2021: - finished adaptation to Nortek files
 #	Mar 17, 2021: - updated HISTORY
+#	Sep  1, 2021: - BUG: unexpected length warning did not have ens number
+#	Nov 18, 2021: - improved how ens patching is dealing with garbage
+#					in files
 # END OF HISTORY
     
 # FIRMWARE VERSIONS:
@@ -773,7 +776,8 @@ ENSEMBLE:
 
 		if (defined($ens_length) && ($el != $ens_length)) {
 			$RDI_PD0_IO::File_Dirty = 1;
-			print(STDERR "WARNING (RDI_PD0_IO): ensemble ${$E}[$#{$E}]->{NUMBER} skipped (unexpected length)\n");
+			printf(STDERR "WARNING (RDI_PD0_IO): ensemble %d(?) skipped (unexpected length)\n",
+								${$E}[$ens-1]->{NUMBER}+1);
 			pop(@{$E});
 			$ens--;
 			next;
@@ -1299,7 +1303,8 @@ sub WBPens($$$)
 
 		#----------------------------------------------------------------------
 		# Variable Leader #0
-		#	- read ensNo for debugging purposes
+		#	- read ensNo to make sure there are no problems
+		#	- in files with garbage, this test fails
 		#----------------------------------------------------------------------
 
 		sysseek(WBPF,$start_ens+$WBPofs[1]+2,0) || die("$WBPcfn: $!");
@@ -1308,8 +1313,11 @@ sub WBPens($$$)
 		sysseek(WBPF,$start_ens+$WBPofs[1]+11,0) || die("$WBPcfn: $!");			# jump to high byte
 		sysread(WBPF,$buf,1) == 1 || die("$WBPcfn: $!");
 		$ensNo += unpack('C',$buf) << 16;
-		die("ensNo = $ensNo (should be $dta->{ENSEMBLE}[$ens]->{NUMBER})\n")
-			unless ($ensNo == $dta->{ENSEMBLE}[$ens]->{NUMBER});
+		unless ($ensNo == $dta->{ENSEMBLE}[$ens]->{NUMBER}) {					# data file with garbage
+			printf(STDERR "$WBPcfn: WARNING: ensNo = $ensNo (should be $dta->{ENSEMBLE}[$ens]->{NUMBER})\n")
+				if ($#{$dta->{ENSEMBLE}}-$ens > 100);
+			last;
+		}
 
 		#----------------------------------------------------------------------
 		# Variable Leader #1
