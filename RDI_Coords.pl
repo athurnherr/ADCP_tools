@@ -1,73 +1,77 @@
 #======================================================================
 #                    R D I _ C O O R D S . P L 
 #                    doc: Sun Jan 19 17:57:53 2003
-#                    dlm: Wed Mar 17 23:20:13 2021
+#                    dlm: Thu Jul  4 13:39:04 2024
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 66 9 NIL 0 0 72 10 2 4 NIL ofnI
+#					 uE-Info: 172 5 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # RDI Workhorse Coordinate Transformations
 
 # HISTORY:
-#	Jan 19, 2003: - written
-#	Jan 21, 2003: - made it obey HEADING_BIAS (magnetic declination)
-#	Jan 22, 3003: - corrected magnetic declination
-#	Feb 16, 2003: - use pitch correction from RDI manual
-#	Oct 11, 2003: - BUG: return value of atan() had been interpreted
-#					     as degrees instead of radians
-#	Feb 27, 2004: - added velApplyHdgBias()
-#				  - changed non-zero HEADING_ALIGNMENT from error to warning
-#	Sep 16, 2005: - added deg() for [mkprofile]
-#	Aug 26, 2006: - BUG: incorrect transformation for uplookers
-#	Nov 30, 2007: - optimized &velInstrumentToEarth(), velBeamToInstrument()
-#				  - added support for 3-beam solutions
-#	Feb 12, 2008: - added threeBeamFlag
-#	Mar 18, 2009: - added &gimbal_pitch(), &angle_from_vertical()
-#	May 19, 2009: - added &velBeamToVertical()
-#	May 23, 2009: - debugged & renamed to &velBeamToBPEarth
-#	May 23, 2010: - changed prototypes of rad() & deg() to conform to ANTS
-#	Dec 20, 2010: - cosmetics
-#	Dec 23, 2010: - added &velBeamToBPInstrument
-#	Jan 22, 2011: - made velApplyHdgBias calculate sin/cos every time to allow
-#				    per-ensemble corrections
-#	Jan 15, 2012: - replaced defined(@...) by (@...) to get rid of warning
-#	Aug  7, 2013: - BUG: &velBeamToBPInstrument did not return any val unless
-#						 all beam velocities are defined
-#	Nov 27, 2013: - added &RDI_pitch(), &tilt_azimuth()
-#	Mar  4, 2014: - added support for ensembles with missing PITCH/ROLL/HEADING
-#	May 29, 2014: - BUG: vertical velocity can be calculated even without
-#						 heading
-#				  - removed some old debug statements
-#				  - removed unused code from &velBeamToBPInstrument
-#	Jan  5, 2016: - added &velEarthToInstrument(@), &velInstrumentToBeam(@)
-#	Jan  9, 2016: - added &velEarthToBeam(), &velBeamToEarth()
-#	Feb 29, 2016: - debugged & verified velEarthToInstrument(), velInstrumentToBeam()
-#				  - added velBeamToEarth()
-#	May 19, 2016: - begin implemeting bin interpolation
-#	May 25, 2016: - continued
-#	May 26, 2016: - made it work
-#	May 30, 2016: - begin implementing 2nd order attitude transformations
-#	Jun  6, 2016: - toEarth transformation in beamToBPEarth was but crude approximation;
-#					updated with transformation taken from Lohrman et al. (JAOT 1990)
-#				  - BUG: v34 sign was inconsistent with RDI coord manual
-#	Jun  8, 2016: - added $ens as arg to velInstrumentToBeam() for consistency
-#	Jul  7, 2016: - added velEarthToBPw() with algorithm debugged and verified
-#					by Paul Wanis from TRDI
-#	Oct 12, 2017: - documentation
-#	Nov 26, 2017: - BUG: velBeamtoBPEarth() did not respect missing values
-#	Nov 27, 2017: - BUG: numbersp() from [antslib.pl] was used
-#	Mar 28, 2018: - added &loadInstrumentTransformation()
-#	Jun  5, 2020: - added sscorr_w & sscorr_w_mooring
+#   Jan 19, 2003: - written
+#   Jan 21, 2003: - made it obey HEADING_BIAS (magnetic declination)
+#   Jan 22, 3003: - corrected magnetic declination
+#   Feb 16, 2003: - use pitch correction from RDI manual
+#   Oct 11, 2003: - BUG: return value of atan() had been interpreted
+#                        as degrees instead of radians
+#   Feb 27, 2004: - added velApplyHdgBias()
+#                 - changed non-zero HEADING_ALIGNMENT from error to warning
+#   Sep 16, 2005: - added deg() for [mkprofile]
+#   Aug 26, 2006: - BUG: incorrect transformation for uplookers
+#   Nov 30, 2007: - optimized &velInstrumentToEarth(), velBeamToInstrument()
+#                 - added support for 3-beam solutions
+#   Feb 12, 2008: - added threeBeamFlag
+#   Mar 18, 2009: - added &gimbal_pitch(), &angle_from_vertical()
+#   May 19, 2009: - added &velBeamToVertical()
+#   May 23, 2009: - debugged & renamed to &velBeamToBPEarth
+#   May 23, 2010: - changed prototypes of rad() & deg() to conform to ANTS
+#   Dec 20, 2010: - cosmetics
+#   Dec 23, 2010: - added &velBeamToBPInstrument
+#   Jan 22, 2011: - made velApplyHdgBias calculate sin/cos every time to allow
+#                   per-ensemble corrections
+#   Jan 15, 2012: - replaced defined(@...) by (@...) to get rid of warning
+#   Aug  7, 2013: - BUG: &velBeamToBPInstrument did not return any val unless
+#                        all beam velocities are defined
+#   Nov 27, 2013: - added &RDI_pitch(), &tilt_azimuth()
+#   Mar  4, 2014: - added support for ensembles with missing PITCH/ROLL/HEADING
+#   May 29, 2014: - BUG: vertical velocity can be calculated even without
+#                        heading
+#                 - removed some old debug statements
+#                 - removed unused code from &velBeamToBPInstrument
+#   Jan  5, 2016: - added &velEarthToInstrument(@), &velInstrumentToBeam(@)
+#   Jan  9, 2016: - added &velEarthToBeam(), &velBeamToEarth()
+#   Feb 29, 2016: - debugged & verified velEarthToInstrument(), velInstrumentToBeam()
+#                 - added velBeamToEarth()
+#   May 19, 2016: - begin implemeting bin interpolation
+#   May 25, 2016: - continued
+#   May 26, 2016: - made it work
+#   May 30, 2016: - begin implementing 2nd order attitude transformations
+#   Jun  6, 2016: - toEarth transformation in beamToBPEarth was but crude approximation;
+#                   updated with transformation taken from Lohrman et al. (JAOT 1990)
+#                 - BUG: v34 sign was inconsistent with RDI coord manual
+#   Jun  8, 2016: - added $ens as arg to velInstrumentToBeam() for consistency
+#   Jul  7, 2016: - added velEarthToBPw() with algorithm debugged and verified
+#                   by Paul Wanis from TRDI
+#   Oct 12, 2017: - documentation
+#   Nov 26, 2017: - BUG: velBeamtoBPEarth() did not respect missing values
+#   Nov 27, 2017: - BUG: numbersp() from [antslib.pl] was used
+#   Mar 28, 2018: - added &loadInstrumentTransformation()
+#   Jun  5, 2020: - added sscorr_w & sscorr_w_mooring
 #   Jun 29, 2020: - added comments for sscorr_w, which conflicts with LADCP_w_ocean
-#	Mar 17, 2021: - adapted velBeamToInstrument() to Nortek (checked w only)
-#				  - adapted velInstrumentToEarth() to Nortek, assuming Nortek pitch is gimbal pitch
+#   Mar 17, 2021: - adapted velBeamToInstrument() to Nortek (checked w only)
+#                 - adapted velInstrumentToEarth() to Nortek, assuming Nortek pitch is gimbal pitch
+#   Dec 22, 2023: - tried Nortek gimbal pitch option with Dan Torres' test cast
+#   Jun 20, 2024: - added Nortek support to velBeamToBPEarth()
+#   Jul  2, 2024: - BUG: Nortek had wrong beam numbers
 # HISTORY END
 
 # NORTEK TODO:
-#	- check u, v sign convention for Nortek
-#	- verify that gimbal pitch for Nortek gives better results
-#		for A20 test profile 900, the differences in w have a stddev of 1.3e-5 m/s
-#	- update gimbal pitch for Nortek in other routines
+#   - check u, v sign convention for Nortek
+#   - verify that gimbal pitch for Nortek gives better results
+#       - for 2019 A20 test profile 900, the differences in w have a stddev of 1.3e-5 m/s
+#       - for 2023 Torres test profile, the mkProfile differences are minimal
+#   - update gimbal pitch for Nortek in other routines
 
 use strict;
 use POSIX;
@@ -81,85 +85,91 @@ sub deg(@) { return $_[0]/$PI * 180; }
 # Tweakables
 #----------------------------------------------------------------------
 
-$RDI_Coords::minValidVels = 3;				# 3-beam solutions ok (velBeamToInstrument)
-$RDI_Coords::binMapping = 'linterp';		# 'linterp' or 'none' (earthVels, BPearthVels)
-$RDI_Coords::beamTransformation = 'LHR90';	# set to 'RDI' to use 1st order transformations from RDI manual
+$RDI_Coords::minValidVels = 3;              # 3-beam solutions ok (velBeamToInstrument)
+$RDI_Coords::binMapping = 'linterp';        # 'linterp' or 'none' (earthVels, BPearthVels)
+$RDI_Coords::beamTransformation = 'LHR90';  # set to 'RDI' to use 1st order transformations from RDI manual
 
 #----------------------------------------------------------------------
 # beam to earth transformation
-#	- loadInstrumentTransformation(filename) loads a file that contains the
-#	  output from the PS3 command, which includes the instrument transformation
-#	  matrix as follows:
-#	Instrument Transformation Matrix (Down):    Q14:
-#	  1.4689   -1.4682    0.0030   -0.0035       24067  -24055      49     -58
-#	 -0.0036    0.0029   -1.4664    1.4673         -59      48  -24025   24041
-#	  0.2658    0.2661    0.2661    0.2657        4355    4359    4359    4354
-#	  1.0373    1.0382   -1.0385   -1.0373       16995   17010  -17015  -16995
+#   - loadInstrumentTransformation(filename) loads a file that contains the
+#     output from the PS3 command, which includes the instrument transformation
+#     matrix as follows:
+#   Instrument Transformation Matrix (Down):    Q14:
+#     1.4689   -1.4682    0.0030   -0.0035       24067  -24055      49     -58
+#    -0.0036    0.0029   -1.4664    1.4673         -59      48  -24025   24041
+#     0.2658    0.2661    0.2661    0.2657        4355    4359    4359    4354
+#     1.0373    1.0382   -1.0385   -1.0373       16995   17010  -17015  -16995
 #----------------------------------------------------------------------
 
-$RDI_Coords::threeBeam_1 = 0;			# stats from velBeamToInstrument
+$RDI_Coords::threeBeam_1 = 0;           # stats from velBeamToInstrument
 $RDI_Coords::threeBeam_2 = 0;
 $RDI_Coords::threeBeam_3 = 0;
 $RDI_Coords::threeBeam_4 = 0;
 $RDI_Coords::fourBeam    = 0;
 
-$RDI_Coords::threeBeamFlag = 0;			# flag last transformation
+$RDI_Coords::threeBeamFlag = 0;         # flag last transformation
 
 { # STATIC SCOPE
-	my(@B2I);
+    my(@B2I);
 
-	sub loadInstrumentTransformation($)
-	{
-		die("loadInstrumentTransformation(): B2I matrix already defined\n")
-			if (@B2I);
-		open(ITF,$_[0]) || die("$_[0]: $!\n");
-		my($row) = 0;
-		while (<ITF>) {
-			if ($row == 0) {
-				next unless m{^Instrument Transformation Matrix \(Down\):};
-				$row = 1;
-			} elsif ($row <= 4) {
-				my(@vals) = split;
-				die("$_[0]: cannot decode row #$row of Instrument Transformation Matrix\n")
-					unless (@vals == 8);
-				for (my($i)=0; $i<4; $i++) {
-					die("$_[0]: cannot decode row #$row of Instrument Transformation Matrix\n")
-						unless numberp($vals[$i]);
-					$B2I[$row-1][$i] = $vals[$i];
-				}
-				$row++;
-			} else {
-				last;
-			}
-		}
-		die("$_[0]: cannot decode Instrument Transformation Matrix (row = $row)\n")
-			unless ($row == 5);
-		close(ITF);
-	}
+    sub loadInstrumentTransformation($)
+    {
+        die("loadInstrumentTransformation(): B2I matrix already defined\n")
+            if (@B2I);
+        open(ITF,$_[0]) || die("$_[0]: $!\n");
+        my($row) = 0;
+        while (<ITF>) {
+            if ($row == 0) {
+                next unless m{^Instrument Transformation Matrix \(Down\):};
+                $row = 1;
+            } elsif ($row <= 4) {
+                my(@vals) = split;
+                die("$_[0]: cannot decode row #$row of Instrument Transformation Matrix\n")
+                    unless (@vals == 8);
+                for (my($i)=0; $i<4; $i++) {
+                    die("$_[0]: cannot decode row #$row of Instrument Transformation Matrix\n")
+                        unless numberp($vals[$i]);
+                    $B2I[$row-1][$i] = $vals[$i];
+                }
+                $row++;
+            } else {
+                last;
+            }
+        }
+        die("$_[0]: cannot decode Instrument Transformation Matrix (row = $row)\n")
+            unless ($row == 5);
+        close(ITF);
+    }
 
-	sub velBeamToInstrument(@)
-	{
-		my($ADCP,$ens,$v1,$v2,$v3,$v4) = @_;
-		return undef unless (defined($v1) + defined($v2) +
-					   		 defined($v3) + defined($v4)
-								>= $RDI_Coords::minValidVels);
+    sub velBeamToInstrument(@)
+    {
+        my($ADCP,$ens,$v1,$v2,$v3,$v4) = @_;
+        return undef unless (defined($v1) + defined($v2) +
+                             defined($v3) + defined($v4)
+                                >= $RDI_Coords::minValidVels);
 
-		unless (@B2I) {															# nominal transformation matrix
-			my($a) = 1 / (2 * sin(rad($ADCP->{BEAM_ANGLE})));
-			my($b) = 1 / (4 * cos(rad($ADCP->{BEAM_ANGLE})));
-			my($c) = $ADCP->{CONVEX_BEAM_PATTERN} ? 1 : -1;
-			my($d) = $a / sqrt(2);
-			@B2I = ([$c*$a,	-$c*$a,	0,		0	 ],
-				    [0,		0,		-$c*$a,	$c*$a],
-				    [$b,	$b,		$b,		$b	 ],
-				    [$d,	$d,		-$d,	-$d	 ]);
-		}
+        unless (@B2I) {                                                         # nominal transformation matrix
+            my($a) = 1 / (2 * sin(rad($ADCP->{BEAM_ANGLE})));
+            my($b) = 1 / (4 * cos(rad($ADCP->{BEAM_ANGLE})));
+            my($c) = $ADCP->{CONVEX_BEAM_PATTERN} ? 1 : -1;
+            my($d) = $a / sqrt(2);
+            @B2I = ([$c*$a, -$c*$a, 0,      0    ],
+                    [0,     0,      -$c*$a, $c*$a],
+                    [$b,    $b,     $b,     $b   ],
+                    [$d,    $d,     -$d,    -$d  ]);
+        }
 
-		if ($ADCP->{PRODUCER} =~ '^Nortek') {									# Nortek ADCPs use different coord system
-			$v1 *= -1 if defined($v1);
-			$v2 *= -1 if defined($v2);
-			$v3 *= -1 if defined($v3);
-			$v4 *= -1 if defined($v4);
+
+        if ($ADCP->{PRODUCER} =~ '^Nortek') {                                   # Nortek ADCPs use different coord system
+            $v1 *= -1 if defined($v1);
+            $v2 *= -1 if defined($v2);
+            $v3 *= -1 if defined($v3);
+            $v4 *= -1 if defined($v4);
+##			($v1,$v2,$v3,$v4) = ($v3,$v1,$v2,$v4);                              # verified with bp solution below
+# alt?      ($v1,$v2,$v3,$v4) = ($v3,$v1,$v4,$v2);   
+###			($v1,$v2,$v3,$v4) = ($v2,$v4,$v3,$v1);   
+			($v1,$v2,$v3,$v4) = ($v2,$v4,$v1,$v3);   
+#####		($v1,$v2,$v3,$v4) = ($v4,$v2,$v1,$v3);   
 		}
 
 		if (!defined($v1)) {													# 3-beam solutions
@@ -229,7 +239,12 @@ $RDI_Coords::threeBeamFlag = 0;			# flag last transformation
 			$roll  = $ADCP->{ENSEMBLE}[$ens]->{ROLL};
 			my($rad_gimbal_pitch);
 			if ($ADCP->{PRODUCER} =~ '^Nortek') {
-				$rad_gimbal_pitch = rad($pitch);									# I am assuming that this is correct
+##				($pitch,$roll) = (-$roll,-$pitch);							# verified with BP solution below
+# alt?			($pitch,$roll) = ($roll,-$pitch);							
+###				($pitch,$roll) = (-$pitch,-$roll);							
+				($pitch,$roll) = ($pitch,$roll);							
+#####			($pitch,$roll) = ($pitch,-$roll);							
+				$rad_gimbal_pitch = rad($pitch);							# I am assuming that this is correct
 			} else {
 				$rad_gimbal_pitch = atan(tan(rad($pitch)) * cos(rad($roll)));
 			}
@@ -413,6 +428,19 @@ sub velEarthToBPw(@)
 			unless (defined($ADCP->{ENSEMBLE}[$ens]->{PITCH}) &&
                     defined($ADCP->{ENSEMBLE}[$ens]->{ROLL}));
 
+		if ($ADCP->{PRODUCER} =~ '^Nortek') {									# Nortek ADCPs use different coord system
+			$b1 *= -1 if defined($b1);
+			$b2 *= -1 if defined($b2);
+			$b3 *= -1 if defined($b3);
+			$b4 *= -1 if defined($b4);
+#			($b1,$b2,$b3,$b4) = ($b1,$b3,$b2,$b4);		## 88%, 72%
+##			($b1,$b2,$b3,$b4) = ($b3,$b1,$b2,$b4);		## 47%, 28%	 BEST
+# alt?		($b1,$b2,$b3,$b4) = ($b3,$b1,$b4,$b2);		## 62%, 71%
+###			($b1,$b2,$b3,$b4) = ($b2,$b4,$b3,$b1);		##
+			($b1,$b2,$b3,$b4) = ($b2,$b4,$b1,$b3);		##
+#####		($b1,$b2,$b3,$b4) = ($b4,$b2,$b1,$b3);		##
+		}
+
 		unless (defined($TwoCosBAngle)) {
 			$TwoCosBAngle = 2 * cos(rad($ADCP->{BEAM_ANGLE}));
 			$TwoSinBAngle = 2 * sin(rad($ADCP->{BEAM_ANGLE}));
@@ -424,6 +452,24 @@ sub velEarthToBPw(@)
 							  asin(sin($rad_gimbal_pitch)*cos($rad_roll) /
 								   sqrt(1-sin($rad_roll)**2*sin($rad_gimbal_pitch)**2));
 		my($sp) = sin($rad_calc_pitch); my($cp) = cos($rad_calc_pitch);
+		if ($ADCP->{PRODUCER} =~ '^Nortek') {
+##			($sp,$cp,$sr,$cr) = (-$sr,$cr,-$sp,$cp); ## (-$roll,-$pitch); 47%, 28%, best
+#			($sp,$cp,$sr,$cr) = (-$sr,$cr,$sp,$cp); ## (-$roll,$pitch);	99%
+# alt?		($sp,$cp,$sr,$cr) = ($sr,$cr,-$sp,$cp); ## ($roll,-$pitch);	62%, 71%, runner up
+#			($sp,$cp,$sr,$cr) = ($sr,$cr,$sp,$cp); ## ($roll,$pitch);	99%, 93%
+#			($sp,$cp,$sr,$cr) = ($sp,$cp,$sr,$cr); ## ($pitch,$roll); 99%
+#			($sp,$cp,$sr,$cr) = (-$sp,$cp,$sr,$cr); ## (-$pitch,$roll); 99%
+#			($sp,$cp,$sr,$cr) = ($sp,$cp,-$sr,$cr); ## ($pitch,-$roll); 94%
+#			($sp,$cp,$sr,$cr) = ($sp,$cp,$sr,$cr); ## (-$pitch,-$roll); 99%
+#			($sp,$cp,$sr,$cr) = (-$sr,-$cr,-$sp,-$cp); ## bogus 99%
+
+##		($sp,$cp,$sr,$cr) = (-$sr,$cr,-$sp,$cp); 	## (-$roll,-$pitch); 47%, 28%, best
+# alt?	($sp,$cp,$sr,$cr) = ($sr,$cr,-$sp,$cp); 	## ($roll,-$pitch);	62%, 71%, runner up
+###		($sp,$cp,$sr,$cr) = (-$sp,$cp,-$sr,$cr); 	## (-$pitch,-$roll); 40%, 31%
+		($sp,$cp,$sr,$cr) = ($sp,$cp,$sr,$cr); 		## 50/31(-p-r), 49/29(-pr), 38/33(p-r), 42/26(pr) BEST (based on profs and residuals)
+#####	($sp,$cp,$sr,$cr) = ($sp,$cp,-$sr,$cr); 	## 40/31(pr) 35/29(p-r) 52/28(-p-r) 50/31(-pr)
+
+		}
 
 		# Sign convention:
 		#	- refer to Coord manual Fig. 3
@@ -489,6 +535,8 @@ sub velEarthToBPw(@)
 	{
 		my($ADCP,$ens,$b1,$b2,$b3,$b4) = @_;
 		my($v12,$w12,$v34,$w34);
+
+		die if ($ADCP->{PRODUCER} =~ '^Nortek');
 
 		return (undef,undef,undef,undef) 
 			unless (defined($ADCP->{ENSEMBLE}[$ens]->{PITCH}) &&

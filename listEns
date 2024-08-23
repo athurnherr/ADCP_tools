@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T E N S 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Wed Mar  3 15:35:40 2021
+#                    dlm: Mon Dec  4 13:07:03 2023
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 239 14 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 66 52 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 $synopsis = 'list ensemble summaries (default), dump ensembles (-E), time-average ensembles (-T)';
@@ -63,6 +63,7 @@ $synopsis = 'list ensemble summaries (default), dump ensembles (-E), time-averag
 #	Feb 13, 2020: - added support for $readDataProgress
 #	Feb 19, 2021: - BUG: -T did not handle new years correctly
 #	Mar  3, 2021: - BUG: debug statement left in place
+#	Dec  4, 2023: - BUG: ESW was incorrectly decoded
 # END OF HISTORY
 
 # Notes:
@@ -519,7 +520,8 @@ if ($opt_A) {										# select output fmt: ANTS
 			$dta{ENSEMBLE}[$e]->{BIN1VELS},
 			$dta{ENSEMBLE}[$e]->{DATA_SOURCE_ID},
 		);
-		printf(' 0x%08X',$dta{ENSEMBLE}[$e]->{ERROR_STATUS_WORD})
+		printf(" %08b %08b",($dta{ENSEMBLE}[$e]->{ERROR_STATUS_WORD}&0xFF00)>>8,
+							($dta{ENSEMBLE}[$e]->{ERROR_STATUS_WORD}&0x00FF))
 			if ($dta{FIXED_LEADER_BYTES} >= 53);
 		foreach my $f (@addFields) {
 			my($fn,$fi) = ($f =~ m{([^[]*)(\[.*)});

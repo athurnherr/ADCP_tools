@@ -1,9 +1,9 @@
 #======================================================================
 #                    R D I _ P D 0 _ I O . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Fri Nov 19 12:09:58 2021
+#                    dlm: Tue Jul  2 13:36:12 2024
 #                    (c) 2003 A.M. Thurnherr
-#					 uE-Info: 131 28 NIL 0 0 72 2 2 4 NIL ofnI
+#					 uE-Info: 135 0 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
     
 # Read RDI PD0 binary data files (*.[0-9][0-9][0-9])
@@ -130,6 +130,8 @@
 #	Sep  1, 2021: - BUG: unexpected length warning did not have ens number
 #	Nov 18, 2021: - improved how ens patching is dealing with garbage
 #					in files
+#	Dec  4, 2023: - added comment on ESW
+#	Jul  2, 2024: - BUG: Nortek Sig-100 PD0 files had wrong beam frequency
 # END OF HISTORY
     
 # FIRMWARE VERSIONS:
@@ -183,13 +185,9 @@
 #	  setting (e.g. xducer orientation); I'v made an educated guess
 #	  as to which fields to move to the ENS array
 #	- all units except pressure are SI, i.e. in m and m/s
-#	- I don't understand the ERROR_STATUS_WORD; here's what 3 different
-#	  instruments returned:
-#		0x88000100	FSU instrument during A0304 (Firmware 16.12)
-#		0x88008180	LDEO uplooker (slave) during NBP0402 (Firmware 16.21)
-#		0x00008180	LDEO downlooker (master) during NBP0402 (Firmware 16.21)
-#	  According to the manual (January 2001 version) this would, for example,
-#	  indicate power failures on both FSU and LDEO slave instruments...
+#	- I don't understand the ERROR_STATUS_WORD; values found:
+#		- 00000001 00000000 (2023 Bill Williams moored ADCP after glitch with 5-min
+#							 data gap; file BI22_004.000)
 #	- defining the variable "$RDI_PD0_IO::IGNORE_Y2K_CLOCK" before calling &readData()
 #	  makes the code ignore the Y2K clock and use the old clock instead; this 
 #	  is used for Dan Torres' KVH system
@@ -643,14 +641,17 @@ sub WBRhdr($)
 
 		if ($W1 == 0x6953 && $W2 == 0x6E67 &&
 			$W3 == 0x7461 && $W4 == 0x0075) {
-				$dta->{INSTRUMENT_TYPE} = 'Signature';
+				$dta->{INSTRUMENT_TYPE}    = 'Signature';
+				$dta->{BEAM_FREQUENCY}     =  100;				# NOMINAL
 				$dta->{TRANSMIT_POWER_MAX} = ($dta->{TRANSMIT_POWER} == 122);
-				$dta->{PRODUCER} = 'Nortek ADCP' if ($dta->{PRODUCER} eq 'TRDI or Nortek ADCP');
+				$dta->{PRODUCER} 		   = 'Nortek ADCP'
+					if ($dta->{PRODUCER} eq 'TRDI or Nortek ADCP');
 		} else {
-			$dta->{INSTRUMENT_TYPE} = 'Workhorse';
-			$dta->{CPU_SERIAL_NUMBER} = sprintf("%04X%04X%04X%04X",$W1,$W2,$W3,$W4);
-			$dta->{TRANSMIT_POWER_MAX} = ($dta->{TRANSMIT_POWER} == 255);
-			$dta->{PRODUCER} = 'TRDI ADCP' if ($dta->{PRODUCER} eq 'TRDI or Nortek ADCP');
+				$dta->{INSTRUMENT_TYPE} 	= 'Workhorse';
+				$dta->{CPU_SERIAL_NUMBER} 	= sprintf("%04X%04X%04X%04X",$W1,$W2,$W3,$W4);
+				$dta->{TRANSMIT_POWER_MAX} 	= ($dta->{TRANSMIT_POWER} == 255);
+				$dta->{PRODUCER} 			= 'TRDI ADCP'
+					if ($dta->{PRODUCER} eq 'TRDI or Nortek ADCP');
 		}
     
 		$dta->{NARROW_BANDWIDTH} = ($W5 == 1);

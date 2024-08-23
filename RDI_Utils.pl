@@ -1,14 +1,14 @@
 #======================================================================
-#                    R D I _ U T I L S . P L 
+#                    / D A T A / S R C / O C E A N O G R A P H Y / A D C P _ T O O L S / R D I _ U T I L S . P L 
 #                    doc: Wed Feb 12 10:21:32 2003
-#                    dlm: Fri Jul  1 16:27:05 2022
+#                    dlm: Tue Sep 19 19:33:26 2023
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 69 70 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 70 45 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # miscellaneous RDI-specific utilities
 
-# History:
+# HISTORY:
 #	Feb 12, 2003: - created
 #	Feb 14, 2003: - added check for short (bad) data files
 #	Feb 26, 2004: - added Earth-coordinate support
@@ -67,6 +67,8 @@
 #					of RTi test file with 5s ensembles
 #	Apr 13, 2020: - added $RDI_Utils::No_Gap_Warnings
 #	Jul  1, 2020: - replaced PANIC on dt<0 with ensemble-skipping code
+#	Sep 23, 2023: - strictified dt<0 to dt<=0
+# HISTORY END
 
 use strict;
 
@@ -486,8 +488,8 @@ sub mk_prof(...)											# make profile
 #		die(sprintf("PANIC: negative dt = $dt between ensembles %d and %d\n",
 #			$dta->{ENSEMBLE}[$lastgood]->{NUMBER},$dta->{ENSEMBLE}[$e]->{NUMBER}))
 #				if ($dt < 0);
-		if ($dt < 0) {
-			printf(STDERR "WARNING: negative dt; ensemble #%d ignored\n",
+		if ($dt <= 0) {
+			printf(STDERR "WARNING: non-positive dt; ensemble #%d ignored\n",
 				$dta->{ENSEMBLE}[$e]->{NUMBER});
 			next;
         }
