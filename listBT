@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B T 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Mon Apr  2 18:31:18 2018
+#                    dlm: Thu Dec 26 21:13:19 2024
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 43 61 NIL 0 0 72 11 2 4 NIL ofnI
+#                    uE-Info: 44 63 NIL 0 0 72 11 2 4 NIL ofnI
 #======================================================================
 
 # Extract Bottom-Track Data
@@ -41,6 +41,7 @@
 #	Jul 30, 2009: - NaN => nan
 #	Nov 25, 2013: - checkEnsemble() expunged
 #	Apr  2, 2018: - BUG: velBeamToInstrument() used old usage
+#	Dec 26, 2024: - added error message on PD0 input without BT
 
 # NOTES:
 #	- the RDI BT data contains ranges that are greater than the
@@ -418,7 +419,9 @@ sub dumpProf($$$)
 # STEP 1: Calculate Depth (integrate w)
 #======================================================================
 
+my($BT);
 for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {
+	$BT += @{$dta{ENSEMBLE}[$e]->{BT_VELOCITY}};
 	$dta{ENSEMBLE}[$e]->{W_REF} = w($e);
 	next unless (defined($start_e) ||
 				 defined($dta{ENSEMBLE}[$e]->{W_REF}));
@@ -436,6 +439,9 @@ for ($e=0; $e<=$#{$dta{ENSEMBLE}}; $e++) {
 	$maxz_e=$e,$maxz = $z unless ($z < $maxz);
 	$dta{ENSEMBLE}[$e]->{DEPTH} = $z;
 }
+
+die("$ARGV[0]: no BT data\n")
+	unless ($BT > 0);
 
 unless ($opt_R) {
 	($w_depth,$swd) = find_seabed(\%dta,$maxz_e,$beamCoords);
