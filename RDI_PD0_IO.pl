@@ -1,9 +1,9 @@
 #======================================================================
-#                    R D I _ P D 0 _ I O . P L 
+#                    R D I _ B B _ R E A D . P L 
 #                    doc: Sat Jan 18 14:54:43 2003
-#                    dlm: Tue Jul  2 13:36:12 2024
+#                    dlm: Sun Mar 16 00:42:39 2025
 #                    (c) 2003 A.M. Thurnherr
-#					 uE-Info: 135 0 NIL 0 0 72 2 2 4 NIL ofnI
+#					 uE-Info: 135 67 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
     
 # Read RDI PD0 binary data files (*.[0-9][0-9][0-9])
@@ -132,6 +132,7 @@
 #					in files
 #	Dec  4, 2023: - added comment on ESW
 #	Jul  2, 2024: - BUG: Nortek Sig-100 PD0 files had wrong beam frequency
+#	Mar 16, 2025: - BUG: missing BT data type not handled correctly
 # END OF HISTORY
     
 # FIRMWARE VERSIONS:
@@ -1083,7 +1084,7 @@ ENSEMBLE:
 		#-----------------------------------------
 
 		my($bt_di) = WBRdtaIndex(0x0600);
-		unless (defined($pctg_di)) {											# no BT found => next ens
+		unless (defined($bt_di)) {												# no BT found => next ens
 			sysseek(WBRF,$start_ens+$ens_length+2,0) || die("$WBRcfn: $!");
 			next;
 		}	    
@@ -1174,10 +1175,12 @@ sub WBRdtaTypes()																# return list of data types
 	my(@dt);
 	our($ndt,$buf,$id,$start_ens,@WBRofs);
 	
-	for (my($di)=2; $di<$ndt; $di++) {
+#	for (my($di)=2; $di<$ndt; $di++) {											# skip Fixed and Variable leaders
+	for (my($di)=0; $di<$ndt; $di++) {
 		sysseek(WBRF,$start_ens+$WBRofs[$di],0) || die("$WBRcfn: $!");
 		sysread(WBRF,$buf,2) == 2 || die("$WBRcfn: $!");
 		$id = unpack('v',$buf);
+##		printf(STDERR "id[$di] = 0x%04X\n",$id);
 		if 	  ($id == 0x0000) { push(@dt,'FixedLeader'); }
 		elsif ($id == 0x0080) { push(@dt,'VariableLeader'); }
 		elsif ($id == 0x0081) { push(@dt,'VariableLeader'); }					# TRDI Ocean Surveyor
@@ -1186,7 +1189,7 @@ sub WBRdtaTypes()																# return list of data types
 		elsif ($id == 0x0300) { push(@dt,'ECHO_AMPLITUDE'); }
 		elsif ($id == 0x0400) { push(@dt,'PERCENT_GOOD'); }
 		elsif ($id == 0x0600) { push(@dt,'BOTTOM_TRACK'); }
-		else				  { push(@dt,'Unknown'); }
+		else				  { push(@dt,sprintf('0x%04x (unknown)',$id)); }
     }
     return @dt;
 }

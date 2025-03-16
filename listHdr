@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T H D R 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Mon Oct 18 11:05:30 2021
+#                    dlm: Sun Mar 16 00:37:32 2025
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 117 41 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 52 65 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the RDI BB header
@@ -49,6 +49,7 @@
 #	Mar  6, 2021: - adapted to Nortek Signature data files
 #	Mar 17, 2021: - updated HISTORY
 #	Aug 23, 2021: - added power and bandwidth to -s output
+#	Mar 16, 2025: - modifed order of File Format parameter output
 
 use Getopt::Std;
 
@@ -137,12 +138,12 @@ while ($ARGV[0] ne '') {
 
 	if ($opt_l) {
 		print("    File Format:\n");
-#		printf("\tNUMBER_OF_DATA_TYPES\t\t= %d\n",$hdr{NUMBER_OF_DATA_TYPES});
-		printf("\tDATA_TYPES\t\t\t: @{$hdr{DATA_TYPES}}\n");
-		printf("\tFIXED_LEADER_BYTES\t\t= %4d bytes\n",$hdr{FIXED_LEADER_BYTES});
 		printf("\tENSEMBLE_BYTES\t\t\t= %4d bytes\n",$hdr{ENSEMBLE_BYTES});
 		printf("\tHEADER_BYTES\t\t\t= %4d bytes\n",$hdr{HEADER_BYTES});
+		printf("\tFIXED_LEADER_BYTES\t\t= %4d bytes\n",$hdr{FIXED_LEADER_BYTES});
 		printf("\tVARIABLE_LEADER_BYTES\t\t= %4d bytes\n",$hdr{VARIABLE_LEADER_BYTES});
+#		printf("\tNUMBER_OF_DATA_TYPES\t\t= %d\n",$hdr{NUMBER_OF_DATA_TYPES});
+		printf("\tDATA_TYPES\t\t\t: @{$hdr{DATA_TYPES}}\n");
 		printf("\tVELOCITY_DATA_BYTES\t\t= %4d bytes\n",$hdr{VELOCITY_DATA_BYTES})
 			if defined($hdr{VELOCITY_DATA_BYTES});
 		printf("\tCORRELATION_DATA_BYTES\t\t= %4d bytes\n",$hdr{CORRELATION_DATA_BYTES})
