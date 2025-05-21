@@ -2,9 +2,9 @@
 #======================================================================
 #                    M K P R O F I L E 
 #                    doc: Sun Jan 19 18:55:26 2003
-#                    dlm: Mon May 13 12:43:37 2024
+#                    dlm: Mon Nov 18 18:58:04 2024
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 135 41 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 242 33 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Make an LADCP Profile by Integrating W (similar to Firing's scan*).
@@ -100,6 +100,7 @@
 #	Oct 12, 2021: - added speed to output on -M
 #	Oct 18, 2021: - BUG: speed bombed with zero valid velocities in ensemble
 #	May 13, 2024: - BUG: opt_n does nothing (removed)
+#	Nov 18, 2024: - added date to output
 # HISTORY END
 
 # NOTES:
@@ -239,6 +240,7 @@ printf(STDERR "ADCP                  : %s (s/n %d) %s\n",
 											$dta{INSTRUMENT_TYPE},$dta{SERIAL_NUMBER},
 											$dta{ENSEMBLE}[0]->{XDUCER_FACING_UP} ? 'UL' : 'DL');
 printf(STDERR "# of ensembles        : %d\n",scalar(@{$dta{ENSEMBLE}}));
+printf(STDERR "Date of collection    : $dta{ENSEMBLE}[$firstgood]->{DATE}\n");
 
 my($sdt1,$sdt2,$ndt);
 my($mindt1) = my($mindt2) = 9e99;
