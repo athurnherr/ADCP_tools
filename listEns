@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T E N S 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Mon Dec  4 13:07:03 2023
+#                    dlm: Tue Sep 30 16:03:05 2025
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 66 52 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 69 78 NIL 0 0 72 2 2 4 NIL ofnI
 #======================================================================
 
 $synopsis = 'list ensemble summaries (default), dump ensembles (-E), time-average ensembles (-T)';
@@ -64,6 +64,9 @@ $synopsis = 'list ensemble summaries (default), dump ensembles (-E), time-averag
 #	Feb 19, 2021: - BUG: -T did not handle new years correctly
 #	Mar  3, 2021: - BUG: debug statement left in place
 #	Dec  4, 2023: - BUG: ESW was incorrectly decoded
+#	Sep 30, 2025: - adapted to new active file header with /bin/env
+#				  - added number of valid vels on -A
+#				  - changed semantics of -p to apply to averages when using -T
 # END OF HISTORY
 
 # Notes:
@@ -188,7 +191,7 @@ die("$ARGV[0]: -b requires beam-coordinate data\n")
 if ($opt_A) {										# select output fmt: ANTS
 	print("#ANTS#PARAMS# PD0_file{$ARGV[0]}\n");
 	printf("#ANTS#PARAMS# N_ensembles{%d}\n",scalar(@{$dta{ENSEMBLE}}));
-	print('#ANTS#FIELDS# {ens} {date} {time} {unix-time} {xducer_up} {temp} {hdg} {pitch} {roll} {XMIT_VOLTAGE} {XMIT_CURRENT}');
+	print('#ANTS#FIELDS# {ens} {date} {time} {unix-time} {xducer_up} {temp} {hdg} {pitch} {roll} {nvels_bin1} {XMIT_VOLTAGE} {XMIT_CURRENT}');
 	print(' {ESW}') if ($dta{FIXED_LEADER_BYTES} >= 53);
 	print("$addLayout\n");
 
@@ -210,6 +213,9 @@ if ($opt_A) {										# select output fmt: ANTS
 		else { printf(' nan'); }
 		if (defined($dta{ENSEMBLE}[$e]->{ROLL})) { printf(' %g',$dta{ENSEMBLE}[$e]->{ROLL}); }
 		else { printf(' nan'); }
+		printf(' %d',
+			$dta{ENSEMBLE}[$e]->{BIN1VELS},
+		);
 		printf(' %g %g',
 			$dta{ENSEMBLE}[$e]->{ADC_XMIT_VOLTAGE},
 			$dta{ENSEMBLE}[$e]->{ADC_XMIT_CURRENT},
@@ -236,7 +242,7 @@ if ($opt_A) {										# select output fmt: ANTS
 		my($ssCorr) = defined($opt_S) ? ssCorr($dta{ENSEMBLE}[$e],$SS_salin,$SS_temp,$SS_depth) : 1;
 
 		open(P,">$file") || die("$file: $!\n");
-		print(P "#!/usr/bin/perl -S list\n");
+		print(P "#!/usr/bin/env list\n");
 		printf(P "#ANTS#PARAMS# " .
 				"date{$dta{ENSEMBLE}[$e]->{DATE}} " .
 				"time{$dta{ENSEMBLE}[$e]->{TIME}} " .
@@ -338,10 +344,11 @@ if ($opt_A) {										# select output fmt: ANTS
 	$cbin		= 1;											# current tim-bin number; used inside dumpEns
 	$max_nens	= 0;											# max number of samples
 
-	sub dde($$) 												# divide allowing for zero; used inside dumpEns
+	sub dde($$$) 												# divide allowing for zero; used inside dumpEns
 	{
-		my($sum,$n) = @_;
-		return $n ? $sum/$n : nan;
+		my($sum,$n,$good) = @_;
+		return NaN unless $good;
+		return $n ? $sum/$n : NaN;
 	}
 
 	$dumpEns = sub ($)											# time average and output when next bin is started
@@ -364,7 +371,7 @@ if ($opt_A) {										# select output fmt: ANTS
 			if ($a1_n[0] >= $opt_i*$max_nens) { 				# write file only if sufficient samples (-i)
 			    
 				open(P,">$file") || die("$file: $!\n"); 		# open file and output metadata
-				print(P "#!/usr/bin/perl -S list\n");
+				print(P "#!/usr/bin/env list\n");
 				print(P "#ANTS# $cmdline\n");
 				printf(P "#ANTS#PARAMS# " .
 						"PD0_file{$ARGV[0]} " .
@@ -374,7 +381,7 @@ if ($opt_A) {										# select output fmt: ANTS
 						"soundspeed_correction{%s} " .
 						"magnetic_declination{%g} " .
 						"\n",
-							&dde($dn_s,$dn_n),
+							&dde($dn_s,$dn_n,1),
 							$a1_n[0],$feib,$leib,$deltaT,
 							(defined($opt_S) ? $opt_S : "NONE!"),
 							$opt_M
@@ -397,19 +404,20 @@ if ($opt_A) {										# select output fmt: ANTS
 							? ssCorr($dta{ENSEMBLE}[$feib-$dta{ENSEMBLE}[0]->{NUMBER}],$SS_salin,$SS_temp,$SS_depth)
 							: 1;
 				for (my($b)=0; $b<$dta{N_BINS}; $b++) { 									# output data
+					my($good) = ($v1_n[$b]/$max_nens  >= 0.01*$opt_p);
 					my($dz) = $ssCorr * ($dta{DISTANCE_TO_BIN1_CENTER} + $b*$dta{BIN_LENGTH});
 					printf(P "%d %g  %g %g %g %g  %g %g  %d %d %d %d  %d %d %d %d  %d %d %d %d	%d %d",
 						$b+1,$dz,
-						&dde($v1[$b],$v1_n[$b]),&dde($v2[$b],$v2_n[$b]),&dde($v3[$b],$v3_n[$b]),&dde($v4[$b],$v4_n[$b]),
-						&dde($w12[$b],$w12_n[$b]),&dde($w34[$b],$w34_n[$b]),
-						&dde($c1[$b],$c1_n[$b]),&dde($c2[$b],$c2_n[$b]),&dde($c3[$b],$c3_n[$b]),&dde($c4[$b],$c4_n[$b]),
-						&dde($a1[$b],$a1_n[$b]),&dde($a2[$b],$a2_n[$b]),&dde($a3[$b],$a3_n[$b]),&dde($a4[$b],$a4_n[$b]),
-						&dde($p1[$b],$p1_n[$b]),&dde($p2[$b],$p2_n[$b]),&dde($p3[$b],$p3_n[$b]),&dde($p4[$b],$p4_n[$b]),
+						&dde($v1[$b],$v1_n[$b],$good),&dde($v2[$b],$v2_n[$b],$good),&dde($v3[$b],$v3_n[$b],$good),&dde($v4[$b],$v4_n[$b],$good),
+						&dde($w12[$b],$w12_n[$b],$good),&dde($w34[$b],$w34_n[$b],$good),
+						&dde($c1[$b],$c1_n[$b],1),&dde($c2[$b],$c2_n[$b],1),&dde($c3[$b],$c3_n[$b],1),&dde($c4[$b],$c4_n[$b],1),
+						&dde($a1[$b],$a1_n[$b],1),&dde($a2[$b],$a2_n[$b],1),&dde($a3[$b],$a3_n[$b],1),&dde($a4[$b],$a4_n[$b],1),
+						&dde($p1[$b],$p1_n[$b],1),&dde($p2[$b],$p2_n[$b],1),&dde($p3[$b],$p3_n[$b],1),&dde($p4[$b],$p4_n[$b],1),
 						$v1_n[$b],$v4_n[$b]
 					);
 
 					for (my($i)=0; $i<@af; $i++) {
-						printf(P "%g ",&dde($af[$i][$b],$af_n[$i][$b]));
+						printf(P "%g ",&dde($af[$i][$b],$af_n[$i][$b],1));
 					}
 					print(P "\n");
 				}
@@ -442,13 +450,17 @@ if ($opt_A) {										# select output fmt: ANTS
 			my(@v,$this_w12,$this_w34);
 			if ($beamCoords) {																# convert to earth coordinates
 				undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0])
-					if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][0] < $opt_p) || ($opt_d == 1));
+					if ($opt_d == 1);
+#					if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][0] < $opt_p) || ($opt_d == 1));
 				undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][1])
-					if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][1] < $opt_p) || ($opt_d == 2));
+					if ($opt_d == 2);
+#					if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][1] < $opt_p) || ($opt_d == 2));
 				undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][2])
-					if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][2] < $opt_p) || ($opt_d == 3));
+					if ($opt_d == 3);
+#					if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][2] < $opt_p) || ($opt_d == 3));
 				undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][3])
-					if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][3] < $opt_p) || ($opt_d == 4));
+					if ($opt_d == 4);
+#					if (($dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b][3] < $opt_p) || ($opt_d == 4));
 				($dummy,$this_w12,$dummy,$this_w34) =
 					velBeamToBPEarth(\%dta,$e,@{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]});
 				@v = $opt_b ? @{$dta{ENSEMBLE}[$e]->{VELOCITY}[$b]} :
