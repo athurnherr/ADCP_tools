@@ -2,9 +2,9 @@
 #======================================================================
 #                    M E A N P R O F 
 #                    doc: Fri Feb 22 08:40:18 2008
-#                    dlm: Sat Jul 27 08:27:45 2019
+#                    dlm: Thu Jan  8 11:02:48 2026
 #                    (c) 2008 A.M. Thurnherr
-#                    uE-Info: 56 36 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 280 25 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # extract time-averaged mean profile from ADCP data
@@ -18,6 +18,7 @@
 #				  - BUG: division by zero in empty bins
 #	Apr 10, 2018: - activate output
 #	Aug 24, 2018: - BUG: code bombed when there are no 4-beam solutions
+#	Jan  8, 2026: - adapted to /usr/bin/env
 
 # Soundspeed Correction:
 #	- based on first ensemble only
@@ -276,7 +277,7 @@ unless ($opt_Q) {
 				? ssCorr($dta{ENSEMBLE}[$fe],$SS_salin,$SS_temp,$SS_depth)
 				: 1;
 
-	print("#!/usr/bin/perl -S list\n");
+	print("#!/usr/bin/env list\n");
 	chmod(0777&~umask,*STDOUT);
 	print("#ANTS#PARAMS# ");
 	foreach my $k (keys(%P)) {

@@ -2,9 +2,9 @@
 #======================================================================
 #                    M K P R O F I L E 
 #                    doc: Sun Jan 19 18:55:26 2003
-#                    dlm: Mon Nov 18 18:58:04 2024
+#                    dlm: Thu Jan  8 11:03:13 2026
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 242 33 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 731 21 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Make an LADCP Profile by Integrating W (similar to Firing's scan*).
@@ -101,6 +101,7 @@
 #	Oct 18, 2021: - BUG: speed bombed with zero valid velocities in ensemble
 #	May 13, 2024: - BUG: opt_n does nothing (removed)
 #	Nov 18, 2024: - added date to output
+#	Jan  8, 2026: - adapted to /usr/bin/env
 # HISTORY END
 
 # NOTES:
@@ -727,7 +728,7 @@ exit(0) if ($opt_Q);
 # output profile in active ANTS format
 #----------------------------------------------------------------------
 
-print("#!/usr/bin/perl -S list\n");		
+print("#!/usr/bin/env list\n");		
 chmod(0777&~umask,*STDOUT);
 
 print("#ANTS# [] $USAGE\n");

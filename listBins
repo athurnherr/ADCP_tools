@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T B I N S 
 #                    doc: Fri Aug 25 15:57:05 2006
-#                    dlm: Fri Jun  5 13:45:23 2020
+#                    dlm: Thu Jan  8 11:01:59 2026
 #                    (c) 2006 A.M. Thurnherr
-#                    uE-Info: 367 103 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 80 0 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # Split data file into per-bin time series.
@@ -75,6 +75,8 @@
 #				  - BUG: dn did not have sufficient digits
 #	Feb 13, 2020: - added -z
 #	May 11, 2020: - removed -z, added -t -m
+#	Jan  8, 2026: - adapted to /usr/bin/env
+# HISTORY END
 
 # General Notes:
 #	- everything (e.g. beams) is numbered from 1
@@ -183,7 +185,7 @@ sub dumpBin($$$)						# write time series of single bin
 	my($out) = sprintf($opt_o,$b+1);
 
 	open(P,"$out") || die("$out: $!\n");
-	print(P "#!/usr/bin/perl -S list\n");
+	print(P "#!/usr/bin/env -S list\n");
 	chmod(0777&~umask,*P);																	# activate output
 	print(P "#ANTS#PARAMS# ");
 	foreach my $k (keys(%P)) {

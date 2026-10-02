@@ -1,9 +1,9 @@
 #======================================================================
 #                    A D C P _ T O O L S _ L I B . P L 
 #                    doc: Tue Jan  5 10:45:47 2016
-#                    dlm: Fri Oct 31 18:30:30 2025
+#                    dlm: Fri Oct  2 08:07:55 2026
 #                    (c) 2016 A.M. Thurnherr
-#                    uE-Info: 24 25 NIL 0 0 72 0 2 4 NIL ofnI
+#                    uE-Info: 25 25 NIL 0 0 72 0 2 4 NIL ofnI
 #======================================================================
 
 # HISTORY:
@@ -20,8 +20,9 @@
 #	Mar 15, 2024: - updated to V2.6 for LADCP_w V2.4
 #	Aug 23, 2024: - updated to V2.7 for GitHUB release
 #	Oct 31, 2025: - updated to V2.8 for GitHUB update
+#	Oct  2, 2026: - updated to V2.9 for GitHUB update
 
-$ADCP_tools_version = 2.8;
+$ADCP_tools_version = 2.9;
 
 die(sprintf("$0: obsolete ADCP_tools V%.1f; V%.1f required\n",
     $ADCP_tools_version,$ADCP_tools_minVersion))

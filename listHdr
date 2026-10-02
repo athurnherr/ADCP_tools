@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T H D R 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Sun Mar 16 00:37:32 2025
+#                    dlm: Thu Jan  8 11:02:12 2026
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 52 65 NIL 0 0 72 10 2 4 NIL ofnI
+#                    uE-Info: 66 26 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 # Print useful info from the RDI BB header
@@ -50,6 +50,8 @@
 #	Mar 17, 2021: - updated HISTORY
 #	Aug 23, 2021: - added power and bandwidth to -s output
 #	Mar 16, 2025: - modifed order of File Format parameter output
+#	Jan  8, 2026: - adapted to /usr/bin/env
+# HISTORY END
 
 use Getopt::Std;
 
@@ -61,7 +63,7 @@ die("Usage: $0 [-s)ummary] [-l)ong listing] <PD0 file[...]>\n")
     unless (&getopts('ls') && @ARGV);
 
 if ($opt_s) {
-	print("#!/usr/bin/perl -S list\n");     
+	print("#!/usr/bin/env list\n");     
 	chmod(0777&~umask,*STDOUT);
 	print("#ANTS#FIELDS# {id} {serial_number} {transducer_frequency} {max_power} {bandwidth}" .
 					   " {number_of_bins} {blanking_distance} {bin_length} {pulse_length}\n");

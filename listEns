@@ -2,9 +2,9 @@
 #======================================================================
 #                    L I S T E N S 
 #                    doc: Sat Jan 18 18:41:49 2003
-#                    dlm: Tue Sep 30 16:03:05 2025
+#                    dlm: Thu Dec 11 14:55:25 2025
 #                    (c) 2003 A.M. Thurnherr
-#                    uE-Info: 69 78 NIL 0 0 72 2 2 4 NIL ofnI
+#                    uE-Info: 79 56 NIL 0 0 72 10 2 4 NIL ofnI
 #======================================================================
 
 $synopsis = 'list ensemble summaries (default), dump ensembles (-E), time-average ensembles (-T)';
@@ -67,6 +67,16 @@ $synopsis = 'list ensemble summaries (default), dump ensembles (-E), time-averag
 #	Sep 30, 2025: - adapted to new active file header with /bin/env
 #				  - added number of valid vels on -A
 #				  - changed semantics of -p to apply to averages when using -T
+#	Dec  8, 2025: - added -t)ransducer depth to change output from dz to depth
+#	Dec  9, 2025: - BUG: calculated end time when using -Tstart,dt used date of first instead of
+#						 last ensemble
+#				  - added -T consistency checks
+#	Dec 10, 2025: - improved error messages
+#	Dec 11, 2025: - -f => -F
+#				  - added new -f <first bin>
+#	Dec 12, 2025: - BUG: on -T, first time bin was twice the length, messing up -p
+#				  - BUG: max_nens does not make sense with unbuffered processing; removed -i
+#				  - BUG: on -T some files could be empty
 # END OF HISTORY
 
 # Notes:
@@ -87,33 +97,44 @@ require "$ANTS/libconv.pl";
 ($self) = ($0 =~ m{.*/([^/]+)});
 $cmdline = "$self @ARGV";
 
-die("\n$self [-4ABbdEfiMprSTw] <PD0 file> -- $synopsis\n\nCommand-Line Options:\n\t" .
+die("\n$self [-4ABbdEFfiMprSTtw] <PD0 file> -- $synopsis\n\nCommand-Line Options:\n\t" .
 			  "Output Ensemble Summary (default mode):\n\t\t" .
 				  "[-A)NTS format]\n\t\t" .
 			  "Dump Ensembles (-E|-T; ANTS Format):\n\t\t" .
 				  "[dump individual -E)nsemples <.suff>]\n\t\t" .
 				  "[-T)ime-average ensembles [time-series start (decimal day),]<averaging interval (days)>[,time-series end (decimal day)]]\n\t\t\t" .
-				  	"[-i)gnore bins with <fraction> of max samples (-T only)]\n\t\t\t" .
 				  	"[output -B)asename <bn>]\n\t\t" .
 				  "[-M)agnetic <declination>]\n\t\t" .
 				  "[-S)oundspeed correction <salin|*,temp|*,depth|*>\n\t\t" .
 				  "[require min -p)ercent-good <#>]\n\t\t" .
 				  "[keep -b)eam coords (do not transform to earth coordinates)]\n\t" .
+				  "[-t)ransducer <depth> (output depth instead of dz)]\n\t" .
 			  "Common Options:\n\t\t" .
-			  	  "[-z print progress dots every 10000 ens\n\t\t" .
-				  "[add -f)ields <[name=]FIELD[,...]>]\n\t\t" .
+			  	  "[-z print progress dots every 10000 ens]\n\t\t" .
+				  "[add -F)ields <[name=]FIELD[,...]>]\n\t\t" .
 				  "[require -4)-beam solutions] [-d)iscard <beam#>]\n\t\t" .
-				  "[-r)ange <first_ens,last_ens>] [-l)ast <bin>]\n\t\t" .
+				  "[-r)ange <first_ens,last_ens>] [-f)irst <bin>] [-l)ast <bin>]\n\t\t" .
 				  "[in-w)ater ensembles only]\n")
-	unless (&getopts('4AB:bd:E:f:i:l:M:p:r:S:T:wz') && @ARGV == 1);
+	unless (&getopts('4AB:bd:E:F:f:l:M:p:r:S:T:t:wz') && @ARGV == 1);
 
 die("$ARGV[0]: no such file\n")
 	unless (-f $ARGV[0]);
+
+$first_bi = defined($opt_f) ? $opt_f - 1 : 0;					# index of first ADCP bin to use
+die("Invalid -f $opt_f\n")
+	unless numberp($first_bi) && $first_bi >= 0;
+
+die("Invalid -f $opt_f / -l $opt_l combination\n")
+	if defined($opt_f) && defined($opt_l) &&
+	   !($opt_l >= $opt_f);
 
 $global::readDataProgress = 10000 if defined($opt_z);
 
 $dump_ens = defined($opt_E) + defined($opt_T);
 die("$self: cannot combine -E with -T\n") if ($dump_ens > 1);
+
+die("$self: -t requires -E or -T\n")
+	if defined($opt_t) && !defined($opt_E) && !defined($opt_T);
 
 if (defined($opt_S)) {
 	($SS_salin,$SS_temp,$SS_depth) = split(',',$opt_S);
@@ -135,8 +156,8 @@ die("$self: -4 and -d are mutually exclusive\n")
 
 $opt_p = 0 unless defined($opt_p);
 
-if ($opt_f) {										# additional fields
-	@addFields = split(',',$opt_f);
+if ($opt_F) {										# additional fields
+	@addFields = split(',',$opt_F);
 	foreach my $f (@addFields) {
 		$f =~ s/\s//g;								# remove spaces
 		@def = split('=',$f);
@@ -252,8 +273,9 @@ if ($opt_A) {										# select output fmt: ANTS
 					(defined($opt_S) ? $opt_S : "NONE!"),
 					$opt_M
 		);
+		my($df) = defined($opt_t) ? 'depth' : 'dz';
 		print(P "#ANTS#FIELDS# " .
-				"{bin} {dz} {u} {v} {w} {e} {w12} {w34} {corr1} {corr2} {corr3} {corr4} " .
+				"{bin} {$df} {u} {v} {w} {e} {w12} {w34} {corr1} {corr2} {corr3} {corr4} " .
 				"{amp1} {amp2} {amp3} {amp4} "
 		);
 		if ($beamCoords) {
@@ -264,7 +286,7 @@ if ($opt_A) {										# select output fmt: ANTS
 		print(P "$addLayout\n");
 		    
 		my($ssCorr) = defined($opt_S) ? ssCorr($dta{ENSEMBLE}[$e],$SS_salin,$SS_temp,$SS_depth) : 1;
-		for (my($b)=0; $b<$dta{N_BINS}; $b++) {
+		for (my($b)=$first_bi; $b<$dta{N_BINS}; $b++) {
 			my(@v,$w12,$w34);
 			my($dz) = $ssCorr * ($dta{DISTANCE_TO_BIN1_CENTER} + $b*$dta{BIN_LENGTH});
     
@@ -298,8 +320,14 @@ if ($opt_A) {										# select output fmt: ANTS
 			$w12 = nan unless defined($w12);		# w from beams 1&2
 			$w34 = nan unless defined($w34);		# w from beams 3&4
 
+			my($do) = $dz;							# dz/depth output
+			if (defined($opt_t)) {
+				$do *= -1 if $dta{ENSEMBLE}[$e]->{XDUCER_FACING_UP};
+				$do += $opt_t;
+			}
+			
 			my(@out) = (
-				$b+1,$dz,$v[0],$v[1],$v[2],$v[3],$w12,$w34,
+				$b+1,$do,$v[0],$v[1],$v[2],$v[3],$w12,$w34,
 				@{$dta{ENSEMBLE}[$e]->{CORRELATION}[$b]},
 				@{$dta{ENSEMBLE}[$e]->{ECHO_AMPLITUDE}[$b]},
 				@{$dta{ENSEMBLE}[$e]->{PERCENT_GOOD}[$b]}
@@ -327,22 +355,41 @@ if ($opt_A) {										# select output fmt: ANTS
 	} elsif (@tmp == 2) {
 		($Tstart,$deltaT) = @tmp;
 		($month,$day,$yearbase) = split('/',$dta{ENSEMBLE}[0]->{DATE});
-		$Tend = str2dec_time($dta{ENSEMBLE}[0]->{DATE},$dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{TIME},$yearbase);
+		$Tend = str2dec_time($dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{DATE},
+						     $dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{TIME},$yearbase);
 	} else {
 		($month,$day,$yearbase) = split('/',$dta{ENSEMBLE}[0]->{DATE});
 		$Tstart = str2dec_time($dta{ENSEMBLE}[0]->{DATE},$dta{ENSEMBLE}[0]->{TIME},$yearbase);
 		($deltaT) = @tmp;
-		$Tend = str2dec_time($dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{DATE},$dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{TIME},$yearbase);
+		$Tend = str2dec_time($dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{DATE},
+							 $dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{TIME},$yearbase);
 	}
 	$Tstart = &{&antsCompileConstExpr($')} if ($Tstart =~ m{^=});
 	$deltaT = &{&antsCompileConstExpr($')} if ($deltaT =~ m{^=});
 	$Tend	= &{&antsCompileConstExpr($')} if ($Tend   =~ m{^=});
 	$deltaT = 9e99 unless ($deltaT > 0);
-																# format string for zero-padded filenames
-	my($fnfmt) = sprintf('%%0%dd',length(sprintf('%d',($Tend-$Tstart)/$deltaT+1)));
+
+	die(sprintf("-T$opt_T $ARGV[0]: specified start time %Lf is %g seconds before first ensemble time %Lf\n",
+		$Tstart,
+		(str2dec_time($dta{ENSEMBLE}[0]->{DATE},$dta{ENSEMBLE}[0]->{TIME},$yearbase)-$Tstart)*86400,
+		str2dec_time($dta{ENSEMBLE}[0]->{DATE},$dta{ENSEMBLE}[0]->{TIME},$yearbase)))
+			unless ($Tstart-str2dec_time($dta{ENSEMBLE}[0]->{DATE},
+										 $dta{ENSEMBLE}[0]->{TIME},$yearbase))*86400 > -10;		# 10sec slack
+
+	die(sprintf("-T$opt_T $ARGV[0]: specified end time %.2f is after last ensemble time %.2f\n",
+		$Tend,str2dec_time($dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{DATE},
+						   $dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{TIME},$yearbase)))
+			unless (str2dec_time($dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{DATE},
+								 $dta{ENSEMBLE}[$#{$dta{ENSEMBLE}}]->{TIME},$yearbase)-$Tend)*86400 > -10; # 10sec slack
+
+	die(sprintf("-T$opt_T $ARGV[0]: end time %.2f is not later than start time %.2f\n",$Tend,$Tstart))
+		unless ($Tend > $Tstart);
+		
+	my($fnfmt) =												# format string for zero-padded filenames
+		sprintf('%%0%dd',length(sprintf('%d',($Tend-$Tstart)/$deltaT+1)));
+#	printf(STDERR "%s: ($Tend-$Tstart)/$deltaT = %g\n",$fnfmt,($Tend-$Tstart)/$deltaT);
 
 	$cbin		= 1;											# current tim-bin number; used inside dumpEns
-	$max_nens	= 0;											# max number of samples
 
 	sub dde($$$) 												# divide allowing for zero; used inside dumpEns
 	{
@@ -358,74 +405,90 @@ if ($opt_A) {										# select output fmt: ANTS
 
 		my($dn) = ($e >= 0) ? str2dec_time($dta{ENSEMBLE}[$e]->{DATE},$dta{ENSEMBLE}[$e]->{TIME},$yearbase) : undef;
 
-#		print(STDERR "ens#$e at $dn (cbin = $cbin)\n");
-		if ($e<0 || $dn>=$Tstart+$cbin*$deltaT) {				# dump full bin
-			my($file) = sprintf("$basename.T$fnfmt",$cbin); 	# file name: <basename>.T0001
-#			print(STDERR "dumping average to $file...\n");
+		if (defined($dn) && defined($dumpEns_last_dn)) {
+			my($dt) = ($dn-$dumpEns_last_dn)*86400;
+			if (defined($dumpEns_last_dt)) {
+				printf(STDERR "WARNING: Abnormally long (%d sec) delay between ensembles %d and %d\n",$dt,$dumpEns_last_ens,$e)
+					if ($dt > 2*$dumpEns_last_dt);
+			}
+			$dumpEns_last_dt = $dt;
+		}
+		$dumpEns_last_ens = $e;
+		$dumpEns_last_dn = $dn;
+			
+#		print(STDERR "processing ens $e dn $dn ($Tstart,$cbin,$deltaT)...\n");
 
-			do {												# skip empy bins
+		if (@a1_n && ($e<0 || $dn>=$Tstart+($cbin-1)*$deltaT)) {				# dump full bin
+			my($file) = sprintf("$basename.T$fnfmt",$cbin++); 	# file name: <basename>.T0001
+			print(STDERR "Writing $file...\n");
+
+			while ($dn >= $Tstart+$cbin*$deltaT) {
+				print(STDERR "WARNING: skipping empty time bin (cbin = $cbin)\n");
 				$cbin++;
-			} while ($dn>=$Tstart+$cbin*$deltaT);
+			}
 
-			$max_nens = $a1_n[0] if ($a1_n[0] > $max_nens); 	# update max number of samples in time bin
-			if ($a1_n[0] >= $opt_i*$max_nens) { 				# write file only if sufficient samples (-i)
-			    
-				open(P,">$file") || die("$file: $!\n"); 		# open file and output metadata
-				print(P "#!/usr/bin/env list\n");
-				print(P "#ANTS# $cmdline\n");
-				printf(P "#ANTS#PARAMS# " .
-						"PD0_file{$ARGV[0]} " .
-						"dn{%s} " .
-						"N_ensembles{%d} ensemble_range{%d,%d} " .
-						"delta-T{%g} " .
-						"soundspeed_correction{%s} " .
-						"magnetic_declination{%g} " .
-						"\n",
-							&dde($dn_s,$dn_n,1),
-							$a1_n[0],$feib,$leib,$deltaT,
-							(defined($opt_S) ? $opt_S : "NONE!"),
-							$opt_M
+			open(P,">$file") || die("$file: $!\n"); 		# open file and output metadata
+			print(P "#!/usr/bin/env list\n");
+			print(P "#ANTS# $cmdline\n");
+			printf(P "#ANTS#PARAMS# " .
+					"PD0_file{$ARGV[0]} " .
+					"dn{%s} " .
+					"N_ensembles{%d} ensemble_range{%d,%d} " .
+					"delta-T{%g} " .
+					"soundspeed_correction{%s} " .
+					"magnetic_declination{%g} " .
+					"\n",
+						&dde($dn_s,$dn_n,1),
+						$a1_n[$first_bi],$feib,$leib,$deltaT,
+						(defined($opt_S) ? $opt_S : "NONE!"),
+						$opt_M
 
-				);
-			    
-				print(P "#ANTS#FIELDS# " .													# Layout
-						"{bin} {dz} {u} {v} {w} {e} {w12} {w34} {corr1} {corr2} {corr3} {corr4} " .
-						"{amp1} {amp2} {amp3} {amp4} "
-				);
-				if ($beamCoords) {
-					print(P "{pcg1} {pcg2} {pcg3} {pcg4} ");
-				} else {
-					print(P "{pc3beam} {pcBadErrVel} {pc1or2beam} {pc4beam} ");
+			);
+		    
+			my($df) = defined($opt_t) ? 'depth' : 'dz';
+			print(P "#ANTS#FIELDS# " .													# Layout
+					"{bin} {$df} {u} {v} {w} {e} {w12} {w34} {corr1} {corr2} {corr3} {corr4} " .
+					"{amp1} {amp2} {amp3} {amp4} "
+			);
+			if ($beamCoords) {
+				print(P "{pcg1} {pcg2} {pcg3} {pcg4} ");
+			} else {
+				print(P "{pc3beam} {pcBadErrVel} {pc1or2beam} {pc4beam} ");
+			}
+			print(P "{uvw.nsamp} {e.nsamp} ");
+			print(P "$addLayout\n");
+																						# ssCorr for dz based on first ensemble in bin
+			my($ssCorr) = defined($opt_S)
+						? ssCorr($dta{ENSEMBLE}[$feib-$dta{ENSEMBLE}[0]->{NUMBER}],$SS_salin,$SS_temp,$SS_depth)
+						: 1;
+			for (my($b)=$first_bi; $b<$dta{N_BINS}; $b++) { 							# output data
+				#print(STDERR "good = ($v1_n[$b]/$a1_n[$first_bi]	>= 0.01*$opt_p)\n");
+				my($good) = ($v1_n[$b]/$a1_n[$first_bi]  >= 0.01*$opt_p);
+				my($dz) = $ssCorr * ($dta{DISTANCE_TO_BIN1_CENTER} + $b*$dta{BIN_LENGTH});
+				my($do) = $dz;							# dz/depth output
+				if (defined($opt_t)) {
+					$do *= -1 if $dta{ENSEMBLE}[$e]->{XDUCER_FACING_UP};
+					$do += $opt_t;
 				}
-				print(P "{uvw.nsamp} {e.nsamp} ");
-				print(P "$addLayout\n");
-																							# ssCorr for dz based on first ensemble in bin
-				my($ssCorr) = defined($opt_S)
-							? ssCorr($dta{ENSEMBLE}[$feib-$dta{ENSEMBLE}[0]->{NUMBER}],$SS_salin,$SS_temp,$SS_depth)
-							: 1;
-				for (my($b)=0; $b<$dta{N_BINS}; $b++) { 									# output data
-					my($good) = ($v1_n[$b]/$max_nens  >= 0.01*$opt_p);
-					my($dz) = $ssCorr * ($dta{DISTANCE_TO_BIN1_CENTER} + $b*$dta{BIN_LENGTH});
-					printf(P "%d %g  %g %g %g %g  %g %g  %d %d %d %d  %d %d %d %d  %d %d %d %d	%d %d",
-						$b+1,$dz,
-						&dde($v1[$b],$v1_n[$b],$good),&dde($v2[$b],$v2_n[$b],$good),&dde($v3[$b],$v3_n[$b],$good),&dde($v4[$b],$v4_n[$b],$good),
-						&dde($w12[$b],$w12_n[$b],$good),&dde($w34[$b],$w34_n[$b],$good),
-						&dde($c1[$b],$c1_n[$b],1),&dde($c2[$b],$c2_n[$b],1),&dde($c3[$b],$c3_n[$b],1),&dde($c4[$b],$c4_n[$b],1),
-						&dde($a1[$b],$a1_n[$b],1),&dde($a2[$b],$a2_n[$b],1),&dde($a3[$b],$a3_n[$b],1),&dde($a4[$b],$a4_n[$b],1),
-						&dde($p1[$b],$p1_n[$b],1),&dde($p2[$b],$p2_n[$b],1),&dde($p3[$b],$p3_n[$b],1),&dde($p4[$b],$p4_n[$b],1),
-						$v1_n[$b],$v4_n[$b]
-					);
+				printf(P "%d %g  %g %g %g %g  %g %g  %d %d %d %d  %d %d %d %d  %d %d %d %d	%d %d",
+					$b+1,$do,
+					&dde($v1[$b],$v1_n[$b],$good),&dde($v2[$b],$v2_n[$b],$good),&dde($v3[$b],$v3_n[$b],$good),&dde($v4[$b],$v4_n[$b],$good),
+					&dde($w12[$b],$w12_n[$b],$good),&dde($w34[$b],$w34_n[$b],$good),
+					&dde($c1[$b],$c1_n[$b],1),&dde($c2[$b],$c2_n[$b],1),&dde($c3[$b],$c3_n[$b],1),&dde($c4[$b],$c4_n[$b],1),
+					&dde($a1[$b],$a1_n[$b],1),&dde($a2[$b],$a2_n[$b],1),&dde($a3[$b],$a3_n[$b],1),&dde($a4[$b],$a4_n[$b],1),
+					&dde($p1[$b],$p1_n[$b],1),&dde($p2[$b],$p2_n[$b],1),&dde($p3[$b],$p3_n[$b],1),&dde($p4[$b],$p4_n[$b],1),
+					$v1_n[$b],$v4_n[$b]
+				);
 
-					for (my($i)=0; $i<@af; $i++) {
-						printf(P "%g ",&dde($af[$i][$b],$af_n[$i][$b],1));
-					}
-					print(P "\n");
+				for (my($i)=0; $i<@af; $i++) {
+					printf(P "%g ",&dde($af[$i][$b],$af_n[$i][$b],1));
 				}
-				chmod(0777&~umask,*P);														# activate output
-				close(P);
-			} # if -i check okay
+				print(P "\n");
+			}
+			chmod(0777&~umask,*P);														# activate output
+            close(P);
 
-			for (my($b)=0; $b<$dta{N_BINS}; $b++) { 										# reset stats	 
+			for (my($b)=$first_bi; $b<$dta{N_BINS}; $b++) { 								# reset stats	 
 				$v1[$b] = $v1_n[$b] = $v2[$b] = $v2_n[$b] = $v3[$b] = $v3_n[$b] = $v4[$b] = $v4_n[$b] = 0;
 				$w12[$b] = $w12_n[$b] = $w34[$b] = $w34_n[$b] = 0;
 				$c1[$b] = $c1_n[$b] = $c2[$b] = $c2_n[$b] = $c3[$b] = $c3_n[$b] = $c4[$b] = $c4_n[$b] = 0;							    
@@ -446,7 +509,7 @@ if ($opt_A) {										# select output fmt: ANTS
 		$dn_s += $dn; $dn_n++;																# day number
 		    
 		my($ssCorr) = defined($opt_S) ? ssCorr($dta{ENSEMBLE}[$e],$SS_salin,$SS_temp,$SS_depth) : 1;
-		for (my($b)=0; $b<$dta{N_BINS}; $b++) {
+		for (my($b)=$first_bi; $b<$dta{N_BINS}; $b++) {
 			my(@v,$this_w12,$this_w34);
 			if ($beamCoords) {																# convert to earth coordinates
 				undef($dta{ENSEMBLE}[$e]->{VELOCITY}[$b][0])
